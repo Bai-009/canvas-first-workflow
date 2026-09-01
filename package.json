@@ -1,0 +1,15 @@
+{
+  "name": "canvas-first-workflow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A canvas-first, architecture-backed prototype for AI-generated data workflows.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "validate:fixture": "node src/validate-plan-proposal.mjs fixtures/contract-processing.plan.json"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
+

@@ -1,0 +1,42 @@
+{
+  "readiness": "partial",
+  "goal": "持续处理新增合同，并将所需信息写入合同表",
+  "constraints": [
+    "每天处理新增合同"
+  ],
+  "steps": [
+    {
+      "ref": "s1",
+      "title": "获取新增合同",
+      "intent": "获得当天需要处理的新增合同",
+      "dependsOn": []
+    },
+    {
+      "ref": "s2",
+      "title": "理解合同内容",
+      "intent": "从合同中获得用户需要的结构化信息",
+      "dependsOn": ["s1"]
+    },
+    {
+      "ref": "s3",
+      "title": "写入合同表",
+      "intent": "将处理后的合同信息保存到目标数据表",
+      "dependsOn": ["s2"]
+    }
+  ],
+  "openQuestions": [
+    {
+      "ref": "q1",
+      "question": "需要从合同中抽取哪些字段？",
+      "reason": "字段范围会影响合同理解步骤的实际配置",
+      "affects": ["s2"]
+    },
+    {
+      "ref": "q2",
+      "question": "处理结果需要写入哪一张合同表？",
+      "reason": "目标表决定最终写入步骤的资源绑定",
+      "affects": ["s3"]
+    }
+  ]
+}
+

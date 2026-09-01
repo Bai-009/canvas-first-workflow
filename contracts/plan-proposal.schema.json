@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/contracts/plan-proposal.schema.json",
+  "title": "PlanProposal",
+  "description": "Plan Agent 在任何正式状态提交前提出的最小处理计划。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["readiness", "goal", "constraints", "steps", "openQuestions"],
+  "properties": {
+    "readiness": {
+      "type": "string",
+      "enum": ["ready", "partial", "blocked"]
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 240
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 240
+      },
+      "uniqueItems": true
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/openQuestion"
+      }
+    }
+  },
+  "$defs": {
+    "ref": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,31}$"
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "title", "intent", "dependsOn"],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 320
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "openQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "question", "reason", "affects"],
+      "properties": {
+        "ref": {
+          "$ref": "#/$defs/ref"
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 320
+        },
+        "affects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ref"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
+
