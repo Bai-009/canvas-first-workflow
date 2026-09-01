@@ -3,10 +3,22 @@ import { pathToFileURL } from "node:url";
 import { proposePlanTool } from "./propose-plan-tool.mjs";
 import { validatePlanProposal } from "./validate-plan-proposal.mjs";
 
-const systemPrompt = readFileSync(
-  new URL("../prompts/plan-agent.md", import.meta.url),
-  "utf8"
-);
+/* 提示词两版:中文是原文,英文是按语境译的,分节一一对应。
+   默认中文;PLAN_PROMPT_LANG=en 换英文版。 */
+const promptFiles = {
+  zh: new URL("../prompts/plan-agent.md", import.meta.url),
+  en: new URL("../prompts/plan-agent.en.md", import.meta.url),
+};
+
+export function loadSystemPrompt(lang = "zh") {
+  const file = promptFiles[lang];
+  if (!file) {
+    throw new Error(`没有 ${lang} 这一版提示词,可选:${Object.keys(promptFiles).join("、")}`);
+  }
+  return readFileSync(file, "utf8");
+}
+
+const defaultSystemPrompt = loadSystemPrompt("zh");
 
 const MAX_GATE_RETRIES = 3;
 
@@ -39,7 +51,7 @@ export function openAiCompatibleCaller({ baseUrl, apiKey, model }) {
 /* 一轮设计:模型先说话,可能再提交一份方案。
    方案过闸门;没过就把错误原样发回去让它重交完整一份,重试有上限。
    模型不调工具就是只说话——信息不够先澄清,这个行为本身就是合法产出。 */
-export async function runPlanAgent({ callModel, messages }) {
+export async function runPlanAgent({ callModel, messages, systemPrompt = defaultSystemPrompt }) {
   const transcript = [{ role: "system", content: systemPrompt }, ...messages];
   let lastErrors = [];
 
@@ -122,6 +134,7 @@ async function runCli() {
   const { speech, plan } = await runPlanAgent({
     callModel,
     messages: [{ role: "user", content: description }],
+    systemPrompt: loadSystemPrompt(process.env.PLAN_PROMPT_LANG || "zh"),
   });
 
   if (speech) console.log(`${speech}\n`);
