@@ -75,41 +75,22 @@
   const nodeY = (i) => Math.round(BASE_Y + AMP * Math.sin(i * 0.9));
   const nodeX = (i) => i * PITCH;
 
-  /* 用信息不全的那一句起手。原来那句（S3、字段、8 点全说了）会直接跳过 Plan
-     这一段——缺的东西正是这一段存在的理由。缺的部分由 Plan 里的对话补齐，
-     补完正好落到下面 STEPS 演的那条流上。 */
-  const TASK = "每天读取新增合同，解析内容，抽取关键字段并写入合同表。";
-  const WF_NAME = "合同要素入库";
-
-
-  /* ── Plan 阶段的内容 ───────────────────────────────────
-     只问「不问就搭不出骨架」的：读取来源和增量判定，不知道这两个连工具都挑不出来。
-     字段清单、目标表这些挑得出工具、只是填不满格子，一律不问，留成节点上的空格。 */
+  /* ── Plan 阶段的内容:真实数据 ─────────────────────────
+     v7 起不再手写。plan-data.js 由 src/build-demo-data.mjs 从
+     fixtures/observed/ 里真实模型输出的修订轮一对生成,生成时过闸门。
+     对话、理解、路线、待确认、答掉哪几个,全部来自实录。 */
+  const DATA = window.PLAN_DATA;
+  const TASK = DATA.task;
+  const WF_NAME = DATA.wfName;
   const PLAN = {
-    understanding: [
-      ["每天",         "定时运行，时间未定"],
-      ["新增合同",     "仅处理增量，判定方式未定"],
-      ["解析内容",     "先转成可处理的文本"],
-      ["抽取关键字段", "取出结构化字段，字段清单未定"],
-      ["写入合同表",   "写入数据表，目标表未定"],
-    ],
-    route: ["取得新增合同", "解析内容", "抽取字段", "写入数据表"],
-    asks: [
-      ["合同存在哪儿",   "S3、数据库或其他。来源不同，读取工具不同"],
-      ["「新增」如何判定", "按修改时间，或与已处理记录比对。两者结构不同"],
-    ],
-    done: "4 步 · 2 项待确认",
-    reply: "S3 上的 PDF，按文件修改时间算新增，每天早上 8 点跑。",
-    after: {
-      understanding: [
-        ["每天",         "每天 08:00 运行"],
-        ["新增合同",     "按文件修改时间判定增量"],
-        ["解析内容",     "来源为 S3 上的 PDF"],
-        ["抽取关键字段", "取出结构化字段，字段清单未定"],
-        ["写入合同表",   "写入数据表，目标表未定"],
-      ],
-      done: "4 步 · 待确认已清",
-    },
+    understanding: DATA.understanding,
+    route: DATA.route,
+    asks: DATA.asks,
+    done: DATA.done,
+    reply: DATA.reply,
+    /* after.answeredAsks:被这句回答清掉的问题下标,由编号差异算出;
+       after.route:同编号的步骤标题变了就是原地改,界面上换字不换格。 */
+    after: DATA.after,
   };
 
   const ICONS = {
@@ -151,9 +132,9 @@
     },
     {
       id: "parse", kind: "文档解析", color: "#7c5cf5", icon: "doc",
-      engine: "flow:parser.convert.document.pdf.rich",
+      engine: "flow:parser.ocr.document.scan",
       lang: "text", hold: 820,
-      note: "抽样第一份文件，确认解析结果。",
+      note: "合同都是扫描件，走 OCR。抽样第一份，确认识别结果。",
       content: [
         "── contract_20260714_A0031.pdf · 共 9 页 ──",
         "",
@@ -188,7 +169,7 @@
         "一级故障 2 小时内响应、24 小时内恢复；二级故障 8 小",
         "时内响应。年度服务可用性不低于 99.9%。",
       ],
-      title: "解析 PDF 正文", evidence: "9 页 · 保留段落层级",
+      title: "OCR 识别合同正文", evidence: "9 页 · 保留段落层级",
     },
     {
       id: "extract", kind: "结构化抽取", color: "#d97706", icon: "braces",
@@ -931,7 +912,7 @@
     engBtn.hidden = !done;
   }
   function showDone() {
-    setStatus(null, `已生成 ${state.length} 步 · 每天 08:00 运行`, true);
+    setStatus(null, `已生成 ${state.length} 步 · 每天定时运行`, true);
   }
   function setDock(on) {
     sendEl.disabled = !on;
@@ -1143,27 +1124,58 @@
     await wait(TP.reflect);
     if (!alive(token)) return false;
 
-    planAsks.querySelectorAll(".plan-ask").forEach((el) => el.classList.add("answered"));
+    /* 只划掉真被这句话答掉的：q1 q2 清了,q3 q4 还留着。
+       留着的不挡路——骨架照样生成,那些是骨架上的填空。 */
+    planAsks.querySelectorAll(".plan-ask").forEach((el, i) => {
+      if (PLAN.after.answeredAsks.includes(i)) el.classList.add("answered");
+    });
     await wait(TP.gap);
     if (!alive(token)) return false;
 
-    /* 理解那一栏逐行改写：哪几行变了，看得见。 */
+    /* 理解那一栏逐行改写：哪几行变了，看得见。
+       补的那句话带来新的理解（u5 u6），在末尾长出来。 */
     const rows = planPair.querySelectorAll("dd");
     for (let i = 0; i < PLAN.after.understanding.length; i++) {
-      const next = PLAN.after.understanding[i][1];
-      if (rows[i] && rows[i].textContent !== next) {
-        rows[i].classList.add("swap");
-        await wait(TP.row * 0.6);
-        rows[i].textContent = next;
-        rows[i].classList.remove("swap");
-        rows[i].classList.add("drop");
+      const [quote, next] = PLAN.after.understanding[i];
+      if (rows[i]) {
+        if (rows[i].textContent !== next) {
+          rows[i].classList.add("swap");
+          await wait(TP.row * 0.6);
+          rows[i].textContent = next;
+          rows[i].classList.remove("swap");
+          rows[i].classList.add("drop");
+        }
+      } else {
+        const dt = document.createElement("dt");
+        dt.textContent = quote;
+        dt.classList.add("drop");
+        const dd = document.createElement("dd");
+        dd.textContent = next;
+        dd.classList.add("drop");
+        planPair.append(dt, dd);
       }
       await wait(TP.row * 0.7);
       if (!alive(token)) return false;
     }
+
+    /* 路线上同编号的步骤标题变了就是原地改：s2 从「提取文本」换成 OCR，
+       格子不动，字换掉。 */
+    const chips = planRoute.querySelectorAll("span");
+    for (let i = 0; i < PLAN.after.route.length; i++) {
+      const next = PLAN.after.route[i];
+      if (chips[i] && chips[i].textContent !== next) {
+        chips[i].classList.add("swap");
+        await wait(TP.row * 0.6);
+        chips[i].textContent = next;
+        chips[i].classList.remove("swap");
+        chips[i].classList.add("drop");
+      }
+      if (!alive(token)) return false;
+    }
+
     planDot.classList.add("done");
     planSay.textContent = PLAN.after.done;
-    /* 两个挡路的都答了，入口才出现。出现本身就是提示。 */
+    /* 挡路的答了，入口就出现。出现本身就是提示。 */
     planGo.hidden = false;
     planGo.classList.add("drop");
     inputEl.placeholder = "还想改点什么";
@@ -1257,15 +1269,15 @@
   const SWAP = 620;
 
   /* 跳到完成态时 buildPlan 没跑过，Plan 里是空的。展开前先补上——
-     这时候两个问题已经答完了，所以填的是 after 那一版。 */
+     填的是 after 那一版：路线换过字，被答掉的问题划掉，剩下的留着。 */
   function ensurePlanContent() {
     if (planText.textContent) return;
     planText.textContent = TASK;
     planPair.innerHTML = planPairHTML(PLAN.after.understanding);
-    planRoute.innerHTML = PLAN.route
+    planRoute.innerHTML = PLAN.after.route
       .map((r, i) => (i ? '<i>→</i>' : '') + `<span>${esc(r)}</span>`).join("");
     planAsks.innerHTML = PLAN.asks
-      .map(([q, why], i) => `<div class="plan-ask answered"><i class="q">${i + 1}</i><div><b>${esc(q)}</b><span>${esc(why)}</span></div></div>`)
+      .map(([q, why], i) => `<div class="plan-ask${PLAN.after.answeredAsks.includes(i) ? " answered" : ""}"><i class="q">${i + 1}</i><div><b>${esc(q)}</b><span>${esc(why)}</span></div></div>`)
       .join("");
     ["#planSecU", "#planSecR", "#planSecA"].forEach((k) => { $(k).hidden = false; });
     planDot.classList.add("done");

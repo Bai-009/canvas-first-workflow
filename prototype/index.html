@@ -404,6 +404,9 @@
     /* 改写某一行：先淡掉再换字，让人看见是「这一行变了」，不是整栏重画。 */
     .plan-pair dd { transition: opacity 160ms ease; }
     .plan-pair dd.swap { opacity: 0; }
+    /* 路线上原地改的那一格同理：格子不动，字换掉。 */
+    .plan-route span { transition: opacity 160ms ease; }
+    .plan-route span.swap { opacity: 0; }
     /* 状态那行的字也要换得看得见，否则一闪而过等于没说。 */
     .plan-say { transition: color 200ms ease; }
 
@@ -586,6 +589,7 @@
     </form>
   </div>
 
+  <script src="plan-data.js"></script>
   <script src="workflow-rebuild-v6.js" defer></script>
 </body>
 </html>
