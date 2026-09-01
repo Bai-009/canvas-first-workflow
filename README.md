@@ -18,6 +18,8 @@
 
 > Plan Agent 定义一条数据链路「应该完成什么、怎样才算完整」；Execution Agent 根据平台真实能力决定「具体用什么、怎么把它做出来」。状态机负责把前者逐步交给后者。Gate 决定什么才能成为事实。
 
+![架构总览：上半是做出来的设计者一段，下半是设计稿的执行者一段](docs/assets/architecture.svg)
+
 四个角色里，目前做出来并在真模型上验证过的是 Plan Agent 和它的 Gate。Execution Agent 和状态机还是设计稿。
 
 Plan Agent 这一段是这么切的：
@@ -39,7 +41,7 @@ Plan Agent 这一段是这么切的：
 |---|---|
 | Plan 契约 `contracts/plan-proposal.schema.json` | 有 |
 | Plan Gate `src/validate-plan-proposal.mjs` | 有，测试守着 |
-| Plan Agent 系统提示词 `prompts/plan-agent.md` | 有 |
+| Plan Agent 系统提示词 `prompts/plan-agent.md` | 有，中文原文加英文译本 |
 | 提交工具与调用循环 `src/plan-agent.mjs` | 有。任何 OpenAI 兼容接口都能接，目前只在 DeepSeek 上跑过 |
 | 真模型验证 | 有。deepseek-v4-pro 上跑过三个场景加一轮修订，原始输出在 `fixtures/observed/`，行为记录在 `docs/观察.md` |
 | 画布原型 `prototype/` | 有。Plan 阶段的内容是真实模型输出，执行阶段是手写的愿景演示 |
@@ -74,6 +76,8 @@ npm run plan -- "每天定时把新增的合同 PDF 解析出关键字段，写�
 
 模型要么提交一份过了 Gate 的方案，要么只说话向你提问。两种结果都会原样打出来。
 
+提示词默认用中文版。想试英文译本，在 `.env` 里加一行 `PLAN_PROMPT_LANG=en`。
+
 校验一份方案文件：
 
 ```bash
@@ -100,11 +104,12 @@ node src/build-demo-data.mjs
 
 ```
 contracts/   契约。目前只有 PlanProposal
-prompts/     Plan Agent 的系统提示词
+prompts/     Plan Agent 的系统提示词，中文原文与英文译本
 src/         Gate、提交工具定义、厂商中立的调用循环、演示数据生成
 test/        Gate、工具定义、调用循环的测试
 fixtures/    手写的设计样例，以及 observed/ 里真模型的原始输出
 docs/
+  assets/      README 里的架构总览图
   取舍.md      每一刀背后的麻烦与放弃的路
   架构.md      四个角色、两段主链路、裁决点
   plan-契约.md PlanProposal 各字段为什么长这样
