@@ -2,34 +2,33 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.local/contracts/plan-proposal.schema.json",
   "title": "PlanProposal",
-  "description": "Plan Agent 的一次完整输出。每一轮都吐一整份，不吐增量；ref 沿不沿用上一版由 Plan Agent 自己判断。",
+  "description": "一份完整的数据处理链路设计。每一轮都是完整的一份，不是上一份的改动。",
   "type": "object",
   "additionalProperties": false,
   "required": ["readiness", "goal", "understanding", "steps", "openQuestions"],
   "properties": {
     "readiness": {
-      "description": "信息缺失时只能生成骨架，还是已经可以真实运行。",
+      "description": "这条链路当前的可用程度。ready：该问的都问清了，可以运行；partial：形状对了，但还有参数要用户自己填。",
       "type": "string",
-      "enum": ["ready", "partial", "blocked"]
+      "enum": ["ready", "partial"]
     },
     "goal": {
       "description": "端到端意图，一句话。",
       "type": "string",
-      "minLength": 1,
-      "maxLength": 240
+      "minLength": 1
     },
     "understanding": {
-      "description": "对用户原话的逐段理解。按原话切分，不按步骤切分，两者数量可以不同。",
+      "description": "对用户原话的逐段回读。按他说话的自然停顿切分，不按 steps 切分，两边条数可以不同。",
       "type": "array",
       "items": { "$ref": "#/$defs/reading" }
     },
     "steps": {
-      "description": "数据链路。按语义处理划分，不按动作数划分。",
+      "description": "这条链路的环节。数据形态转变一次，就是一步。",
       "type": "array",
       "items": { "$ref": "#/$defs/step" }
     },
     "openQuestions": {
-      "description": "用户还没说明的关键信息。列全，不预先筛选哪些现在问——那是状态机的判断。",
+      "description": "用户还没说明、而这条链路需要的信息。全部列出，不要筛选。",
       "type": "array",
       "items": { "$ref": "#/$defs/openQuestion" }
     }
@@ -46,47 +45,41 @@
       "properties": {
         "ref": { "$ref": "#/$defs/ref" },
         "quote": {
-          "description": "用户原话里的片段，用户拿它逐句核对。",
+          "description": "用户原话里的片段，原样摘出，不要改写。",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 120
+          "minLength": 1
         },
         "reading": {
           "description": "这一段被读成了什么。",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 240
+          "minLength": 1
         }
       }
     },
     "step": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "title", "intent", "output", "dependsOn"],
+      "required": ["ref", "title", "intent", "input", "output", "dependsOn"],
       "properties": {
         "ref": { "$ref": "#/$defs/ref" },
         "title": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 64
+          "minLength": 1
         },
         "intent": {
-          "description": "这一步要达到什么结果。不写用什么工具、怎么实现。",
+          "description": "这一环要达到什么结果。不写用什么工具、怎么实现。",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 320
+          "minLength": 1
         },
         "input": {
-          "description": "这一步吃什么。语义层描述，不是机器契约。链路起点可以没有。",
+          "description": "数据进这一环时处于什么形态。链路第一环填的是用户手上现在有的东西，整条链从它长出来。由时间或事件信号触发、不接收上游数据的环节，在这里说明。",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 240
+          "minLength": 1
         },
         "output": {
-          "description": "这一步交出什么。下一步据此接得上。执行 Agent 不能自己改交付物。",
+          "description": "数据离开这一环时变成什么形态。下一环从这个形态接着往下推。",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 240
+          "minLength": 1
         },
         "dependsOn": {
           "type": "array",
@@ -103,14 +96,12 @@
         "ref": { "$ref": "#/$defs/ref" },
         "question": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 240
+          "minLength": 1
         },
         "reason": {
-          "description": "为什么缺了它就说不清楚。状态机拿这个判断要不要现在停下来问。",
+          "description": "缺了这条信息，这条链路的哪个部分说不清楚。",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 320
+          "minLength": 1
         },
         "affects": {
           "type": "array",
