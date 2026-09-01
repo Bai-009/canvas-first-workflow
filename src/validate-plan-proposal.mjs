@@ -4,11 +4,12 @@ import { pathToFileURL } from "node:url";
 const TOP_LEVEL_KEYS = new Set([
   "readiness",
   "goal",
-  "constraints",
+  "understanding",
   "steps",
   "openQuestions"
 ]);
-const STEP_KEYS = new Set(["ref", "title", "intent", "dependsOn"]);
+const READING_KEYS = new Set(["ref", "quote", "reading"]);
+const STEP_KEYS = new Set(["ref", "title", "intent", "input", "output", "dependsOn"]);
 const QUESTION_KEYS = new Set(["ref", "question", "reason", "affects"]);
 const READINESS_VALUES = new Set(["ready", "partial", "blocked"]);
 const REF_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
@@ -77,15 +78,35 @@ export function validatePlanProposal(value) {
     errors.push("$.readiness 必须是 ready、partial 或 blocked");
   }
   if (!nonEmptyString(value.goal)) errors.push("$.goal 必须是非空字符串");
-  checkStringArray(value.constraints, "$.constraints", errors);
 
+  if (!Array.isArray(value.understanding)) errors.push("$.understanding 必须是数组");
   if (!Array.isArray(value.steps)) errors.push("$.steps 必须是数组");
   if (!Array.isArray(value.openQuestions)) errors.push("$.openQuestions 必须是数组");
 
+  const readings = Array.isArray(value.understanding) ? value.understanding : [];
   const steps = Array.isArray(value.steps) ? value.steps : [];
   const questions = Array.isArray(value.openQuestions) ? value.openQuestions : [];
-  const stepsByRef = new Map();
 
+  const readingRefs = new Set();
+  readings.forEach((reading, index) => {
+    const path = `$.understanding[${index}]`;
+    if (!isRecord(reading)) {
+      errors.push(`${path} 必须是对象`);
+      return;
+    }
+    checkAllowedKeys(reading, READING_KEYS, path, errors);
+    if (!nonEmptyString(reading.ref) || !REF_PATTERN.test(reading.ref)) {
+      errors.push(`${path}.ref 格式无效`);
+    } else if (readingRefs.has(reading.ref)) {
+      errors.push(`${path}.ref 与其他理解重复：${reading.ref}`);
+    } else {
+      readingRefs.add(reading.ref);
+    }
+    if (!nonEmptyString(reading.quote)) errors.push(`${path}.quote 必须是非空字符串`);
+    if (!nonEmptyString(reading.reading)) errors.push(`${path}.reading 必须是非空字符串`);
+  });
+
+  const stepsByRef = new Map();
   steps.forEach((step, index) => {
     const path = `$.steps[${index}]`;
     if (!isRecord(step)) {
@@ -102,6 +123,10 @@ export function validatePlanProposal(value) {
     }
     if (!nonEmptyString(step.title)) errors.push(`${path}.title 必须是非空字符串`);
     if (!nonEmptyString(step.intent)) errors.push(`${path}.intent 必须是非空字符串`);
+    if (!nonEmptyString(step.output)) errors.push(`${path}.output 必须是非空字符串`);
+    if ("input" in step && !nonEmptyString(step.input)) {
+      errors.push(`${path}.input 存在时必须是非空字符串`);
+    }
     checkStringArray(step.dependsOn, `${path}.dependsOn`, errors);
   });
 
@@ -109,6 +134,10 @@ export function validatePlanProposal(value) {
     for (const dependency of step.dependsOn ?? []) {
       if (dependency === ref) errors.push(`步骤 ${ref} 不能依赖自己`);
       else if (!stepsByRef.has(dependency)) errors.push(`步骤 ${ref} 引用了不存在的依赖 ${dependency}`);
+    }
+    /* 依赖了上一步，却说自己不吃任何东西——链路在这儿断了。 */
+    if ((step.dependsOn?.length ?? 0) > 0 && !nonEmptyString(step.input)) {
+      errors.push(`步骤 ${ref} 依赖了前序步骤，却没有说明它吃什么`);
     }
   }
 
@@ -180,4 +209,3 @@ async function runCli() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await runCli();
 }
-

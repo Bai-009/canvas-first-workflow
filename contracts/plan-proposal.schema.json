@@ -2,40 +2,36 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.local/contracts/plan-proposal.schema.json",
   "title": "PlanProposal",
-  "description": "Plan Agent 在任何正式状态提交前提出的最小处理计划。",
+  "description": "Plan Agent 的一次完整输出。每一轮都吐一整份，不吐增量；ref 沿不沿用上一版由 Plan Agent 自己判断。",
   "type": "object",
   "additionalProperties": false,
-  "required": ["readiness", "goal", "constraints", "steps", "openQuestions"],
+  "required": ["readiness", "goal", "understanding", "steps", "openQuestions"],
   "properties": {
     "readiness": {
+      "description": "信息缺失时只能生成骨架，还是已经可以真实运行。",
       "type": "string",
       "enum": ["ready", "partial", "blocked"]
     },
     "goal": {
+      "description": "端到端意图，一句话。",
       "type": "string",
       "minLength": 1,
       "maxLength": 240
     },
-    "constraints": {
+    "understanding": {
+      "description": "对用户原话的逐段理解。按原话切分，不按步骤切分，两者数量可以不同。",
       "type": "array",
-      "items": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 240
-      },
-      "uniqueItems": true
+      "items": { "$ref": "#/$defs/reading" }
     },
     "steps": {
+      "description": "数据链路。按语义处理划分，不按动作数划分。",
       "type": "array",
-      "items": {
-        "$ref": "#/$defs/step"
-      }
+      "items": { "$ref": "#/$defs/step" }
     },
     "openQuestions": {
+      "description": "用户还没说明的关键信息。列全，不预先筛选哪些现在问——那是状态机的判断。",
       "type": "array",
-      "items": {
-        "$ref": "#/$defs/openQuestion"
-      }
+      "items": { "$ref": "#/$defs/openQuestion" }
     }
   },
   "$defs": {
@@ -43,29 +39,58 @@
       "type": "string",
       "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,31}$"
     },
+    "reading": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "quote", "reading"],
+      "properties": {
+        "ref": { "$ref": "#/$defs/ref" },
+        "quote": {
+          "description": "用户原话里的片段，用户拿它逐句核对。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "reading": {
+          "description": "这一段被读成了什么。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        }
+      }
+    },
     "step": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ref", "title", "intent", "dependsOn"],
+      "required": ["ref", "title", "intent", "output", "dependsOn"],
       "properties": {
-        "ref": {
-          "$ref": "#/$defs/ref"
-        },
+        "ref": { "$ref": "#/$defs/ref" },
         "title": {
           "type": "string",
           "minLength": 1,
           "maxLength": 64
         },
         "intent": {
+          "description": "这一步要达到什么结果。不写用什么工具、怎么实现。",
           "type": "string",
           "minLength": 1,
           "maxLength": 320
         },
+        "input": {
+          "description": "这一步吃什么。语义层描述，不是机器契约。链路起点可以没有。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "output": {
+          "description": "这一步交出什么。下一步据此接得上。执行 Agent 不能自己改交付物。",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
         "dependsOn": {
           "type": "array",
-          "items": {
-            "$ref": "#/$defs/ref"
-          },
+          "items": { "$ref": "#/$defs/ref" },
           "uniqueItems": true
         }
       }
@@ -75,28 +100,24 @@
       "additionalProperties": false,
       "required": ["ref", "question", "reason", "affects"],
       "properties": {
-        "ref": {
-          "$ref": "#/$defs/ref"
-        },
+        "ref": { "$ref": "#/$defs/ref" },
         "question": {
           "type": "string",
           "minLength": 1,
           "maxLength": 240
         },
         "reason": {
+          "description": "为什么缺了它就说不清楚。状态机拿这个判断要不要现在停下来问。",
           "type": "string",
           "minLength": 1,
           "maxLength": 320
         },
         "affects": {
           "type": "array",
-          "items": {
-            "$ref": "#/$defs/ref"
-          },
+          "items": { "$ref": "#/$defs/ref" },
           "uniqueItems": true
         }
       }
     }
   }
 }
-
