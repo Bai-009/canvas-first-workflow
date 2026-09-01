@@ -1,0 +1,589 @@
+<!doctype html>
+<!-- Workflow prototype v6 · 2026-07-31
+     1. 需求从输入框发出，飞到右上角变成需求框，并常驻显示全局状态。
+     2. 去掉待确认/选择模块。
+     3. 重做两格之间的衔接：线先到，卡片从线的尽头长出来；展开时线往回缩、插进卡片左沿。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>自然语言搭工作流 v6</title>
+  <style>
+    @font-face {
+      font-family: "Inter";
+      src: url("fonts/inter-var.woff2") format("woff2");
+      font-weight: 100 900;
+      font-display: swap;
+    }
+
+    :root {
+      --paper: #fff;
+      --canvas: #eef0f3;
+      --surface: #f4f5f7;
+      --line: #e4e6ea;
+      --ink: #1a1d22;
+      --ink-2: #545b65;
+      --ink-3: #8f96a0;
+      --accent: #2f6fed;
+      --font: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+
+      --tile: 176px;
+      --open-w: 540px;
+      --code-lh: 19px;
+
+      /* 演示倍速。JS 里的等待会除以它，凡是要和那些等待对齐的过渡时长
+         必须一起除，否则一提速就又变成「弹簧没停就开始撑」。 */
+      --sp: 1;
+
+      --spring: cubic-bezier(.22, 1.28, .32, 1);
+      --spring-soft: cubic-bezier(.25, 1, .3, 1);
+      --ease-out: cubic-bezier(.16, 1, .3, 1);
+      --ease-flow: cubic-bezier(.55, .06, .2, 1);
+
+      --t-com: #0a8043;
+      --t-str: #b1281f;
+      --t-kw:  #1f4fd8;
+      --t-ctl: #9b26c4;
+      --t-typ: #17738c;
+      --t-num: #0a7a52;
+      --t-fn:  #8a6116;
+      --t-key: #1c2f8f;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      height: 100%; margin: 0; overflow: hidden;
+      background: var(--canvas); color: var(--ink);
+      font-family: var(--font); font-size: 15px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    }
+
+    button, input, textarea { color: inherit; font: inherit; }
+    button { padding: 0; border: 0; background: none; cursor: pointer; }
+    button:focus-visible, textarea:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+    .viewport {
+      position: fixed; inset: 0; overflow: hidden; cursor: grab;
+      background: radial-gradient(circle at 1px 1px, rgba(26,29,34,.055) 1px, transparent 0) 0 0 / 24px 24px;
+    }
+    .viewport.grabbing { cursor: grabbing; }
+
+    .world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+    /* 镜头与连线同一拍出发、同时停：卡片是在停稳的世界里长出来的。 */
+    .world.animate { transition: transform calc(520ms / var(--sp)) var(--spring-soft); }
+
+    /* ── 连边 ─────────────────────────────────────────────
+       线是结构不是内容，报不出判断，所以零强调：中性灰、单一粗细。
+       颜色只留给正在生成的那一条入边。
+       长度用 dashoffset 控制：正数收尾端、负数收首端——卡片展开时
+       线往回缩到卡片左沿，插进插口，而不是被卡片盖掉。 */
+    .wires { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+    .wire {
+      fill: none; stroke: #aeb5c0; stroke-width: 2.6; stroke-linecap: round;
+      transition: stroke-dashoffset 460ms var(--ease-flow), stroke 300ms ease, stroke-width 280ms ease;
+    }
+    .tip {
+      fill: none; stroke: #aeb5c0; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+      opacity: 0; transition: opacity calc(240ms / var(--sp)) ease calc(380ms / var(--sp)), stroke 300ms ease;
+    }
+    .port {
+      fill: #aeb5c0; opacity: 0;
+      transition: opacity 300ms ease, fill 300ms ease;
+    }
+    .edge.on .tip, .edge.on .port { opacity: 1; }
+    .edge.hot .wire, .edge.hot .tip { stroke: var(--c); stroke-width: 3.2; }
+    .edge.hot .port { fill: var(--c); }
+    .edge.tuck .tip { opacity: 0; transition: opacity 180ms ease; }
+
+    .node { position: absolute; width: var(--tile); height: var(--tile); }
+
+    /* 展开后卡片左右两侧的插口：线缩到这里，接上。
+       放在 node 上而不是 card 里，因为 card 是 overflow:hidden。
+       left/top 由 JS 按连线真正被切断的那一点写死，不能想当然放在卡片竖直中点。 */
+    .socket {
+      position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+      border-radius: 50%; background: var(--c); opacity: 0;
+      transition: opacity 200ms ease;
+    }
+    .node.open.has-in  .socket-in  { opacity: 1; transition: opacity calc(240ms / var(--sp)) ease calc(260ms / var(--sp)); }
+    .node.open.has-out .socket-out { opacity: 1; transition: opacity calc(240ms / var(--sp)) ease calc(260ms / var(--sp)); }
+
+    /* 卡片钉在节点中心：translate(-50%,-50%) 让尺寸变化自动保持居中，
+       于是 left/top 完全不进动画。出生时从左侧偏一点长出来——线是从左边来的。 */
+    .card {
+      position: absolute; left: 50%; top: 50%;
+      width: var(--tile); height: var(--tile);
+      overflow: hidden; border-radius: 24px; background: var(--paper);
+      contain: layout paint;
+      opacity: 0; transform: translate(calc(-50% - 30px), -50%) scale(.62);
+      /* 出生（transform）要比展开（width/height）短，而且必须先彻底停住：
+         两个几何动画不能压在同一张卡上，弹簧还在回落就开始撑宽高＝没落定过。 */
+      transition:
+        width calc(620ms / var(--sp)) var(--spring), height calc(620ms / var(--sp)) var(--spring),
+        transform calc(420ms / var(--sp)) var(--spring),
+        box-shadow 320ms var(--ease-out), opacity calc(300ms / var(--sp)) ease;
+      box-shadow: 0 2px 4px rgba(20,26,38,.05), 0 8px 20px -8px rgba(20,26,38,.16), 0 0 0 1px rgba(20,26,38,.05);
+    }
+    .card.shown { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    /* 变暗只改透明度：交接时不要整屏的卡片跟着缩一下再弹回来。 */
+    .card.dim {
+      opacity: .34;
+      box-shadow: 0 1px 2px rgba(20,26,38,.04), 0 0 0 1px rgba(20,26,38,.04);
+    }
+    .card.open {
+      z-index: 30; border-radius: 22px;
+      box-shadow:
+        0 40px 80px -24px rgba(20,26,38,.32),
+        0 12px 24px -8px rgba(20,26,38,.10),
+        0 0 0 1px rgba(20,26,38,.06),
+        0 0 0 4px color-mix(in srgb, var(--c) 12%, transparent);
+    }
+    /* 展开／收回：高度和位移必须同一条时长、同一条曲线。
+       位移是照着高度算出来的（钉住上沿），两条跑得不一样快，上沿就会飘。
+       只把 transform 从 420 拉到 620，其余照旧——出生那一下仍然用 420。 */
+    .card.morph {
+      transition:
+        width calc(620ms / var(--sp)) var(--spring), height calc(620ms / var(--sp)) var(--spring),
+        transform calc(620ms / var(--sp)) var(--spring),
+        box-shadow 320ms var(--ease-out), opacity calc(300ms / var(--sp)) ease;
+    }
+    /* 写字时框只在「行末换气」那一段里长高，时长就等于那口气（--breath）。
+       跳一下 19px 也是抖；换气时没有字在落，这一下和写字互不重叠。 */
+    .card.writing {
+      transition:
+        height calc(var(--breath, 70ms) / var(--sp)) linear,
+        transform calc(var(--breath, 70ms) / var(--sp)) linear,
+        box-shadow 320ms var(--ease-out), opacity calc(300ms / var(--sp)) ease;
+    }
+    .card.writing .code { transition: height calc(var(--breath, 70ms) / var(--sp)) linear; }
+    .card.measuring, .card.measuring * { transition: none !important; }
+
+    .card.clickable { cursor: pointer; }
+    .card.clickable:hover { box-shadow: 0 2px 4px rgba(20,26,38,.05), 0 12px 28px -8px rgba(20,26,38,.22), 0 0 0 1px rgba(20,26,38,.07); }
+
+    .mini {
+      position: absolute; inset: 0; padding: 17px 17px 16px;
+      display: flex; flex-direction: column;
+      opacity: 1; transition: opacity calc(220ms / var(--sp)) ease calc(300ms / var(--sp));
+    }
+    .card.open .mini { opacity: 0; pointer-events: none; transition: opacity calc(140ms / var(--sp)) ease; }
+    .mini-top { display: flex; align-items: center; gap: 9px; }
+    .icon {
+      width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center;
+      border-radius: 9px; background: color-mix(in srgb, var(--c) 13%, #fff); color: var(--c);
+    }
+    .icon svg { width: 17px; height: 17px; display: block; }
+    .mini-kind {
+      flex: 1; min-width: 0; color: var(--c);
+      font-size: 11.5px; font-weight: 500; line-height: 15px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .mark { flex: 0 0 auto; width: 15px; height: 15px; position: relative; }
+    .mark::before {
+      content: ""; position: absolute; top: 4px; left: 4px;
+      width: 7px; height: 7px; border-radius: 50%; background: var(--c);
+      opacity: 0; transition: opacity 240ms ease;
+    }
+    .card.frontier .mark::before { opacity: 1; }
+    .mark::after {
+      content: "✓"; position: absolute; top: -1px; left: 1px;
+      color: var(--ink-3); font-size: 12.5px; line-height: 16px;
+      opacity: 0; transition: opacity 280ms ease;
+    }
+    .card.done .mark::after { opacity: 1; }
+    .mini-fill { flex: 1; }
+    .mini-name {
+      margin: 0; font-size: 14.5px; font-weight: 550; line-height: 20px; color: var(--ink);
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .mini-evi {
+      margin: 4px 0 0; height: 16px; font-size: 11.5px; line-height: 16px; color: var(--ink-3);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      opacity: 0; transition: opacity 300ms ease;
+    }
+    .mini-evi.visible { opacity: 1; }
+    .tag-you { color: var(--c); }
+
+    .full { padding: 18px; opacity: 0; transition: opacity calc(260ms / var(--sp)) ease calc(60ms / var(--sp)); }
+    .card.open .full { opacity: 1; }
+    .full-top { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
+    .full-name { margin: 0; flex: 1; font-size: 15px; font-weight: 550; line-height: 22px; }
+    .full-kind { flex: 0 0 auto; color: var(--c); font-size: 11.5px; font-weight: 500; }
+    .note { margin: 0 0 12px; font-size: 13px; line-height: 19px; color: var(--ink-2); }
+
+    /* 外层只管灰底和内边距，overflow 裁在 padding box 上；
+       滚动交给里层，否则写满之后下一行会渗进底部内边距，看着像被切了半行。 */
+    .code {
+      padding: 13px 15px; border-radius: 12px; background: var(--surface);
+      overflow: hidden;
+    }
+    .code-in {
+      height: 100%; overflow-x: auto; overflow-y: auto; overscroll-behavior: contain;
+      font-family: var(--mono); font-size: 12px; line-height: var(--code-lh);
+      white-space: pre; color: var(--ink);
+      /* 跟随光标的滚动必须是瞬时的：smooth 会被下一行的赋值反复打断，结果一动不动。 */
+      scroll-behavior: auto;
+      scrollbar-width: thin; scrollbar-color: #cfd4db transparent;
+    }
+    .code-in::-webkit-scrollbar { width: 8px; height: 8px; }
+    .code-in::-webkit-scrollbar-thumb { background: #cfd4db; border-radius: 4px; border: 2px solid var(--surface); }
+    .code-in::-webkit-scrollbar-track { background: transparent; }
+    /* 行位不预留。行高瞬时到位，框在上一拍的换气里已经把地方腾好了。 */
+    .code-in .ln { height: 0; overflow: hidden; }
+    .code-in .ln.on { height: var(--code-lh); }
+    .caret {
+      display: inline-block; width: 6.5px; height: 13px; margin-left: 1px;
+      transform: translateY(2px); background: var(--c); opacity: .65;
+    }
+
+    .t-com { color: var(--t-com); }
+    .t-str { color: var(--t-str); }
+    .t-kw  { color: var(--t-kw); }
+    .t-ctl { color: var(--t-ctl); }
+    .t-typ { color: var(--t-typ); }
+    .t-num { color: var(--t-num); }
+    .t-fn  { color: var(--t-fn); }
+    .t-key, .t-lbl { color: var(--t-key); }
+
+    .top {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 50; height: 56px; padding: 0 24px;
+      display: flex; align-items: center; justify-content: space-between; gap: 20px; pointer-events: none;
+    }
+    .top > * { pointer-events: auto; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .logo { display: flex; align-items: center; gap: 7px; color: var(--ink); }
+    .logo svg { display: block; width: 22px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+    .logo span { font-size: 14px; font-weight: 560; letter-spacing: -.008em; }
+    .brand-sep { width: 1px; height: 14px; background: #d3d7dd; }
+    .wf-name { color: var(--ink-2); font-size: 13px; }
+    .proto-ctl { display: flex; align-items: center; gap: 13px; color: var(--ink-3); font-size: 12px; }
+    .proto-ctl button { color: var(--ink-3); font-size: 12px; }
+    .proto-ctl button:hover { color: var(--ink); }
+    .proto-ctl button[aria-pressed="true"] { color: var(--accent); }
+    .ctl-sep { width: 1px; height: 12px; background: #d3d7dd; }
+
+    /* ── 需求框 ───────────────────────────────────────────
+       从输入框里发出来的那条消息，落到右上角常驻，并挂全局状态。
+       飞行只动 transform 和 opacity：卡片从头到尾都是最终尺寸，
+       那段话一次都不重排。上一版让宽高一起过渡，文字在飞行途中反复换行，
+       那才是「生硬」的真正来源，不是曲线的问题。 */
+    .task {
+      position: fixed; right: 24px; top: 68px; z-index: 46;
+      width: 320px; padding: 13px 15px 12px; border-radius: 16px; background: var(--paper);
+      box-shadow: 0 12px 32px -16px rgba(20,26,38,.26), 0 0 0 1px rgba(20,26,38,.05);
+      transform-origin: 0 0; will-change: transform;
+    }
+    .task[hidden] { display: none; }
+    .task-label { display: block; margin-bottom: 4px; color: var(--ink-3); font-size: 11px; font-weight: 500; }
+    .task-text { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+    /* 状态栏在落位之后才撑开：飞行途中卡片只有标签和正文那么高，
+       正好贴着输入框的那句话，不会顶出一块空白。 */
+    .task-foot {
+      display: flex; align-items: center; gap: 10px;
+      height: 0; margin-top: 0; padding-top: 0; overflow: hidden;
+      border-top: 1px solid transparent; opacity: 0;
+      transition:
+        height 400ms var(--ease-out), margin-top 400ms var(--ease-out), padding-top 400ms var(--ease-out),
+        opacity 300ms ease 140ms, border-top-color 300ms ease 140ms;
+    }
+    /* 高度由 JS 量出来写进 --foot-h。这里是 border-box，
+       写死一个数字会把 padding-top 和分隔线也算进去，文字就被裁了。 */
+    .task.landed .task-foot {
+      height: var(--foot-h, 29px); margin-top: 11px; padding-top: 10px;
+      border-top-color: var(--line); opacity: 1;
+    }
+    .task.probe .task-foot { height: auto !important; transition: none !important; }
+    .task-state { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 12px; }
+    .task-state span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    /* 生成中是当前节点的颜色（哪一格在写），完成后是 ✓（全部立住了）。
+       两种形态都报得出一个判断——不留一个什么都不说的灰点。 */
+    .task-dot { position: relative; width: 12px; height: 12px; flex: 0 0 auto; }
+    .task-dot::after {
+      content: ""; position: absolute; inset: 2.5px; border-radius: 50%;
+      background: var(--dot, #c9ced6); transition: background 300ms ease;
+    }
+    .task-dot.done::after { display: none; }
+    .task-dot.done::before {
+      content: "✓"; position: absolute; inset: 0;
+      font-size: 12px; line-height: 12px; color: var(--ink-3);
+    }
+    .task-foot button { flex: 0 0 auto; color: var(--ink-3); font-size: 12px; white-space: nowrap; }
+    .task-foot button:hover { color: var(--ink); }
+    .task-foot button[hidden] { display: none; }
+
+
+    /* ── 台前调度式的交换 ───────────────────────────────────
+       点右上角的卡片，它长回中央；同一拍里画布往后退——缩一点、暗下去、
+       轻微失焦。两个动作同时发生，是一次交换，不是先消失再出现。
+       退的是深度不是平面：工作流留在原位，一个像素都没挪，
+       所以改完回来时，只有真正被改的那个节点是变了的。 */
+    .stage { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform, opacity, filter; }
+    .stage.recede {
+      transform: scale(.955); opacity: .3; filter: blur(2px); pointer-events: none;
+    }
+    .stage.swap { transition: transform calc(620ms / var(--sp)) var(--ease-out), opacity calc(520ms / var(--sp)) ease, filter calc(520ms / var(--sp)) ease; }
+
+    /* 停在右上角时它是可以点回来的，所以要说得出这件事。 */
+    .task.live { cursor: pointer; transition: box-shadow 180ms ease, transform 180ms var(--ease-out); }
+    .task.live:hover { box-shadow: 0 16px 40px -18px rgba(20,26,38,.32), 0 0 0 1px rgba(20,26,38,.09); transform: translateY(-1px); }
+
+    .plan-close {
+      margin-left: auto; flex: 0 0 auto; padding: 0; border: 0; background: none;
+      color: var(--ink-3); font: inherit; font-size: 12px; cursor: pointer;
+    }
+    .plan-close:hover { color: var(--ink); }
+    .plan-close[hidden] { display: none; }
+
+    /* 「开始」是个动作，不是一句要打出来的话。
+       它答完才出现——出现这件事本身就是提示，不用再写一句「现在可以开始了」。 */
+    .plan-go {
+      margin-left: auto; flex: 0 0 auto; padding: 6px 14px; border: 0; border-radius: 9px;
+      background: var(--accent); color: #fff; font: inherit; font-size: 12.5px; font-weight: 500;
+      cursor: pointer; transition: transform 140ms var(--ease-out), filter 140ms ease;
+    }
+    .plan-go:hover { filter: brightness(1.06); }
+    .plan-go.pressed { transform: scale(.96); filter: brightness(.94); }
+    .plan-go[hidden] { display: none; }
+
+    /* ── Plan 窗口 ─────────────────────────────────────────
+       画布还空着的时候，注意力本来就该在这儿，所以它占中央。
+       「需求」那两行和右上角 .task 的字号行高完全一致——谈完之后
+       整张卡收窄、正文塌掉、再飞过去，落位时那两行一个像素都不动，
+       所以它是同一张卡换了个形态，不是换了张图。 */
+    .plan {
+      position: fixed; left: 50%; top: 50%; z-index: 47;
+      width: 560px; max-width: calc(100vw - 48px);
+      padding: 18px 20px 16px; border-radius: 16px; background: var(--paper);
+      box-shadow: 0 12px 32px -16px rgba(20,26,38,.26), 0 0 0 1px rgba(20,26,38,.05);
+      transform-origin: 0 0;
+    }
+    /* 展开/收起走的是形变，不是两张卡互换：同一个元素的 left/top/width/padding
+       和正文高度一起连续变。左上角对齐那套（V6 的 flyTask）只适用于
+       「输入框里的一句话变成一张卡」——两端本来就是不同的东西，用户认那个叙事。
+       但右上角那张已经是卡了，再换一张进来就是替换，t=0 那一帧必然崩。 */
+    .plan.morph {
+      overflow: hidden;
+      transition:
+        left var(--mo, 560ms) var(--ease-out),
+        top var(--mo, 560ms) var(--ease-out),
+        width var(--mo, 560ms) var(--ease-out),
+        height var(--mo, 560ms) var(--ease-out),
+        padding var(--mo, 560ms) var(--ease-out);
+    }
+    /* 形变期间高度是显式动画的，正文只跟着裁。
+       不这么做，窄下去的一瞬间内容重排变高，会把卡片顶成一条又高又窄的白板——
+       那时 max-height 和 padding 的过渡都还没开始走，高度完全不受控。 */
+    .plan.morph .plan-body { overflow: hidden; }
+    /* 收拢时逐项贴合右上角那张卡，交接处才没有落差。 */
+    .plan.mini { padding: 13px 15px 12px; }
+    .plan.mini .plan-label { margin-bottom: 4px; }
+    .plan[hidden] { display: none; }
+    /* 和 .task-label / .task-text 逐项对齐，飞行落位才接得住。 */
+    .plan-label { display: block; margin-bottom: 4px; color: var(--ink-3); font-size: 11px; font-weight: 500; }
+    .plan-text  { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+
+    /* 正文整体可塌缩：收起来是一次布局变化，必须先走完，再开始飞。 */
+    .plan-body {
+      overflow: hidden; max-height: 0; opacity: 0;
+      transition: max-height var(--mo, 560ms) var(--ease-out), opacity calc(var(--mo, 560ms) * .55) ease, margin-top var(--mo, 560ms) var(--ease-out);
+    }
+        /* 展开态不写死上限：Plan 阶段内容是一条一条加进来的，写死了就长不动。
+       形变期间由 JS 写入真实高度的 px 值——70vh 那种「够用的大数」会让
+       前三成时间正文纹丝不动，而位置和宽度已经冲到位，中间就闪出一条
+       又高又窄的白条。 */
+    .plan.open .plan-body { max-height: none; opacity: 1; margin-top: 12px; overflow-y: auto; }
+
+
+    /* 一条一条落下来，不是一块一块闪出来。 */
+    .drop { animation: planDrop 380ms var(--ease-out) both; }
+    @keyframes planDrop { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+    /* 改写某一行：先淡掉再换字，让人看见是「这一行变了」，不是整栏重画。 */
+    .plan-pair dd { transition: opacity 160ms ease; }
+    .plan-pair dd.swap { opacity: 0; }
+    /* 状态那行的字也要换得看得见，否则一闪而过等于没说。 */
+    .plan-say { transition: color 200ms ease; }
+
+    .plan-sec { padding-top: 12px; border-top: 1px solid var(--line); }
+    .plan-sec + .plan-sec { margin-top: 12px; }
+    .plan-sec[hidden] { display: none; }
+    .plan-sec.enter { animation: planIn 420ms var(--ease-out) both; }
+    @keyframes planIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .plan-h { margin: 0 0 8px; color: var(--ink-3); font-size: 11px; font-weight: 500; }
+
+    /* 你说的 / 我的理解——并排，才对照得起来。 */
+    .plan-pair { display: grid; grid-template-columns: 96px 1fr; gap: 5px 14px; font-size: 12.5px; }
+    .plan-pair dt { color: var(--ink); }
+    .plan-pair dd { margin: 0; color: var(--ink-2); }
+    .plan-pair dd em { font-style: normal; color: var(--ink-3); }
+
+    /* 路线只说先后，不说数量和位置——所以是文字接文字，不是四个方框。 */
+    .plan-route { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 12.5px; color: var(--ink); }
+    .plan-route i { font-style: normal; color: var(--ink-3); }
+
+    .plan-ask { display: flex; gap: 9px; font-size: 12.5px; }
+    .plan-ask + .plan-ask { margin-top: 9px; }
+    .plan-ask.answered { opacity: .45; }
+    .plan-ask .q { flex: 0 0 auto; width: 15px; height: 15px; margin-top: 1px; border-radius: 50%;
+      display: grid; place-items: center; font-size: 10px; color: var(--paper); background: var(--accent); }
+    .plan-ask.answered .q { background: var(--ink-3); }
+    .plan-ask b { display: block; font-weight: 500; color: var(--ink); }
+    .plan-ask span { color: var(--ink-3); }
+
+    .plan-reach { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+
+    /* 对话就在这张卡里发生，不另开一处。只显示当前这一轮，不往上堆。 */
+    .plan-foot { display: flex; align-items: center; gap: 9px; margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--line); }
+    .plan-dot { width: 12px; height: 12px; flex: 0 0 auto; position: relative; }
+    .plan-dot::after { content: ""; position: absolute; inset: 2.5px; border-radius: 50%; background: var(--accent);
+      animation: planPulse 1.1s ease-in-out infinite; }
+    .plan-dot.done::after { animation: none; background: none; }
+    .plan-dot.done::before { content: "✓"; position: absolute; inset: 0; font-size: 12px; line-height: 12px; color: var(--ink-3); }
+    @keyframes planPulse { 0%,100% { opacity: .35; } 50% { opacity: 1; } }
+    .plan-say { flex: 1; min-width: 0; color: var(--ink-2); font-size: 12.5px; }
+    .plan-say.user { color: var(--ink); }
+
+    .zoom {
+      position: fixed; right: 24px; bottom: 26px; z-index: 50;
+      display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; background: var(--paper);
+      box-shadow: 0 4px 14px -6px rgba(20,26,38,.18), 0 0 0 1px rgba(20,26,38,.06);
+    }
+    .zoom button {
+      min-width: 30px; height: 28px; padding: 0 8px; border-radius: 8px;
+      color: var(--ink-2); font-size: 13px; line-height: 1; display: grid; place-items: center;
+      transition: background 140ms ease, color 140ms ease;
+    }
+    .zoom button:hover { background: var(--surface); color: var(--ink); }
+    .zoom .pct { min-width: 48px; font-size: 12px; font-variant-numeric: tabular-nums; }
+    .zoom .fit { font-size: 12px; }
+
+    /* 浮窗只剩「引擎节点」清单一处用。节点本身的详情用卡片自己的展开态，
+       同一个东西不给两种形态。 */
+    .win {
+      position: fixed; z-index: 60; width: 440px; max-width: calc(100vw - 32px);
+      border-radius: 18px; background: var(--paper);
+      box-shadow: 0 34px 70px -22px rgba(20,26,38,.34), 0 10px 20px -8px rgba(20,26,38,.10), 0 0 0 1px rgba(20,26,38,.06);
+      opacity: 0; transform: scale(.95);
+      transition: opacity 200ms var(--ease-out), transform 320ms var(--spring);
+    }
+    .win.open { opacity: 1; transform: scale(1); }
+    .win-head { padding: 14px 14px 13px 17px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+    .win-head h4 { margin: 0; flex: 1; font-size: 13.5px; font-weight: 550; line-height: 18px; }
+    .win-close { width: 22px; height: 22px; border-radius: 6px; color: var(--ink-3); font-size: 15px; display: grid; place-items: center; }
+    .win-close:hover { background: var(--surface); color: var(--ink); }
+
+    .eng-list { padding: 6px 17px 14px; }
+    .eng-row { display: flex; align-items: baseline; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .eng-row:last-child { border-bottom: 0; }
+    .eng-row span { flex: 0 0 124px; font-size: 12.5px; line-height: 17px; color: var(--ink); }
+    .eng-row code { flex: 1; min-width: 0; font-family: var(--mono); font-size: 10.5px; line-height: 17px; color: var(--ink-3); word-break: break-all; }
+
+    .dock { position: fixed; left: 50%; transform: translateX(-50%); bottom: 22px; z-index: 50; width: min(600px, calc(100vw - 48px)); }
+    .chip {
+      margin: 0 0 9px 3px; padding: 6px 12px; border-radius: 10px; background: var(--paper);
+      box-shadow: 0 0 0 1px var(--line); font-size: 12.5px; color: var(--ink-2);
+      opacity: 0; pointer-events: none;
+      transition: opacity 300ms ease, box-shadow 160ms ease, color 160ms ease;
+    }
+    .chip.visible { opacity: 1; pointer-events: auto; }
+    .chip:hover { color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .composer {
+      display: flex; align-items: flex-end; gap: 10px; padding: 8px 8px 8px 17px; border-radius: 22px;
+      background: var(--paper); box-shadow: 0 8px 24px -10px rgba(20,26,38,.20), 0 0 0 1px rgba(20,26,38,.06);
+    }
+    .composer textarea {
+      min-width: 0; flex: 1; height: 22px; max-height: 110px; padding: 5px 0;
+      border: 0; outline: none; background: transparent; resize: none; overflow: hidden;
+      font-size: 14.5px; line-height: 22px;
+    }
+    .composer textarea::placeholder { color: var(--ink-3); }
+    /* 发送的一瞬间输入框里的字淡出，同一位置上需求框淡入，接住这句话 */
+    .composer textarea.gone { opacity: 0; transition: opacity 140ms ease; }
+    .send {
+      width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center;
+      border-radius: 50%; background: var(--accent); color: #fff; font-size: 17px; line-height: 1;
+      transition: background 160ms ease;
+    }
+    .send:hover { background: #2458c7; }
+    .send:disabled { background: #ccd1d8; cursor: default; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+      .code { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="viewport" id="viewport">
+    <div class="stage" id="stage"><div class="world" id="world"><svg class="wires" id="wires"></svg></div></div>
+  </div>
+
+  <header class="top">
+    <div class="brand">
+      <span class="logo"><svg viewBox="0 0 24 20" aria-hidden="true"><rect x="1" y="5" width="8.5" height="10" rx="2.8"/><rect x="14.5" y="5" width="8.5" height="10" rx="2.8"/><path d="M9.5 10h5"/></svg><span>CanvasFlow</span></span>
+      <span class="brand-sep" aria-hidden="true"></span>
+      <span class="wf-name" id="wfName">未命名工作流</span>
+    </div>
+    <div class="proto-ctl">
+      <button type="button" id="speedBtn" aria-pressed="false">1×</button>
+      <span class="ctl-sep" aria-hidden="true"></span>
+      <button type="button" id="skipBtn">跳到完成态</button>
+      <span class="ctl-sep" aria-hidden="true"></span>
+      <button type="button" id="rerunBtn">重新演示</button>
+    </div>
+  </header>
+
+  <aside class="task" id="taskCard" hidden>
+    <b class="task-label">需求</b>
+    <p class="task-text" id="taskText"></p>
+    <div class="task-foot">
+      <span class="task-state"><i class="task-dot" id="taskDot"></i><span id="taskState"></span></span>
+      <button type="button" id="engBtn" hidden>查看引擎节点</button>
+    </div>
+  </aside>
+
+
+  <section class="plan" id="planCard" hidden>
+    <b class="plan-label">需求</b>
+    <p class="plan-text" id="planText"></p>
+    <div class="plan-body">
+      <div class="plan-sec" id="planSecU" hidden>
+        <p class="plan-h">理解</p>
+        <dl class="plan-pair" id="planPair"></dl>
+      </div>
+      <div class="plan-sec" id="planSecR" hidden>
+        <p class="plan-h">路线</p>
+        <div class="plan-route" id="planRoute"></div>
+      </div>
+      <div class="plan-sec" id="planSecA" hidden>
+        <p class="plan-h">待确认</p>
+        <div id="planAsks"></div>
+      </div>
+    </div>
+    <div class="plan-foot">
+      <i class="plan-dot" id="planDot"></i>
+      <span class="plan-say" id="planSay"></span>
+      <button class="plan-go" type="button" id="planGo" hidden>开始生成</button>
+      <button class="plan-close" type="button" id="planClose" hidden>收起</button>
+    </div>
+  </section>
+
+  <div class="zoom">
+    <button type="button" id="zoomOut" aria-label="缩小">−</button>
+    <button type="button" class="pct" id="zoomPct">100%</button>
+    <button type="button" id="zoomIn" aria-label="放大">+</button>
+    <button type="button" class="fit" id="zoomFit">适应</button>
+  </div>
+
+  <div class="dock">
+    <button class="chip" type="button" id="chip"></button>
+    <form class="composer" id="form">
+      <textarea id="input" rows="1" placeholder="描述你要做的数据处理" autocomplete="off" aria-label="描述你要做的数据处理"></textarea>
+      <button class="send" type="submit" aria-label="发送" disabled>↑</button>
+    </form>
+  </div>
+
+  <script src="workflow-rebuild-v6.js" defer></script>
+</body>
+</html>
