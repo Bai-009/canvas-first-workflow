@@ -8,7 +8,7 @@
   "required": ["readiness", "goal", "understanding", "steps", "openQuestions"],
   "properties": {
     "readiness": {
-      "description": "这条链路当前的可用程度。ready：该问的都问清了，可以运行；partial：形状对了，但还有参数要用户自己填。",
+      "description": "这条链路当前的可用程度。ready：该问的都问清了，可以交给执行；partial：形状对了，但还有参数要用户自己填。ready 不代表生成后的工作流一定能跑通，跑不跑得通由执行裁决。",
       "type": "string",
       "enum": ["ready", "partial"]
     },
