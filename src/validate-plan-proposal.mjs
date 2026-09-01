@@ -10,7 +10,8 @@ const schema = JSON.parse(
 );
 
 /* schema 是唯一来源：字段表、必填、取值范围全从它来，这里不再抄一遍。
-   Claude 在严格模式下按同一份 schema 约束模型输出，两边执行同一套规范。 */
+   生成端不依赖任何一家的强制（各家支持参差），这道闸门是唯一的保证：
+   校不过就把错误发回去让模型重交。 */
 const ajv = new Ajv({ allErrors: true, strict: true });
 const checkShape = ajv.compile(schema);
 

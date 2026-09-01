@@ -6,10 +6,11 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "plan": "node --env-file-if-exists=.env src/plan-agent.mjs",
     "validate:fixture": "node src/validate-plan-proposal.mjs fixtures/contract-processing.plan.json"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.9"
   },
   "devDependencies": {
     "ajv": "^8.20.0"
