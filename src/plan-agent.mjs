@@ -26,9 +26,10 @@ const MAX_GATE_RETRIES = 3;
    不引厂商 SDK,换模型只换地址、key、模型名。 */
 export function openAiCompatibleCaller({ baseUrl, apiKey, model }) {
   const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  return async function callModel(messages) {
+  return async function callModel(messages, { signal } = {}) {
     const response = await fetch(endpoint, {
       method: "POST",
+      signal,
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${apiKey}`,
@@ -51,13 +52,17 @@ export function openAiCompatibleCaller({ baseUrl, apiKey, model }) {
 /* 一轮设计:模型先说话,可能再提交一份方案。
    方案过闸门;没过就把错误原样发回去让它重交完整一份,重试有上限。
    模型不调工具就是只说话——信息不够先澄清,这个行为本身就是合法产出。 */
-export async function runPlanAgent({ callModel, messages, systemPrompt = defaultSystemPrompt }) {
+export async function runPlanAgent({ callModel, messages, systemPrompt = defaultSystemPrompt, signal }) {
   const transcript = [{ role: "system", content: systemPrompt }, ...messages];
   let lastErrors = [];
+  /* 说给人听的话要攒着:闸门打回之后模型重交时通常不再说话,
+     第一次说的那段不能因为重交而丢掉。 */
+  const spoken = [];
 
   for (let attempt = 0; attempt <= MAX_GATE_RETRIES; attempt++) {
-    const reply = await callModel(transcript);
-    const speech = reply.content ?? "";
+    const reply = await callModel(transcript, { signal });
+    if (reply.content) spoken.push(reply.content);
+    const speech = spoken.join("\n\n");
     const calls = reply.tool_calls ?? [];
 
     if (calls.length === 0) {
@@ -108,6 +113,17 @@ export async function runPlanAgent({ callModel, messages, systemPrompt = default
   );
 }
 
+/* 从 .env 组装调用器;三项缺一个就报错,不猜。 */
+export function callerFromEnv(env = process.env) {
+  const { MODEL_BASE_URL, MODEL_API_KEY, MODEL_NAME } = env;
+  if (!MODEL_BASE_URL || !MODEL_API_KEY || !MODEL_NAME) {
+    throw new Error(
+      "缺少模型配置。把 .env.example 抄成 .env,填上 MODEL_BASE_URL / MODEL_API_KEY / MODEL_NAME。"
+    );
+  }
+  return openAiCompatibleCaller({ baseUrl: MODEL_BASE_URL, apiKey: MODEL_API_KEY, model: MODEL_NAME });
+}
+
 async function runCli() {
   const description = process.argv.slice(2).join(" ").trim();
   if (!description) {
@@ -116,20 +132,14 @@ async function runCli() {
     return;
   }
 
-  const { MODEL_BASE_URL, MODEL_API_KEY, MODEL_NAME } = process.env;
-  if (!MODEL_BASE_URL || !MODEL_API_KEY || !MODEL_NAME) {
-    console.error(
-      "缺少模型配置。把 .env.example 抄成 .env,填上 MODEL_BASE_URL / MODEL_API_KEY / MODEL_NAME。"
-    );
+  let callModel;
+  try {
+    callModel = callerFromEnv();
+  } catch (error) {
+    console.error(error.message);
     process.exitCode = 2;
     return;
   }
-
-  const callModel = openAiCompatibleCaller({
-    baseUrl: MODEL_BASE_URL,
-    apiKey: MODEL_API_KEY,
-    model: MODEL_NAME,
-  });
 
   const { speech, plan } = await runPlanAgent({
     callModel,

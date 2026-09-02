@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { validatePlanProposal } from "./validate-plan-proposal.mjs";
+import { diffPlans } from "./plan-diff.mjs";
 
 /* 原型演示的数据从这里生成,不在前端代码里手写。
    来源是 fixtures/observed/ 里真实模型输出的一对修订轮方案:
@@ -34,9 +35,9 @@ const doneLine = (plan) =>
     plan.openQuestions.length ? `${plan.openQuestions.length} 项待确认` : "待确认已清"
   }`;
 
-const remaining = new Set(after.openQuestions.map((q) => q.ref));
+const gone = new Set(diffPlans(before, after).openQuestions.removed);
 const answeredAsks = before.openQuestions
-  .map((q, i) => (remaining.has(q.ref) ? null : i))
+  .map((q, i) => (gone.has(q.ref) ? i : null))
   .filter((i) => i !== null);
 
 const data = {

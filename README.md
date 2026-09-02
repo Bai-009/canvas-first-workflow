@@ -43,7 +43,8 @@ Plan Agent 这一段是这么切的：
 | Plan Gate `src/validate-plan-proposal.mjs` | 有，测试守着 |
 | Plan Agent 系统提示词 `prompts/plan-agent.md` | 有，中文原文加英文译本 |
 | 提交工具与调用循环 `src/plan-agent.mjs` | 有。任何 OpenAI 兼容接口都能接，目前只在 DeepSeek 上跑过 |
-| 真模型验证 | 有。deepseek-v4-pro 上跑过三个场景加一轮修订，原始输出在 `fixtures/observed/`，行为记录在 `docs/观察.md` |
+| Plan 阶段的多轮会话 `src/plan-session.mjs` | 有。攒对话记录，方案只在过闸时换，回合制，能停 |
+| 真模型验证 | 有。deepseek-v4-pro 上跑过三个场景、三次修订轮，原始输出和完整对话记录在 `fixtures/observed/`，行为记录在 `docs/观察.md` |
 | 画布原型 `prototype/` | 有。Plan 阶段的内容是真实模型输出，执行阶段是手写的愿景演示 |
 | Execution Agent 的输出契约与画布侧 Gate | 没有 |
 | 状态机 | 没有 |
@@ -78,6 +79,12 @@ npm run plan -- "每天定时把新增的合同 PDF 解析出关键字段，写�
 
 提示词默认用中文版。想试英文译本，在 `.env` 里加一行 `PLAN_PROMPT_LANG=en`。
 
+多轮聊，一行一轮，用户补一句模型就整份重推。加 `--save <目录>` 把每一轮的原始输出和完整对话记录存下来，`fixtures/observed/` 里的实录就是这么来的：
+
+```bash
+npm run plan:chat -- --save fixtures/observed/我的一次运行
+```
+
 校验一份方案文件：
 
 ```bash
@@ -105,7 +112,7 @@ node src/build-demo-data.mjs
 ```
 contracts/   契约。目前只有 PlanProposal
 prompts/     Plan Agent 的系统提示词，中文原文与英文译本
-src/         Gate、提交工具定义、厂商中立的调用循环、演示数据生成
+src/         Gate、提交工具定义、厂商中立的调用循环、Plan 会话与多轮命令、演示数据生成
 test/        Gate、工具定义、调用循环的测试
 fixtures/    手写的设计样例，以及 observed/ 里真模型的原始输出
 docs/

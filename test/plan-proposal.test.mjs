@@ -114,3 +114,19 @@ test("回读必须带上用户原话", () => {
   assert.equal(result.ok, false);
   assert.match(result.errors.join("\n"), /不能是空字符串/);
 });
+
+/* 备选项是被真模型逼出来的:首轮它在 q2 的问题文本里自己塞了三个选项,没地方放。 */
+test("问题可以带备选项,用户可选可写", () => {
+  const proposal = clone(fixture);
+  proposal.openQuestions[0].options = ["按文件落库时间", "按文件名", "按合同编号去重"];
+  assert.deepEqual(validatePlanProposal(proposal), { ok: true, errors: [] });
+});
+
+test("备选项不能重复,也不能是空串", () => {
+  const duplicated = clone(fixture);
+  duplicated.openQuestions[0].options = ["扫描件", "扫描件"];
+  assert.equal(validatePlanProposal(duplicated).ok, false);
+  const blank = clone(fixture);
+  blank.openQuestions[0].options = [""];
+  assert.equal(validatePlanProposal(blank).ok, false);
+});

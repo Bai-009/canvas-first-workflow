@@ -57,6 +57,22 @@ test("坏方案被闸门打回,错误发回模型,重交好的就收下", async 
   assert.match(feedback.content, /extra/);
 });
 
+/* 真模型实录(run5):第一次提交多了个字段被打回,重交时一句话没说。
+   给人看的那段话在第一次里,不能因为重交而丢。 */
+test("闸门打回重交时,第一次说的话不丢", async () => {
+  const badPlan = { ...goodPlan, description: "多出来的字段" };
+  const fake = fakeModel([
+    replyWithPlan(badPlan, "我先按带文字层来画,扫描件留成了选项。"),
+    replyWithPlan(goodPlan, ""),
+  ]);
+  const result = await runPlanAgent({
+    callModel: fake.callModel,
+    messages: [{ role: "user", content: "每天同步新增合同" }],
+  });
+  assert.deepEqual(result.plan, goodPlan);
+  assert.match(result.speech, /带文字层/);
+});
+
 test("连续交坏方案,超过重试上限就停,不无限打转", async () => {
   const badPlan = { ...goodPlan, readiness: "blocked" };
   const fake = fakeModel([

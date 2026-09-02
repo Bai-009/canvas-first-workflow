@@ -12,7 +12,7 @@ test("工具叫 propose_plan,带说明", () => {
 });
 
 test("工具参数就是契约本身,改了契约这里自动跟着变", () => {
-  const { $schema, $id, title, ...expected } = contract;
+  const { $schema, $id, title, description, ...expected } = contract;
   assert.deepEqual(proposePlanTool.parameters, expected);
 });
 
@@ -20,4 +20,7 @@ test("契约文件自己的元数据不进工具参数", () => {
   assert.ok(!("$schema" in proposePlanTool.parameters));
   assert.ok(!("$id" in proposePlanTool.parameters));
   assert.ok(!("title" in proposePlanTool.parameters));
+  /* 顶层 description 会被模型当成字段填回来(run5、run6 实录),所以也不进 */
+  assert.ok(!("description" in proposePlanTool.parameters));
+  assert.ok("description" in proposePlanTool.parameters.properties.readiness);
 });
