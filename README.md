@@ -49,7 +49,7 @@ Plan Agent 这一段是这么切的：
 | 状态机 `src/state-machine/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
 | 画布侧 Gate | 一半。机器能查的几条在状态机里（节点标的是哪一步、编号不撞、线接在存在的节点上、走完整张画布查形状）；节点类型对平台目录的检查要等执行者带着目录来 |
 | 平台目录与检索工具 `src/executor/n8n-catalog.mjs` | 有。从 n8n 官方镜像导出全部 559 种节点的参数说明（`fixtures/n8n/catalog.json`，脚本可重新导出）。给模型的不是整份目录，是三层披露：常驻十来行、搜索回候选、点名才给参数，分操作的节点先给操作菜单 |
-| Execution Agent 与它的输出契约 | 没有。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
+| Execution Agent 与它的输出契约 | 一半。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、它眼前三个工具的说明、交回的形状的契约（`contracts/step-submission.schema.json`）定了，怎么定的见 `docs/执行者.md`。让模型来回查、看、交的循环还没写，所以还没在真模型上跑过。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
 
 所以现在这个仓库是：**设计者这一半做出来了，在真模型上验过；状态机做出来了，测试守着；执行者本身还没有，画布上那段生长在原型里是演的，在命令行里是固定答复走出来的。**
 
@@ -115,17 +115,18 @@ node src/prototype/build-demo-data.mjs
 2. [prompts/plan-agent.md](prompts/plan-agent.md) 和 [contracts/plan-proposal.schema.json](contracts/plan-proposal.schema.json)：设计者被要求做什么，交出来的东西长什么样。
 3. [docs/观察.md](docs/观察.md) 和 `fixtures/observed/`：真模型实际做了什么，哪些成立，哪些裁定不是问题。
 4. [docs/架构.md](docs/架构.md)：四个角色的完整设计，包括还没做的执行者和状态机。
+5. [docs/执行者.md](docs/执行者.md)：执行者的提示词是怎么一条条推出来的，还没做的部分。
 5. `prototype/`：看一遍演示，再看 [prototype/修改本.md](prototype/修改本.md) 里每一处改动的为什么。
 
 ## 目录
 
 ```
 contracts/   契约。目前只有 PlanProposal
-prompts/     Plan Agent 的系统提示词，中文原文与英文译本
+prompts/     系统提示词：Plan Agent 中文原文与英文译本；执行者英文为主（中文副本待写）
 src/
   plan/          设计者这一半：Gate、提交工具定义、调用循环、方案差异、Plan 会话
   state-machine/ 状态机：从方案里读走步顺序与拼上下文、开始/停/批注/走步/画布/记录
-  executor/      执行者这一半：平台目录的搜索与详情（执行者本体还没写）
+  executor/      执行者这一半：平台目录的搜索与详情、交步的工具定义（循环本体还没写）
   model/         跟模型说话的插座，OpenAI 兼容，两半共用
   cli/           多轮命令 plan:chat
   prototype/     给画布原型生成演示数据
@@ -136,6 +137,7 @@ docs/
   取舍.md      每一刀背后的麻烦与放弃的路
   架构.md      四个角色、两段主链路、裁决点
   状态机.md    回合制、账本、执行阶段的七条规则、代码做成了什么、待确认的洞
+  执行者.md    提示词是怎么一条条推出来的、行家的写法、还没做的
   plan-契约.md PlanProposal 各字段为什么长这样
   观察.md      真模型的行为记录
   词表.md      我们的说法和代码里、行业里说法的对照

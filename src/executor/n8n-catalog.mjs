@@ -139,16 +139,21 @@ export function summarize(types) {
   });
 }
 
-/* 给模型的两个工具,OpenAI 兼容格式。 */
+/* 给模型的两个查目录的工具,OpenAI 兼容格式。工具怎么用写在这里,提示词里只留判断。
+   第三个工具 submit_step 在 submit-step-tool.mjs。 */
 export const catalogTools = [
   {
     type: "function",
     function: {
       name: "search_nodes",
-      description: "Search the platform's node catalog. Use English keywords describing what the step must do (e.g. \"read files from disk\", \"insert rows postgres\"). Returns a few candidates with one-line descriptions; call describe_node for the one you pick.",
+      description:
+        "Search the platform's node catalog by keywords. Use it when no resident node fits the action this step needs. " +
+        "Give 2-5 English keywords naming the action and the object (\"ocr pdf image\", \"insert rows postgres\", \"send message slack\"); node names and descriptions are in English. " +
+        "Returns up to 6 candidates, each with type, display name, a one-line description and its kind (trigger, action or sub-node). " +
+        "Pick one and call describe_node; if nothing fits, search again with different words.",
       parameters: {
         type: "object",
-        properties: { query: { type: "string", description: "English keywords" } },
+        properties: { query: { type: "string", description: "2-5 English keywords for the action and its object" } },
         required: ["query"],
         additionalProperties: false,
       },
@@ -158,13 +163,18 @@ export const catalogTools = [
     type: "function",
     function: {
       name: "describe_node",
-      description: "Get a node's parameters (names, types, defaults, required, options). Nodes with several operations return the operation menu first; call again with operation set to get that operation's parameters.",
+      description:
+        "Return a node's parameters: name, type, default, whether required, allowed options, plus the credentials the node needs. " +
+        "Call it for every node you will use, before filling parameters. " +
+        "Nodes with several operations (Postgres, Extract from File, HTTP Request, ...) return an operation menu first and no operation-specific parameters; " +
+        "call again with `operation` (and `resource`, when the menu lists resources) set to one of the menu values to get that operation's parameters. " +
+        "A parameter name that is not in this response does not exist on the node.",
       parameters: {
         type: "object",
         properties: {
-          type: { type: "string", description: "Node type, e.g. n8n-nodes-base.postgres" },
-          resource: { type: "string" },
-          operation: { type: "string" },
+          type: { type: "string", description: "Node type exactly as returned by search_nodes or listed under resident nodes, e.g. n8n-nodes-base.postgres" },
+          resource: { type: "string", description: "One of the resource values from the menu, when the node has resources" },
+          operation: { type: "string", description: "One of the operation values from the menu" },
         },
         required: ["type"],
         additionalProperties: false,
