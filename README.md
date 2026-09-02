@@ -20,7 +20,7 @@
 
 ![架构总览：浏览器、工作流生成系统、外部三块；实线框做了，虚线框是设计稿](docs/assets/architecture.png)
 
-四个角色里，目前做出来并在真模型上验证过的是 Plan Agent 和它的 Gate。Execution Agent 和状态机还是设计稿。
+四个角色里，做出来并在真模型上验证过的是 Plan Agent 和它的 Gate；状态机也做出来了，测试守着，命令行里按得到。Execution Agent 还没有，状态机上给它留的是一个插口。
 
 Plan Agent 这一段是这么切的：
 
@@ -46,10 +46,11 @@ Plan Agent 这一段是这么切的：
 | Plan 阶段的多轮会话 `src/plan-session.mjs` | 有。攒对话记录，方案只在过闸时换，回合制，能停 |
 | 真模型验证 | 有。deepseek-v4-pro 上跑过三个场景、三次修订轮，原始输出和完整对话记录在 `fixtures/observed/`，行为记录在 `docs/观察.md` |
 | 画布原型 `prototype/` | 有。Plan 阶段的内容是真实模型输出，执行阶段是手写的愿景演示 |
-| Execution Agent 的输出契约与画布侧 Gate | 没有 |
-| 状态机 | 没有 |
+| 状态机 `src/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
+| 画布侧 Gate | 一半。机器能查的几条在状态机里（节点标的是哪一步、编号不撞、线接在存在的节点上、走完整张画布查形状）；节点类型对平台目录的检查要等执行者带着目录来 |
+| Execution Agent 与它的输出契约 | 没有。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
 
-所以现在这个仓库是：**设计者这一半做出来了，在真模型上验过；执行者那一半还是设计稿，画布上那段生长是演的。**
+所以现在这个仓库是：**设计者这一半做出来了，在真模型上验过；状态机做出来了，测试守着；执行者本身还没有，画布上那段生长在原型里是演的，在命令行里是固定答复走出来的。**
 
 ## 原型里哪些是真的
 
@@ -85,6 +86,14 @@ npm run plan -- "每天定时把新增的合同 PDF 解析出关键字段，写�
 npm run plan:chat -- --save fixtures/observed/我的一次运行
 ```
 
+同一个命令行里有三个按钮：`/start` 按开始，状态机从 s1 起一步一步交给执行者；`/note s1 文字` 在 s1 上批注，下次 `/start` 执行者会看到；`/canvas` 看画布。执行者用 `EXECUTOR_MODULE=路径` 插进来（默认导出一个 async 函数）；没插的时候 `/start` 会明说做不了。想看状态机怎么动，插测试用的固定答复：
+
+```bash
+EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs npm run plan:chat
+```
+
+它交回的节点类型明写「固定答复(不是真节点)」，不是执行者。`fixtures/observed/run9-状态机走步-固定答复/` 是这么跑出来的一份记录：真模型出的方案，固定答复走的步。
+
 校验一份方案文件：
 
 ```bash
@@ -112,14 +121,14 @@ node src/build-demo-data.mjs
 ```
 contracts/   契约。目前只有 PlanProposal
 prompts/     Plan Agent 的系统提示词，中文原文与英文译本
-src/         Gate、提交工具定义、厂商中立的调用循环、Plan 会话与多轮命令、演示数据生成
-test/        Gate、工具定义、调用循环的测试
-fixtures/    手写的设计样例，以及 observed/ 里真模型的原始输出
+src/         Gate、提交工具定义、厂商中立的调用循环、Plan 会话、状态机（走步、画布、记录）、多轮命令、演示数据生成
+test/        Gate、工具定义、调用循环、Plan 会话、状态机的测试
+fixtures/    手写的设计样例，observed/ 里真模型的原始输出，doubles/ 里测试用的固定答复执行者
 docs/
   assets/      README 里的架构总览图，src/ 是它的网页源文件
   取舍.md      每一刀背后的麻烦与放弃的路
   架构.md      四个角色、两段主链路、裁决点
-  状态机.md    回合制、账本、执行阶段的七条规则和待确认的洞
+  状态机.md    回合制、账本、执行阶段的七条规则、代码做成了什么、待确认的洞
   plan-契约.md PlanProposal 各字段为什么长这样
   观察.md      真模型的行为记录
   词表.md      我们的说法和代码里、行业里说法的对照
