@@ -49,7 +49,7 @@ Plan Agent 这一段是这么切的：
 | 状态机 `src/state-machine/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
 | 画布侧 Gate | 一半。机器能查的几条在状态机里（节点标的是哪一步、编号不撞、线接在存在的节点上、走完整张画布查形状）；节点类型对平台目录的检查要等执行者带着目录来 |
 | 平台目录与检索工具 `src/executor/n8n-catalog.mjs` | 有。从 n8n 官方镜像导出全部 559 种节点的参数说明（`fixtures/n8n/catalog.json`，脚本可重新导出）。给模型的不是整份目录，是三层披露：常驻十来行、搜索回候选、点名才给参数，分操作的节点先给操作菜单 |
-| Execution Agent 与它的输出契约 | 一半。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、它眼前三个工具的说明、交回的形状的契约（`contracts/step-submission.schema.json`）定了，怎么定的见 `docs/执行者.md`。让模型来回查、看、交的循环还没写，所以还没在真模型上跑过。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
+| Execution Agent 与它的输出契约 | 一半。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、三个工具的说明、交回形状的契约（`contracts/step-submission.schema.json`）、让模型来回查看交的循环（`src/executor/executor.mjs`）都有了，在真模型上单独跑过一步（`fixtures/observed/run10-执行者-s1/`）。还没接进状态机，怎么定的和还差什么见 `docs/执行者.md`。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
 
 所以现在这个仓库是：**设计者这一半做出来了，在真模型上验过；状态机做出来了，测试守着；执行者本身还没有，画布上那段生长在原型里是演的，在命令行里是固定答复走出来的。**
 
@@ -126,7 +126,7 @@ prompts/     系统提示词：Plan Agent 中文原文与英文译本；执行�
 src/
   plan/          设计者这一半：Gate、提交工具定义、调用循环、方案差异、Plan 会话
   state-machine/ 状态机：从方案里读走步顺序与拼上下文、开始/停/批注/走步/画布/记录
-  executor/      执行者这一半：平台目录的搜索与详情、交步的工具定义（循环本体还没写）
+  executor/      执行者：平台目录的搜索与详情、交步的工具定义、一步的来回（还没接进状态机）
   model/         跟模型说话的插座，OpenAI 兼容，两半共用
   cli/           多轮命令 plan:chat
   prototype/     给画布原型生成演示数据
