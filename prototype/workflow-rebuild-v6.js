@@ -292,8 +292,8 @@
       engine: "catalog:workflow.cron_volume.dispatch",
       lang: "kv", hold: 700,
       content: [
-        "cron          0 8 * * *          Asia/Shanghai",
-        "首次          2026-08-01  08:00",
+        "cron          0 8 * * *          默认时间，用户未指定",
+        "首次          下一次到点",
         "增量          只处理游标之后新增的文件",
         "游标字段      last_modified",
         "超时          单次运行上限 90 分钟",
@@ -307,7 +307,7 @@
         "并发          单实例，不允许重叠运行",
         "保留          运行记录保留 90 天",
       ],
-      title: "每天 08:00 增量运行", evidence: "下次 08-01 08:00",
+      title: "每天定时增量运行", evidence: "时间取默认 08:00 · 可改",
     },
   ];
 
