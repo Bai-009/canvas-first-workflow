@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { validatePlanProposal } from "./validate-plan-proposal.mjs";
-import { diffPlans } from "./plan-diff.mjs";
+import { validatePlanProposal } from "../plan/validate-plan-proposal.mjs";
+import { diffPlans } from "../plan/plan-diff.mjs";
 
 /* 原型演示的数据从这里生成,不在前端代码里手写。
    来源是 fixtures/observed/ 里真实模型输出的一对修订轮方案:
@@ -13,8 +13,8 @@ import { diffPlans } from "./plan-diff.mjs";
 const read = (rel) =>
   JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 
-const before = read("../fixtures/observed/run4-修订轮-第一轮.plan.json");
-const after = read("../fixtures/observed/run4-修订轮.plan.json");
+const before = read("../../fixtures/observed/run4-修订轮/turn-1.plan.json");
+const after = read("../../fixtures/observed/run4-修订轮/turn-2.plan.json");
 
 for (const [name, plan] of [["第一轮", before], ["第二轮", after]]) {
   const gate = validatePlanProposal(plan);
@@ -56,10 +56,10 @@ const data = {
   },
 };
 
-const out = fileURLToPath(new URL("../prototype/plan-data.js", import.meta.url));
+const out = fileURLToPath(new URL("../../prototype/plan-data.js", import.meta.url));
 writeFileSync(
   out,
-  `/* 由 src/build-demo-data.mjs 生成,不要手改。
+  `/* 由 src/prototype/build-demo-data.mjs 生成,不要手改。
    数据是真实模型输出(fixtures/observed/ 的修订轮一对),生成时已过闸门。 */
 window.PLAN_DATA = ${JSON.stringify(data, null, 2)};
 `

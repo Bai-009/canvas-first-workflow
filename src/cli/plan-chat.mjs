@@ -3,8 +3,8 @@ import { stdin as input, stdout as output } from "node:process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { callerFromEnv, loadSystemPrompt } from "./plan-agent.mjs";
-import { createWorkflowSession } from "./workflow-session.mjs";
+import { callerFromEnv, loadSystemPrompt } from "../plan/plan-agent.mjs";
+import { createWorkflowSession } from "../state-machine/workflow-session.mjs";
 
 /* 多轮命令:一行一轮。对话记录攒着,过了闸门的方案换成当前方案,
    正在跑的一轮可以 Ctrl-C 停掉(那轮作废,只留你那句)。

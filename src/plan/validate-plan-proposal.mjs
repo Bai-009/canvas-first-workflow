@@ -6,7 +6,7 @@ import Ajv from "ajv/dist/2020.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = JSON.parse(
-  readFileSync(resolve(here, "../contracts/plan-proposal.schema.json"), "utf8")
+  readFileSync(resolve(here, "../../contracts/plan-proposal.schema.json"), "utf8")
 );
 
 /* schema 是唯一来源：字段表、必填、取值范围全从它来，这里不再抄一遍。
@@ -122,7 +122,7 @@ export function validatePlanProposal(value) {
 async function runCli() {
   const file = process.argv[2];
   if (!file) {
-    console.error("用法：node src/validate-plan-proposal.mjs <plan.json>");
+    console.error("用法：node src/plan/validate-plan-proposal.mjs <plan.json>");
     process.exitCode = 2;
     return;
   }

@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { diffPlans } from "../src/plan-diff.mjs";
+import { diffPlans } from "../../src/plan/plan-diff.mjs";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
-const before = read("../fixtures/observed/run4-修订轮-第一轮.plan.json");
-const after = read("../fixtures/observed/run4-修订轮.plan.json");
+const before = read("../../fixtures/observed/run4-修订轮/turn-1.plan.json");
+const after = read("../../fixtures/observed/run4-修订轮/turn-2.plan.json");
 
 test("修订轮实录:s1 s2 原地改,s3 s4 沿用,q1 q2 消失,u5 u6 新增", () => {
   const d = diffPlans(before, after);

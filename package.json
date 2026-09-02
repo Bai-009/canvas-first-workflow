@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "plan": "node --env-file-if-exists=.env src/plan-agent.mjs",
-    "plan:chat": "node --env-file-if-exists=.env src/plan-chat.mjs",
-    "validate:fixture": "node src/validate-plan-proposal.mjs fixtures/contract-processing.plan.json"
+    "plan": "node --env-file-if-exists=.env src/plan/plan-agent.mjs",
+    "plan:chat": "node --env-file-if-exists=.env src/cli/plan-chat.mjs",
+    "validate:fixture": "node src/plan/validate-plan-proposal.mjs fixtures/contract-processing.plan.json"
   },
   "engines": {
     "node": ">=22.9"

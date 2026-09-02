@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createWorkflowSession, checkResult, wholeCanvasProblems } from "../src/workflow-session.mjs";
+import { createWorkflowSession, checkResult, wholeCanvasProblems } from "../../src/state-machine/workflow-session.mjs";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
-const run8 = read("../fixtures/observed/run8-原因版提示词/turn-2.plan.json");
+const run8 = read("../../fixtures/observed/run8-原因版提示词/turn-2.plan.json");
 
 /* 假模型:每次都把 run8 那份方案提交上来,好让会话手里有方案。 */
 let callCounter = 0;

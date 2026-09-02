@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { validatePlanProposal } from "../src/validate-plan-proposal.mjs";
+import { validatePlanProposal } from "../../src/plan/validate-plan-proposal.mjs";
 
 const fixture = JSON.parse(
-  await readFile(new URL("../fixtures/contract-processing.plan.json", import.meta.url), "utf8")
+  await readFile(new URL("../../fixtures/contract-processing.plan.json", import.meta.url), "utf8")
 );
 
 function clone(value) {

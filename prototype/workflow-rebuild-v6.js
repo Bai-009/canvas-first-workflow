@@ -76,7 +76,7 @@
   const nodeX = (i) => i * PITCH;
 
   /* ── Plan 阶段的内容:真实数据 ─────────────────────────
-     v7 起不再手写。plan-data.js 由 src/build-demo-data.mjs 从
+     v7 起不再手写。plan-data.js 由 src/prototype/build-demo-data.mjs 从
      fixtures/observed/ 里真实模型输出的修订轮一对生成,生成时过闸门。
      对话、理解、路线、待确认、答掉哪几个,全部来自实录。 */
   const DATA = window.PLAN_DATA;

@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { stepOrder, questionsFor, assembleTable } from "../src/step-context.mjs";
+import { stepOrder, questionsFor, assembleTable } from "../../src/state-machine/step-context.mjs";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
-const run8 = read("../fixtures/observed/run8-原因版提示词/turn-2.plan.json");
+const run8 = read("../../fixtures/observed/run8-原因版提示词/turn-2.plan.json");
 
 test("run8 四步按接在谁后面排成 s1 s2 s3 s4", () => {
   assert.deepEqual(stepOrder(run8), ["s1", "s2", "s3", "s4"]);

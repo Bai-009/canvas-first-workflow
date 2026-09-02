@@ -2,12 +2,13 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { proposePlanTool } from "./propose-plan-tool.mjs";
 import { validatePlanProposal } from "./validate-plan-proposal.mjs";
+import { callerFromEnv as modelCallerFromEnv } from "../model/openai-compatible.mjs";
 
 /* 提示词两版:中文是原文,英文是按语境译的,分节一一对应。
    默认中文;PLAN_PROMPT_LANG=en 换英文版。 */
 const promptFiles = {
-  zh: new URL("../prompts/plan-agent.md", import.meta.url),
-  en: new URL("../prompts/plan-agent.en.md", import.meta.url),
+  zh: new URL("../../prompts/plan-agent.md", import.meta.url),
+  en: new URL("../../prompts/plan-agent.en.md", import.meta.url),
 };
 
 export function loadSystemPrompt(lang = "zh") {
@@ -21,33 +22,6 @@ export function loadSystemPrompt(lang = "zh") {
 const defaultSystemPrompt = loadSystemPrompt("zh");
 
 const MAX_GATE_RETRIES = 3;
-
-/* 通用插座:任何 OpenAI 兼容接口都能接(DeepSeek、Kimi、Ollama、vLLM……)。
-   不引厂商 SDK,换模型只换地址、key、模型名。 */
-export function openAiCompatibleCaller({ baseUrl, apiKey, model }) {
-  const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
-  return async function callModel(messages, { signal } = {}) {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      signal,
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        tools: [{ type: "function", function: proposePlanTool }],
-        tool_choice: "auto",
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`模型接口返回 ${response.status}：${await response.text()}`);
-    }
-    const body = await response.json();
-    return body.choices[0].message;
-  };
-}
 
 /* 一轮设计:模型先说话,可能再提交一份方案。
    方案过闸门;没过就把错误原样发回去让它重交完整一份,重试有上限。
@@ -113,15 +87,9 @@ export async function runPlanAgent({ callModel, messages, systemPrompt = default
   );
 }
 
-/* 从 .env 组装调用器;三项缺一个就报错,不猜。 */
+/* 设计者的调用器:通用插座加上它唯一的工具 propose_plan。 */
 export function callerFromEnv(env = process.env) {
-  const { MODEL_BASE_URL, MODEL_API_KEY, MODEL_NAME } = env;
-  if (!MODEL_BASE_URL || !MODEL_API_KEY || !MODEL_NAME) {
-    throw new Error(
-      "缺少模型配置。把 .env.example 抄成 .env,填上 MODEL_BASE_URL / MODEL_API_KEY / MODEL_NAME。"
-    );
-  }
-  return openAiCompatibleCaller({ baseUrl: MODEL_BASE_URL, apiKey: MODEL_API_KEY, model: MODEL_NAME });
+  return modelCallerFromEnv(env, { tools: [{ type: "function", function: proposePlanTool }] });
 }
 
 async function runCli() {

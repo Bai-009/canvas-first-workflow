@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 // $schema/$id/title 是契约文件自己的元数据,不属于工具参数,去掉;其余原样保留。
 // 各家模型对"生成时强制符合 schema"的支持参差不齐,所以这份 schema 对模型只是说明书,
 // 真正的强制在闸门(validate-plan-proposal.mjs):校不过就打回重试。
-const contractUrl = new URL("../contracts/plan-proposal.schema.json", import.meta.url);
+const contractUrl = new URL("../../contracts/plan-proposal.schema.json", import.meta.url);
 /* 契约文件顶层的 description 不进工具参数:真模型两次都把它当成一个字段填了进来
    (run5、run6 首轮各被闸门打回一次)。它说的"每一轮都是完整的一份"在工具说明里另有一句。 */
 const { $schema, $id, title, description: _contractNote, ...parameters } = JSON.parse(

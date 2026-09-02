@@ -6,3 +6,6 @@ dist/
 !.env.example
 .DS_Store
 
+
+# n8n 原始导出,体积大,能用脚本重新生成
+.cache/

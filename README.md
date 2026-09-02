@@ -40,14 +40,15 @@ Plan Agent 这一段是这么切的：
 | | 状态 |
 |---|---|
 | Plan 契约 `contracts/plan-proposal.schema.json` | 有 |
-| Plan Gate `src/validate-plan-proposal.mjs` | 有，测试守着 |
+| Plan Gate `src/plan/validate-plan-proposal.mjs` | 有，测试守着 |
 | Plan Agent 系统提示词 `prompts/plan-agent.md` | 有，中文原文加英文译本 |
-| 提交工具与调用循环 `src/plan-agent.mjs` | 有。任何 OpenAI 兼容接口都能接，目前只在 DeepSeek 上跑过 |
-| Plan 阶段的多轮会话 `src/plan-session.mjs` | 有。攒对话记录，方案只在过闸时换，回合制，能停 |
+| 提交工具与调用循环 `src/plan/plan-agent.mjs` | 有。任何 OpenAI 兼容接口都能接，目前只在 DeepSeek 上跑过 |
+| Plan 阶段的多轮会话 `src/plan/plan-session.mjs` | 有。攒对话记录，方案只在过闸时换，回合制，能停 |
 | 真模型验证 | 有。deepseek-v4-pro 上跑过三个场景、三次修订轮，原始输出和完整对话记录在 `fixtures/observed/`，行为记录在 `docs/观察.md` |
 | 画布原型 `prototype/` | 有。Plan 阶段的内容是真实模型输出，执行阶段是手写的愿景演示 |
-| 状态机 `src/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
+| 状态机 `src/state-machine/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
 | 画布侧 Gate | 一半。机器能查的几条在状态机里（节点标的是哪一步、编号不撞、线接在存在的节点上、走完整张画布查形状）；节点类型对平台目录的检查要等执行者带着目录来 |
+| 平台目录与检索工具 `src/executor/n8n-catalog.mjs` | 有。从 n8n 官方镜像导出全部 559 种节点的参数说明（`fixtures/n8n/catalog.json`，脚本可重新导出）。给模型的不是整份目录，是三层披露：常驻十来行、搜索回候选、点名才给参数，分操作的节点先给操作菜单 |
 | Execution Agent 与它的输出契约 | 没有。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
 
 所以现在这个仓库是：**设计者这一半做出来了，在真模型上验过；状态机做出来了，测试守着；执行者本身还没有，画布上那段生长在原型里是演的，在命令行里是固定答复走出来的。**
@@ -56,7 +57,7 @@ Plan Agent 这一段是这么切的：
 
 原型是一个静态页面，不调用模型。它演的是一次完整的交互：用户打一句话，Plan 卡片长出理解、路线和待确认，用户补一句，卡片原地更新，然后画布上长出工作流。
 
-- 打字之后到「开始生成」之前，卡片上的每一个字都是真的。它们来自 deepseek-v4-pro 提交、Gate 放行的两份方案（`fixtures/observed/run4-*`），由 `src/build-demo-data.mjs` 生成成 `prototype/plan-data.js`。哪些问题被答掉、哪一步原地改，是拿两份方案的编号差异算出来的，不是手标的。
+- 打字之后到「开始生成」之前，卡片上的每一个字都是真的。它们来自 deepseek-v4-pro 提交、Gate 放行的两份方案（`fixtures/observed/run4-*`），由 `src/prototype/build-demo-data.mjs` 生成成 `prototype/plan-data.js`。哪些问题被答掉、哪一步原地改，是拿两份方案的编号差异算出来的，不是手标的。
 - 「开始生成」之后长出来的六个节点，是手写的愿景演示。节点里的存储路径、字段清单、代码、定时时间都是编的。Execution Agent 还不存在，画布并没有读那份方案。
 - 现场出图只能在命令行。画布和命令行之间目前没有连线。
 
@@ -97,13 +98,13 @@ EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs npm run plan:chat
 校验一份方案文件：
 
 ```bash
-node src/validate-plan-proposal.mjs fixtures/observed/run1-合同场景.plan.json
+node src/plan/validate-plan-proposal.mjs fixtures/observed/run1-合同场景/turn-1.plan.json
 ```
 
 看原型：用任意静态服务器打开 `prototype/index.html`。改了 `fixtures/observed/` 里的修订轮方案之后，重新生成演示数据：
 
 ```bash
-node src/build-demo-data.mjs
+node src/prototype/build-demo-data.mjs
 ```
 
 ## 怎么读
@@ -121,9 +122,15 @@ node src/build-demo-data.mjs
 ```
 contracts/   契约。目前只有 PlanProposal
 prompts/     Plan Agent 的系统提示词，中文原文与英文译本
-src/         Gate、提交工具定义、厂商中立的调用循环、Plan 会话、状态机（走步、画布、记录）、多轮命令、演示数据生成
-test/        Gate、工具定义、调用循环、Plan 会话、状态机的测试
-fixtures/    手写的设计样例，observed/ 里真模型的原始输出，doubles/ 里测试用的固定答复执行者
+src/
+  plan/          设计者这一半：Gate、提交工具定义、调用循环、方案差异、Plan 会话
+  state-machine/ 状态机：从方案里读走步顺序与拼上下文、开始/停/批注/走步/画布/记录
+  executor/      执行者这一半：平台目录的搜索与详情（执行者本体还没写）
+  model/         跟模型说话的插座，OpenAI 兼容，两半共用
+  cli/           多轮命令 plan:chat
+  prototype/     给画布原型生成演示数据
+test/        按 src 的目录一一对应
+fixtures/    手写的设计样例；observed/ 里真模型的原始输出，一次运行一个文件夹；doubles/ 里测试用的固定答复执行者；n8n/ 里从官方镜像导出的节点目录
 docs/
   assets/      README 里的架构总览图，src/ 是它的网页源文件
   取舍.md      每一刀背后的麻烦与放弃的路
@@ -135,6 +142,7 @@ docs/
   设计记录.md  建造过程的逐步记录，早期稿，以上面几份为准
   scenarios/   场景预演，早期稿
 prototype/   画布原型，修改本.md 记着每一处改动
-scripts/     render-figures.sh：用 Chrome 把 docs/assets/src 里的网页渲染成 2 倍 PNG
+scripts/     render-figures.sh 出图；dump-n8n-nodes.sh 从 n8n 镜像导出节点说明，trim-n8n-nodes.mjs 精简成目录
 AGENTS.md    人和 Agent 在这个仓库里怎么协作
+CLAUDE.md    Claude Code 每个会话先读的规矩，指向 AGENTS.md
 ```

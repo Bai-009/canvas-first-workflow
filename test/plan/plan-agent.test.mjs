@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { runPlanAgent, loadSystemPrompt } from "../src/plan-agent.mjs";
+import { runPlanAgent, loadSystemPrompt } from "../../src/plan/plan-agent.mjs";
 
 const goodPlan = JSON.parse(
-  readFileSync(new URL("../fixtures/contract-processing.plan.json", import.meta.url), "utf8")
+  readFileSync(new URL("../../fixtures/contract-processing.plan.json", import.meta.url), "utf8")
 );
 
 function replyWithPlan(plan, speech = "先说一段话。") {

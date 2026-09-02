@@ -1,4 +1,4 @@
-import { createPlanSession } from "./plan-session.mjs";
+import { createPlanSession } from "../plan/plan-session.mjs";
 import { stepOrder, assembleTable } from "./step-context.mjs";
 
 /* 整条链的会话:Plan 那一半原样用 createPlanSession,这里往下长一段。
