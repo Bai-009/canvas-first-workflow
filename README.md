@@ -18,7 +18,7 @@
 
 > Plan Agent 定义一条数据链路「应该完成什么、怎样才算完整」；Execution Agent 根据平台真实能力决定「具体用什么、怎么把它做出来」。状态机负责把前者逐步交给后者。Gate 决定什么才能成为事实。
 
-![架构总览：上半是做出来的设计者一段，下半是设计稿的执行者一段](docs/assets/architecture.svg)
+![架构总览：浏览器、工作流生成系统、外部三块；实线框做了，虚线框是设计稿](docs/assets/architecture.png)
 
 四个角色里，目前做出来并在真模型上验证过的是 Plan Agent 和它的 Gate。Execution Agent 和状态机还是设计稿。
 
@@ -116,14 +116,16 @@ src/         Gate、提交工具定义、厂商中立的调用循环、Plan 会�
 test/        Gate、工具定义、调用循环的测试
 fixtures/    手写的设计样例，以及 observed/ 里真模型的原始输出
 docs/
-  assets/      README 里的架构总览图
+  assets/      README 里的架构总览图，src/ 是它的网页源文件
   取舍.md      每一刀背后的麻烦与放弃的路
   架构.md      四个角色、两段主链路、裁决点
+  状态机.md    回合制、账本、执行阶段的七条规则和待确认的洞
   plan-契约.md PlanProposal 各字段为什么长这样
   观察.md      真模型的行为记录
   词表.md      我们的说法和代码里、行业里说法的对照
   设计记录.md  建造过程的逐步记录，早期稿，以上面几份为准
   scenarios/   场景预演，早期稿
 prototype/   画布原型，修改本.md 记着每一处改动
+scripts/     render-figures.sh：用 Chrome 把 docs/assets/src 里的网页渲染成 2 倍 PNG
 AGENTS.md    人和 Agent 在这个仓库里怎么协作
 ```

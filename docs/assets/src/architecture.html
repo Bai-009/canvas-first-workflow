@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>Architecture overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --panel:#F0EEE8; --panel-text:#5F5E59; --ink:#1F1E1B; --gray:#6B6A63; --line:#8A8780;
+    --prog-bg:#DCE6F7; --prog-st:#B3C5E6; --prog-tx:#2B4A7E;
+    --llm-bg:#DFEDD6; --llm-st:#B1CDA0; --llm-tx:#3A652A;
+    --store-bg:#E8E2F6; --store-st:#C2B7E2; --store-tx:#4C3F8C;
+    --ui-bg:#FBE5D9; --ui-st:#E9BBA4; --ui-tx:#9A4A2B;
+    --ext-bg:#FFFFFF; --ext-st:#C4C2BB; --ext-tx:#5F5E59;
+    --serif:"Source Serif 4","Noto Serif SC",Georgia,serif;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  html,body { margin:0; background:#fff; }
+  .fig { position:relative; width:1240px; height:740px; background:#fff; font-family:var(--serif); overflow:hidden; }
+  svg { position:absolute; left:0; top:0; }
+  text { font-family:var(--serif); }
+  .t-h1 { font-size:24px; font-weight:600; fill:var(--ink); letter-spacing:.01em; }
+  .t-panel { font-size:15px; font-weight:500; fill:var(--panel-text); letter-spacing:.01em; }
+  .panel { fill:var(--panel); }
+  .box { stroke-width:1.1; }
+  .box.prog { fill:var(--prog-bg); stroke:var(--prog-st); }
+  .box.llm { fill:var(--llm-bg); stroke:var(--llm-st); }
+  .box.store { fill:var(--store-bg); stroke:var(--store-st); }
+  .box.ui { fill:var(--ui-bg); stroke:var(--ui-st); }
+  .box.ext { fill:var(--ext-bg); stroke:var(--ext-st); }
+  .box.draft { stroke-dasharray:5 4; }
+  .t-title { font-size:16px; font-weight:600; }
+  .t-title.prog { fill:var(--prog-tx); } .t-title.llm { fill:var(--llm-tx); } .t-title.store { fill:var(--store-tx); } .t-title.ui { fill:var(--ui-tx); } .t-title.ext { fill:var(--ext-tx); }
+  .t-sub { font-size:12.5px; }
+  .t-sub.prog { fill:var(--prog-tx); opacity:.82; } .t-sub.llm { fill:var(--llm-tx); opacity:.82; } .t-sub.store { fill:var(--store-tx); opacity:.82; } .t-sub.ui { fill:var(--ui-tx); opacity:.82; } .t-sub.ext { fill:var(--ext-tx); }
+  .arrow { fill:none; stroke:var(--line); stroke-width:1.1; stroke-linecap:round; stroke-linejoin:round; marker-end:url(#ah); }
+  .arrow.dashed { stroke-dasharray:4 4; }
+  .t-lbl { font-size:12px; fill:var(--gray); }
+  .t-lbl.mono { font-family:var(--mono); font-size:11px; }
+  .legend { position:absolute; left:40px; right:40px; top:678px; display:flex; gap:28px; font-size:12.5px; color:var(--gray); align-items:center; }
+  .legend i { display:inline-block; width:15px; height:12px; border-radius:3px; margin-right:7px; vertical-align:-1px; border:1.1px solid transparent; }
+  .legend .a { background:var(--ui-bg); border-color:var(--ui-st); } .legend .b { background:var(--prog-bg); border-color:var(--prog-st); } .legend .c { background:var(--llm-bg); border-color:var(--llm-st); } .legend .d { background:var(--store-bg); border-color:var(--store-st); } .legend .e { background:#fff; border-color:var(--ext-st); }
+  .legend .f { background:#fff; border:1.1px dashed var(--line); } .legend .g { width:24px; height:0; border-top:1.2px dashed var(--line); border-radius:0; }
+</style></head>
+<body>
+<div class="fig">
+  <svg width="1240" height="740" viewBox="0 0 1240 740">
+    <defs>
+      <marker id="ah" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="9" markerHeight="9" orient="auto"><path d="M1.5 1.8 L8.5 5 L1.5 8.2 Z" fill="#8A8780" stroke="#8A8780" stroke-width=".8" stroke-linejoin="round"/></marker>
+    </defs>
+    <text x="620.0" y="56" text-anchor="middle" class="t-h1">Architecture overview · from one sentence to a workflow on the canvas</text>
+
+    <rect x="40" y="100" width="260" height="540" rx="18" class="panel"/>
+    <text x="170.0" y="138" text-anchor="middle" class="t-panel">Browser</text>
+    <rect x="340" y="100" width="620" height="540" rx="18" class="panel"/>
+    <text x="650.0" y="138" text-anchor="middle" class="t-panel">Workflow generator · Node, vendor-neutral</text>
+    <text x="1105.0" y="138" text-anchor="middle" class="t-panel">External</text>
+
+        <rect x="56" y="180" width="200" height="78" rx="12" class="box ui"/>
+    <text x="156.0" y="215.6" text-anchor="middle" class="t-title ui">Chat</text>
+    <text x="156.0" y="238.9" text-anchor="middle" class="t-sub ui">input · review · annotate</text>
+    <rect x="56" y="462" width="200" height="78" rx="12" class="box ui draft"/>
+    <text x="156.0" y="497.6" text-anchor="middle" class="t-title ui">Canvas</text>
+    <text x="156.0" y="520.9" text-anchor="middle" class="t-sub ui">nodes · edges · blanks</text>
+    <rect x="372" y="180" width="224" height="250" rx="12" class="box prog"/>
+    <text x="484.0" y="293.3" text-anchor="middle" class="t-title prog">State machine</text>
+    <text x="484.0" y="316.6" text-anchor="middle" class="t-sub prog">whose turn · next step</text>
+    <text x="484.0" y="333.1" text-anchor="middle" class="t-sub prog">commit · re-walk</text>
+    <rect x="372" y="462" width="224" height="78" rx="12" class="box store"/>
+    <text x="484.0" y="489.3" text-anchor="middle" class="t-title store">Ledger</text>
+    <text x="484.0" y="512.6" text-anchor="middle" class="t-sub store">transcript · current plan · turn</text>
+    <text x="484.0" y="529.1" text-anchor="middle" class="t-sub store">canvas · notes on steps</text>
+    <rect x="700" y="180" width="190" height="64" rx="12" class="box llm"/>
+    <text x="795.0" y="200.3" text-anchor="middle" class="t-title llm">Plan Agent</text>
+    <text x="795.0" y="223.6" text-anchor="middle" class="t-sub llm">derives the chain</text>
+    <text x="795.0" y="240.1" text-anchor="middle" class="t-sub llm">asks only what it must</text>
+    <rect x="700" y="276" width="190" height="64" rx="12" class="box prog"/>
+    <text x="795.0" y="304.6" text-anchor="middle" class="t-title prog">Plan gate</text>
+    <text x="795.0" y="327.9" text-anchor="middle" class="t-sub prog">schema · cross-field</text>
+    <rect x="700" y="384" width="190" height="64" rx="12" class="box llm draft"/>
+    <text x="795.0" y="412.6" text-anchor="middle" class="t-title llm">Executor</text>
+    <text x="795.0" y="435.9" text-anchor="middle" class="t-sub llm">builds one step</text>
+    <rect x="700" y="480" width="190" height="64" rx="12" class="box prog draft"/>
+    <text x="795.0" y="508.6" text-anchor="middle" class="t-title prog">Canvas gate</text>
+    <text x="795.0" y="531.9" text-anchor="middle" class="t-sub prog">types · edges · blanks</text>
+    <rect x="1030" y="258" width="150" height="82" rx="12" class="box ext"/>
+    <text x="1105.0" y="295.6" text-anchor="middle" class="t-title ext">Model API</text>
+    <text x="1105.0" y="318.9" text-anchor="middle" class="t-sub ext">OpenAI-compatible</text>
+    <rect x="1030" y="471" width="150" height="82" rx="12" class="box ext draft"/>
+    <text x="1105.0" y="508.6" text-anchor="middle" class="t-title ext">Node catalog</text>
+    <text x="1105.0" y="531.9" text-anchor="middle" class="t-sub ext">stub for now</text>
+
+        <path d="M256 204 L368 204" class="arrow"/>
+    <text x="314.0" y="184" text-anchor="middle" class="t-lbl">message · start</text>
+    <text x="314.0" y="199" text-anchor="middle" class="t-lbl">annotate · stop</text>
+    <path d="M372 500 L260 500" class="arrow"/>
+    <text x="314.0" y="480" text-anchor="middle" class="t-lbl">plan · canvas</text>
+    <text x="314.0" y="495" text-anchor="middle" class="t-lbl">turn</text>
+    <path d="M484.0 430 L484.0 458" class="arrow"/>
+    <text x="492.0" y="450" text-anchor="start" class="t-lbl">read / write</text>
+    <path d="M596 212 L696 212" class="arrow"/>
+    <text x="648.0" y="204" text-anchor="middle" class="t-lbl">transcript</text>
+    <path d="M795.0 244 L795.0 272" class="arrow"/>
+    <text x="803.0" y="258" text-anchor="start" class="t-lbl">full plan</text>
+    <text x="803.0" y="271" text-anchor="start" class="t-lbl mono">propose_plan</text>
+    <path d="M700 308 L600 308" class="arrow"/>
+    <text x="648.0" y="326" text-anchor="middle" class="t-lbl">accepted plan</text>
+    <path d="M890 308 L907.0 308.0 Q914 308 914.0 301.0 L914.0 219.0 Q914 212 907.0 212.0 L894 212" class="arrow dashed"/>
+    <text x="922" y="262" text-anchor="start" class="t-lbl">rejected,</text>
+    <text x="922" y="277" text-anchor="start" class="t-lbl">resubmit</text>
+    <path d="M596 416 L696 416" class="arrow"/>
+    <text x="648.0" y="408" text-anchor="middle" class="t-lbl">step context</text>
+    <path d="M795.0 448 L795.0 476" class="arrow"/>
+    <text x="803.0" y="462" text-anchor="start" class="t-lbl">canvas patch</text>
+    <text x="803.0" y="475" text-anchor="start" class="t-lbl mono">graph_patch</text>
+    <path d="M700 512 L600 512" class="arrow"/>
+    <text x="648.0" y="530" text-anchor="middle" class="t-lbl">accepted patch</text>
+    <path d="M890 512 L907.0 512.0 Q914 512 914.0 505.0 L914.0 423.0 Q914 416 907.0 416.0 L894 416" class="arrow dashed"/>
+    <text x="922" y="466" text-anchor="start" class="t-lbl">rejected,</text>
+    <text x="922" y="481" text-anchor="start" class="t-lbl">resubmit</text>
+    <path d="M890 196 L993.0 196.0 Q1000 196 1000.0 203.0 L1000.0 277.0 Q1000 284 1007.0 284.0 L1026 284" class="arrow"/>
+    <text x="1008" y="238" text-anchor="start" class="t-lbl mono">chat/completions</text>
+    <path d="M890 400 L993.0 400.0 Q1000 400 1000.0 393.0 L1000.0 321.0 Q1000 314 1007.0 314.0 L1026 314" class="arrow"/>
+    <path d="M890 432 L993.0 432.0 Q1000 432 1000.0 439.0 L1000.0 505.0 Q1000 512 1007.0 512.0 L1026 512" class="arrow"/>
+    <text x="1008" y="462" text-anchor="start" class="t-lbl">search · describe</text>
+  </svg>
+  <div class="legend">
+    <span><i class="a"></i>UI</span>
+    <span><i class="b"></i>Program, no model call</span>
+    <span><i class="c"></i>Model call</span>
+    <span><i class="d"></i>Store</span>
+    <span><i class="e"></i>External</span>
+    <span><i class="f"></i>Dashed box: designed, not built</span>
+    <span><i class="g"></i>Dashed arrow: rejected by the gate</span>
+  </div>
+</div>
+</body></html>
