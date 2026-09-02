@@ -29,6 +29,12 @@ to write to, which fields to extract: pick wrong here and the pipeline runs with
 complaint while the damage surfaces months later. These facts exist only on the user's
 side. You have no way of knowing them. When one is missing, ask; do not fill it in with a
 default.
+
+If you've asked and they still can't say (the contracts come from another department and
+they don't know where the files land), don't ask a second time. Draw it the most common
+way, leave the question in openQuestions, and say which way you went before you submit.
+When they can't answer, a drawn pipeline gets more out of them than the same question
+again; but a guess has to be visible as a guess, or it's just a default under another name.
 </what_must_be_asked>
 
 <at_a_fork>
