@@ -20,6 +20,7 @@ export function createPlanCard({ card, stage, onStart }) {
   const go = $(".plan-go");
   const close = $(".plan-close");
   const fresh = $(".plan-new");
+  const again = $(".plan-again");
   let mini = false;
   let moving = false;
   /* 边写边看的时候,记着每一块已经露了几条,只补新的那几条。 */
@@ -287,6 +288,9 @@ export function createPlanCard({ card, stage, onStart }) {
     onGo: (fn) => go.addEventListener("click", fn),
     onClose: (fn) => close.addEventListener("click", fn),
     onNew: (fn) => fresh.addEventListener("click", (e) => { e.stopPropagation(); fn(); }),
+    onAgain: (fn) => again.addEventListener("click", (e) => { e.stopPropagation(); fn(); }),
+    /* 停在某一步的时候右上角多一个「重走」:停了总得有个出口。 */
+    canRerun(on) { again.hidden = !on; },
   };
 }
 

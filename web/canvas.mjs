@@ -21,16 +21,21 @@ const LEAD = 460, LAND = 560, REST = 420;
    先展开再挪镜头,展开的那一下人在看别处。 */
 const FOCUS_LEAD = 300;
 
+/* 还没走到的那几步之间隔多远。不用 PITCH——PITCH 是真卡片的列距,拿它排
+   还没发生的步等于宣称它们会落在那儿,而落在哪要等卡片下来才知道;
+   而且那样整幅画会被撑到几千像素宽,镜头只能一路缩。这几个点只是「还剩几步」
+   的记号,排紧一点,整幅东西才摆得进画面正中。 */
+const STEP_GAP = 72;
+
 /* 画布这一头只做一件事:把画布数据摆到屏幕上,新长出来的卡带一下动静。
    它不认得任何一种具体节点——那些全在节点表里。 */
 export function createCanvasView({ table, world, wires, viewport, insets = () => ({ right: 0, bottom: 0 }) }) {
   const byType = new Map(table.map((d) => [d.type, d]));
   const nodes = new Map();
   const edges = new Map();
-  /* box 是整张画布的范围,连还没走到的那截轨道一起——SVG 得画得下。
-     built 只算已经落地的卡,镜头看的是它:为了把剩下几步全塞进画面
-     而把卡片缩到看不清,是本末倒置。轨道跑出右边就跑出去。 */
-  let scale = 1, tx = 0, ty = 0, userMoved = false, box = { w: 1, h: 1 }, built = { w: 1, h: 1 };
+  /* box 是整幅东西的范围:已经落地的卡,加上那截还没走到的轨道。
+     SVG 照它画,镜头也照它摆——人看的是整幅画,不是其中某一个点。 */
+  let scale = 1, tx = 0, ty = 0, userMoved = false, box = { w: 1, h: 1 };
   let last = { placed: [], canvas: { nodes: [], edges: [] } };
   /* 已经露过面的卡和已经走完的线。排队的那几张还挂在 queue 上,画布上是空位。 */
   const shown = new Set();
@@ -75,24 +80,19 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
      往左拖能看回去。 */
   const MIN_SCALE = 0.62;
 
-  /* 有一张卡展开着的时候,镜头归它。这时候别的东西再动也不许抢镜头。 */
+  /* 摆镜头只有一种做法:把整幅东西放到正中。跑着的时候和跑完了的区别只有
+     缩放的上限——跑着的时候不许放太大,卡片得保持看得清。
+     原来跑着的时候瞄的是「头」那一个点:头落在正中,已经建好的那几张就全挤在
+     左边,右边空一大片。有一张卡展开着的时候镜头归它,别的再动也不许抢。 */
   function fit() {
     if (opened) return;
-    if (pending) return follow();
     const { pad, w, h } = room();
-    scale = Math.max(MIN_SCALE, Math.min(1, w / box.w, h / box.h));
-    const wide = box.w * scale;
+    const cap = pending ? RUN_SCALE : 1;
+    scale = Math.max(MIN_SCALE, Math.min(cap, w / box.w, h / box.h));
+    const wide = box.w * scale, tall = box.h * scale;
+    /* 放不下就右端对齐:刚长出来的那几张在眼前,往左拖能看回去。 */
     tx = wide > w ? pad + w - wide : pad + (w - wide) / 2;
-    ty = pad + (h - box.h * scale) / 2;
-    apply();
-  }
-
-  function follow() {
-    const { pad, w, h } = room();
-    const at = head();
-    scale = Math.min(RUN_SCALE, w / built.w, 1);
-    tx = pad + w / 2 - at.x * scale;
-    ty = pad + h / 2 - at.y * scale;
+    ty = tall > h ? pad : pad + (h - tall) / 2;
     apply();
   }
 
@@ -230,14 +230,13 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
 
   function resize() {
     const seen = visible();
-    built = seen.length
+    box = seen.length
       ? { w: Math.max(...seen.map((p) => p.x)) + TILE, h: Math.max(...seen.map((p) => p.y)) + TILE }
       : { w: 1, h: 1 };
-    box = built;
     if (pending) {
       const at = head();
       const ahead = Math.max(0, (pending.remaining ?? 1) - 1);
-      box = { w: Math.max(box.w, at.x + Math.max(1, ahead) * PITCH + 40), h: Math.max(box.h, at.y + 120) };
+      box = { w: Math.max(box.w, at.x + ahead * STEP_GAP + 40), h: Math.max(box.h, at.y + 120) };
     }
     wires.setAttribute("width", box.w);
     wires.setAttribute("height", box.h);
@@ -280,15 +279,24 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     /* 还没走到的那几步:一条平线,一步一个点。 */
     if (ahead) {
       gTrack.appendChild(svg("line", {
-        class: "track", x1: at.x + 14, y1: at.y, x2: at.x + ahead * PITCH, y2: at.y,
+        class: "track", x1: at.x + 14, y1: at.y, x2: at.x + ahead * STEP_GAP, y2: at.y,
       }));
       for (let i = 1; i <= ahead; i++) {
-        gTrack.appendChild(svg("circle", { class: "track-dot", cx: at.x + i * PITCH, cy: at.y, r: 3 }));
+        gTrack.appendChild(svg("circle", { class: "track-dot", cx: at.x + i * STEP_GAP, cy: at.y, r: 3 }));
       }
     }
     gTrack.appendChild(svg("circle", { class: pending.broken ? "track-break" : "track-head", cx: at.x, cy: at.y, r: 7 }));
 
-    labelEl.textContent = pending.title;
+    /* 断在这儿的话,断口底下要写清楚为什么——「停在 s2」是个位置,不是个理由。 */
+    labelEl.textContent = "";
+    labelEl.append(pending.title);
+    if (pending.note) {
+      const why = document.createElement("span");
+      why.className = "track-why";
+      why.textContent = pending.note;
+      labelEl.appendChild(why);
+    }
+    labelEl.classList.toggle("broken", Boolean(pending.broken));
     labelEl.style.left = `${at.x}px`;
     labelEl.style.top = `${at.y + 26}px`;
     labelEl.style.transform = `translate(-50%,0) scale(${1 / scale})`;

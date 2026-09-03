@@ -20,12 +20,35 @@ const post = (path, data) =>
 
 let plan = null;
 let busy = null;
+/* 停在哪一步、为什么。停着的时候输入框接的是那一步的执行者,不是 Plan Agent——
+   Plan Agent 看不见画布,跟它说「这里少了一条线」它无从改起。 */
+let broke = null;
 const done = new Set();
+
+const titleOf = (ref) => plan?.steps.find((s) => s.ref === ref)?.title ?? ref;
+
+/* 这一趟停在哪儿。跑完了、或者最后那一步是做完/已经有了,就是没停。 */
+function stopAt(run) {
+  if (!run || run.endedBy === "finished") return null;
+  const last = run.steps.at(-1);
+  if (!last || last.outcome === "done" || last.outcome === "covered") return null;
+  const why = last.reasons?.[0] ?? last.error ?? (last.outcome === "stopped" ? "按了停" : "");
+  return { ref: last.ref, why };
+}
+
+/* 停了:画布上把断口和理由标出来,右上角给出「重走」,输入框改口。 */
+function showBreak() {
+  card.canRerun(Boolean(broke));
+  placeholder();
+  if (!broke) return;
+  view.waiting({ title: `停在 ${titleOf(broke.ref)}`, note: broke.why, remaining: 0, broken: true });
+}
 
 /* 输入框的提示按阶段换:没方案时说要什么,有待确认时先答它,答完了就是改。 */
 function placeholder() {
   const el = $("input");
-  if (!plan) el.placeholder = "描述你要做的数据处理";
+  if (broke) el.placeholder = `告诉「${titleOf(broke.ref)}」该怎么改，发出去就从这一步重走`;
+  else if (!plan) el.placeholder = "描述你要做的数据处理";
   else if (plan.openQuestions.length) el.placeholder = "回答上面待确认的问题";
   else el.placeholder = "还想改点什么";
 }
@@ -49,10 +72,29 @@ async function send() {
   $("input").value = "";
   grow();
   refreshSend();
+  /* 停着的时候这句话不给 Plan Agent:挂到停住的那一步上,再从那一步重走。
+     已经做完的几步会说「已经有了」,只有这一步重做。 */
+  if (broke) {
+    const at = broke.ref;
+    const r = await post("/api/note", { step: at, text });
+    if (r.error) return card.status(r.error);
+    return rerun();
+  }
   if (card.isMini) await card.toCenter();
   card.ask(text);
   const r = await post("/api/say", { text });
   if (r.error) card.status(r.error);
+}
+
+/* 从停住的地方接着走。断口先撤掉,不然它会一直挂在画布上。 */
+async function rerun() {
+  broke = null;
+  showBreak();
+  view.waiting(null);
+  done.clear();
+  const r = await post("/api/start");
+  if (r.error) return card.status(r.error);
+  card.status("正在生成");
 }
 
 /* 发送:按钮和回车都行。Shift+回车换行,中文输入法确认候选词的那一下回车不算发送。 */
@@ -67,6 +109,8 @@ $("form").addEventListener("submit", (e) => { e.preventDefault(); send(); });
 /* 卡片飞走或飞回来,右边空出来的那一条变了,镜头跟着重新放一次。 */
 card.onGo(async () => {
   done.clear();
+  broke = null;
+  showBreak();
   const r = await post("/api/start");
   if (r.error) return card.status(r.error);
   await card.toMini("正在生成");
@@ -75,6 +119,7 @@ card.onGo(async () => {
 card.onClose(async () => { await card.back(); view.fit(); });
 /* 新建:这一条清掉,画布空出来,重新说一句。 */
 card.onNew(() => post("/api/reset"));
+card.onAgain(() => rerun());
 $("plan").addEventListener("click", async () => {
   if (!card.isMini) return;
   await card.toCenter();
@@ -108,12 +153,12 @@ feed.onmessage = (e) => {
     refreshSend();
     view.draw(event.canvas);
     view.waiting(null);
-    const bad = event.run.steps.find((s) => s.outcome === "rejected" || s.outcome === "failed");
+    broke = stopAt(event.run);
     /* 收场的话等卡全落地了再说:还在落的时候报「已生成 9 个」,画布上只有 4 张。
-       断了就把断口留在画布上,不弹东西。 */
+       断了就把断口和理由留在画布上,不弹东西。 */
     view.onIdle(() => {
-      card.status(bad ? `停在 ${bad.ref}` : `已生成 ${event.canvas.nodes.length} 个节点`);
-      if (bad) view.waiting({ title: `停在 ${bad.ref}`, remaining: 0, broken: true });
+      card.status(broke ? `停在 ${titleOf(broke.ref)}` : `已生成 ${event.canvas.nodes.length} 个节点`);
+      showBreak();
     });
   }
   if (event.type === "error") { busy = null; refreshSend(); view.waiting(null); card.status(event.message); }
@@ -129,9 +174,12 @@ if (state.turn === "executor" && state.wave) {
   view.waiting(waitingOn(state.wave));
   view.draw(state.canvas, { instant: true });
   view.fit();
-} else if (state.canvas.nodes.length) {
-  card.restore(state, `已生成 ${state.canvas.nodes.length} 个节点`);
+} else if (state.canvas.nodes.length || stopAt(state.run)) {
+  /* 刷新回来也得知道停在哪儿、为什么:这几样原来只走 SSE,刷一下就没了。 */
+  broke = stopAt(state.run);
+  card.restore(state, broke ? `停在 ${titleOf(broke.ref)}` : `已生成 ${state.canvas.nodes.length} 个节点`);
   view.draw(state.canvas, { instant: true });
+  showBreak();
   view.fit();
 } else if (state.task) {
   card.ask(state.task);
