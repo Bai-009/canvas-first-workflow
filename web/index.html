@@ -277,15 +277,14 @@
 <body>
   <header class="top">
     <span class="logo">
-      <!-- 起点一个实心的端口点,一段升上去的线,然后三个越来越淡的点接着走:
-           走过的那一段,和还没走到的那几步。画布上就是这么一回事。 -->
-      <svg viewBox="0 0 31 15" fill="currentColor" aria-hidden="true">
-        <circle cx="2.8" cy="11.6" r="2.6"/>
-        <path d="M2.8 11.6 C 7.4 11.6, 7.8 3.8, 12.4 3.8 L 15 3.8"
-          fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
-        <circle cx="19.6" cy="3.8" r="1.85" opacity=".62"/>
-        <circle cx="24.2" cy="3.8" r="1.85" opacity=".38"/>
-        <circle cx="28.6" cy="3.8" r="1.85" opacity=".2"/>
+      <!-- 三张卡,越来越小、越来越淡:建好的、在建的、还没到的。
+           从头到尾只有一种形——就是画布上那张卡。
+           圆角比例比卡片大一倍(0.30 对 24/176):同一个形在这个尺度上要更软才看着一样,
+           照搬 0.14 的话 10px 见方配 1.4px 圆角,圆角基本没了,是个直角块。 -->
+      <svg viewBox="0 0 27.6 11" fill="currentColor" aria-hidden="true">
+        <rect x="0" y="0.5" width="10" height="10" rx="3"/>
+        <rect x="12.4" y="1.9" width="7.2" height="7.2" rx="2.16" opacity=".5"/>
+        <rect x="22.4" y="2.9" width="5.2" height="5.2" rx="1.56" opacity=".24"/>
       </svg>
       <span class="logo-t"><b>Canvas</b>Flow</span>
     </span>
