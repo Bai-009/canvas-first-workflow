@@ -1,0 +1,10 @@
+{
+  "type": "embedText",
+  "kind": "Embedding",
+  "summary": "每条文本过一次向量模型,出一个向量,原文跟在后面一起往下走。切块之后、写向量库之前用它",
+  "slots": [
+    { "key": "model", "label": "Model", "kind": "pick", "options": ["BGE-M3"], "default": "BGE-M3" }
+  ],
+  "input": "Text",
+  "output": "Vector · 带原文"
+}

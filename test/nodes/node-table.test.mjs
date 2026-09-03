@@ -55,6 +55,14 @@ test("切块:卡类型 Splitter;两格都是填个数,带默认值;Text 进,一�
   assert.equal(node.output, "Text · 一块一条");
 });
 
+test("向量化:卡类型 Embedding;一格 Model 挑一个,印产品名;Text 进,Vector 带原文出", () => {
+  const node = findNodeDefinition("embedText");
+  assert.equal(node.kind, "Embedding");
+  assert.deepEqual(node.slots.map((s) => [s.label, s.kind, s.default]), [["Model", "pick", "BGE-M3"]]);
+  assert.equal(node.input, "Text");
+  assert.equal(node.output, "Vector · 带原文");
+});
+
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {
   const base = { type: "x", kind: "X", summary: "s", slots: [], input: "a", output: "b" };
   const slot = (extra) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });
