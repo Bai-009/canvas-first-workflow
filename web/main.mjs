@@ -114,12 +114,13 @@ placeholder();
 /* 生成到一半刷新页面,状态不能丢:还在跑就把那一格重新摆回画布上。 */
 if (state.turn === "executor" && state.wave) {
   card.restore(state, "正在生成");
+  for (const s of state.canvas.nodes) done.add(s.step);
   view.waiting(waitingOn(state.wave));
-  view.draw(state.canvas);
+  view.draw(state.canvas, { instant: true });
   view.fit();
 } else if (state.canvas.nodes.length) {
   card.restore(state, `已生成 ${state.canvas.nodes.length} 个节点`);
-  view.draw(state.canvas);
+  view.draw(state.canvas, { instant: true });
   view.fit();
 } else if (state.task) {
   card.ask(state.task);

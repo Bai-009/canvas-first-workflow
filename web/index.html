@@ -26,10 +26,15 @@
   .viewport.grabbing{cursor:grabbing}
   .world{position:absolute;top:0;left:0;transform-origin:0 0}
 
-  /* 线是结构不是内容,报不出判断,所以零强调:中性灰、单一粗细。 */
+  /* 线是结构不是内容,报不出判断,所以零强调:中性灰、单一粗细。
+     一条线三样:出发点一个小圆点、一段贝塞尔、末端一个描边的箭头。 */
   .wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
   .wire{fill:none;stroke:#aeb5c0;stroke-width:2.6;stroke-linecap:round}
-  .arrow{fill:#aeb5c0}
+  .tip{fill:none;stroke:#aeb5c0;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+  .port{fill:#aeb5c0}
+  /* 线跟着它接住的那张卡一起出场。 */
+  .edge{transition:opacity 340ms ease}
+  .edge.fresh{opacity:0}
   .port-label{font-family:var(--font);font-size:11px;font-weight:500;fill:var(--ink-3)}
   .port-label rect{fill:var(--canvas)}
 

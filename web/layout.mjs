@@ -53,11 +53,13 @@ export function layout(nodes, edges) {
   return placed;
 }
 
-/* 线:从上游右沿的中点到下游左沿的中点,横着出、横着进,中间一段贝塞尔。 */
+/* 线:从上游右沿的中点到下游左沿的中点,横着出、横着进,中间一段贝塞尔。
+   控制点取横向距离的 0.52,和原型一致——两端各留一段真正水平的线,
+   卡片挨得近的时候也不会拱起来。 */
 export function wire(from, to) {
   const x0 = from.x + TILE, y0 = from.y + TILE / 2;
   const x1 = to.x, y1 = to.y + TILE / 2;
-  const dx = Math.max(46, (x1 - x0) / 2);
+  const dx = (x1 - x0) * 0.52;
   return { d: `M ${x0} ${y0} C ${x0 + dx} ${y0}, ${x1 - dx} ${y1}, ${x1} ${y1}`, x0, y0, x1, y1, dx };
 }
 

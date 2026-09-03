@@ -10,6 +10,11 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
   const nodes = new Map();
   let scale = 1, tx = 0, ty = 0, userMoved = false, box = { w: 1, h: 1 };
   let last = { placed: [], canvas: { nodes: [], edges: [] } };
+  /* 已经露过面的卡和线。一步交回好几个节点时,它们一个接一个出场,
+     不一次全拍上去——一次拍上去人看不清哪张是哪张。 */
+  const seenNodes = new Set();
+  const seenEdges = new Set();
+  const BEAT = 240;
 
   /* 等着的时候,进度长在链路自己的轨道上:左边是已经建好的真卡片,
      头上那个点是下一张卡出现的地方,右边几个淡点是还没走到的几步。
@@ -35,12 +40,18 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     apply();
   }
 
-  function draw(canvas) {
+  function draw(canvas, { instant = false } = {}) {
+    /* 刷新回来的那一下不重演:已经在画布上的东西直接就位。 */
+    if (instant) {
+      for (const n of canvas.nodes) seenNodes.add(n.name);
+      for (const e of canvas.edges) seenEdges.add(`${e.from}>${e.to}>${e.output ?? ""}`);
+    }
     const placed = layout(canvas.nodes, canvas.edges);
     const at = new Map(placed.map((p) => [p.node.name, p]));
 
     for (const [name, el] of nodes) if (!at.has(name)) { el.remove(); nodes.delete(name); }
 
+    let beat = 0;
     for (const p of placed) {
       const def = byType.get(p.node.type);
       if (!def) continue;
@@ -62,32 +73,42 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
       el.style.left = `${p.x}px`;
       el.style.top = `${p.y}px`;
       el.innerHTML = `<div class="card">${miniCard(def, p.node)}${fullCard(def, p.node, canvas.edges)}</div>`;
-      if (fresh) requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("born")));
+      if (fresh) {
+        const wait = beat++ * BEAT;
+        seenNodes.add(p.node.name);
+        setTimeout(() => requestAnimationFrame(() => el.classList.remove("born")), wait + 20);
+      }
     }
 
     wires.replaceChildren();
+    /* 一条线的三样:出发点上一个小圆点、一段贝塞尔、末端一个描边的箭头。
+       箭头停在卡片外一点五像素,不顶着卡沿。 */
     for (const e of canvas.edges) {
       const from = at.get(e.from), to = at.get(e.to);
       if (!from || !to) continue;
       const w = wire(from, to);
-      const path = document.createElementNS(SVG, "path");
-      path.setAttribute("class", "wire");
-      path.setAttribute("d", w.d);
-      wires.appendChild(path);
-      const head = document.createElementNS(SVG, "path");
-      head.setAttribute("class", "arrow");
-      head.setAttribute("d", `M ${w.x1 - 9} ${w.y1 - 5} L ${w.x1} ${w.y1} L ${w.x1 - 9} ${w.y1 + 5} Z`);
-      wires.appendChild(head);
+      const key = `${e.from}>${e.to}>${e.output ?? ""}`;
+      const g = document.createElementNS(SVG, "g");
+      g.setAttribute("class", "edge");
+      g.appendChild(svg("circle", { class: "port", cx: w.x0, cy: w.y0, r: 3.2 }));
+      g.appendChild(svg("path", { class: "wire", d: w.d }));
+      g.appendChild(svg("path", {
+        class: "tip",
+        d: `M${w.x1 - 9},${w.y1 - 6} L${w.x1 - 1.5},${w.y1} L${w.x1 - 9},${w.y1 + 6}`,
+      }));
       if (e.output) {
         const spot = wireLabelAt(w);
-        const text = document.createElementNS(SVG, "text");
-        text.setAttribute("class", "port-label");
-        text.setAttribute("x", spot.x);
-        text.setAttribute("y", spot.y - 8);
-        text.setAttribute("text-anchor", "middle");
+        const text = svg("text", { class: "port-label", x: spot.x, y: spot.y - 8, "text-anchor": "middle" });
         text.textContent = e.output === "true" ? "True" : "False";
-        wires.appendChild(text);
+        g.appendChild(text);
       }
+      /* 线跟着它接住的那张卡一起出场,不抢在卡片前面。 */
+      if (!seenEdges.has(key)) {
+        seenEdges.add(key);
+        g.classList.add("fresh");
+        setTimeout(() => g.classList.remove("fresh"), Math.max(0, beat - 1) * BEAT + 60);
+      }
+      wires.appendChild(g);
     }
 
     last = { placed, canvas };
