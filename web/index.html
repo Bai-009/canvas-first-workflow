@@ -153,13 +153,20 @@
   /* 退的是深度,不是平面:工作流留在原位一个像素没挪,只是退到后面。 */
   .stage.recede{transform:scale(.955);opacity:.3;filter:blur(2px)}
 
-  /* 「新建」是「这一条不要了,重开」——跟方案卡没关系,不该挤在卡的页脚里。
-     放在左上角,跟右上角的需求框各占一边,中间整块画布留给工作流。 */
-  .fresh{position:fixed;left:26px;top:24px;z-index:60;border:0;background:none;
-    padding:6px 10px;border-radius:9px;color:var(--ink-3);font:inherit;font-size:12.5px;cursor:pointer;
-    transition:color 160ms ease,background 160ms ease}
+  /* 顶栏:左边是自己是谁,右边是这一条上能做的事。通栏但不挡画布——
+     整条不收指针,只有里面的东西收。需求框在它下面(top:68)。 */
+  .top{position:fixed;left:0;right:0;top:0;z-index:60;height:56px;padding:0 24px;
+    display:flex;align-items:center;justify-content:space-between;gap:20px;pointer-events:none}
+  .top > *{pointer-events:auto}
+  .logo{display:flex;align-items:center;gap:8px;color:var(--ink)}
+  .logo svg{display:block;width:19px;height:19px}
+  .logo-t{font-size:14px;font-weight:450;letter-spacing:-.004em;color:var(--ink-2)}
+  .logo-t b{font-weight:580;color:var(--ink)}
+  /* 「新建」是「这一条不要了,重开」——跟方案卡没关系,不该挤在卡的页脚里。 */
+  .fresh{border:0;background:none;padding:6px 10px;border-radius:9px;color:var(--ink-3);
+    font:inherit;font-size:12.5px;cursor:pointer;transition:color 160ms ease,background 160ms ease}
   .fresh:hover{color:var(--ink);background:rgba(20,26,38,.05)}
-  .fresh[hidden]{display:none}
+  .fresh[hidden]{visibility:hidden}
 
   /* Plan 卡片:画布还空着的时候,注意力本来就该在中央。 */
   .plan{position:fixed;z-index:47;padding:18px 20px 16px;border-radius:16px;background:var(--paper);
@@ -267,7 +274,16 @@
 </style>
 </head>
 <body>
-  <button class="fresh" id="fresh" hidden>新建</button>
+  <header class="top">
+    <span class="logo">
+      <!-- 画布上那条起伏的线本身:起点一个实心点,一路升上去。 -->
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="4.2" cy="17.8" r="2.6" fill="currentColor"/><path
+        d="M4.2 17.8 C 9 17.8, 9.6 6.2, 14.6 6.2 C 17.6 6.2, 19 8.6, 21.2 8.6"
+        fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <span class="logo-t"><b>Canvas</b>Flow</span>
+    </span>
+    <button class="fresh" id="fresh" hidden>新建</button>
+  </header>
   <div class="stage" id="stage">
     <div class="viewport" id="viewport"><div class="world" id="world">
       <svg class="wires" id="wires"></svg>
