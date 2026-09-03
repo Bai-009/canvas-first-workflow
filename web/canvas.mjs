@@ -72,7 +72,7 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
       for (const n of canvas.nodes) seenNodes.add(n.name);
       for (const e of canvas.edges) seenEdges.add(`${e.from}>${e.to}>${e.output ?? ""}`);
     }
-    const placed = layout(canvas.nodes, canvas.edges);
+    const { placed, route } = layout(canvas.nodes, canvas.edges);
     const at = new Map(placed.map((p) => [p.node.name, p]));
 
     for (const [name, el] of nodes) if (!at.has(name)) { el.remove(); nodes.delete(name); }
@@ -112,8 +112,8 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     for (const e of canvas.edges) {
       const from = at.get(e.from), to = at.get(e.to);
       if (!from || !to) continue;
-      const w = wire(from, to);
       const key = `${e.from}>${e.to}>${e.output ?? ""}`;
+      const w = wire(from, to, route.get(key) ?? []);
       const g = document.createElementNS(SVG, "g");
       g.setAttribute("class", "edge");
       g.appendChild(svg("circle", { class: "port", cx: w.x0, cy: w.y0, r: 3.2 }));

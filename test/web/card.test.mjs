@@ -72,13 +72,27 @@ test("卡上的名字全是转义过的,画布上的字进不了标签", () => {
   assert.match(html, /a &lt; b/);
 });
 
+test("跳列的线在中间那一列占一个位置,不从卡片背后穿过去", () => {
+  const nodes = ["岔", "OCR", "抽取"].map((name) => ({ name }));
+  const edges = [
+    { from: "岔", to: "OCR", output: "false" },
+    { from: "岔", to: "抽取", output: "true" },
+    { from: "OCR", to: "抽取" },
+  ];
+  const { placed, route } = layout(nodes, edges);
+  const at = new Map(placed.map((p) => [p.node.name, p]));
+  const bend = route.get("岔>抽取>true");
+  assert.equal(bend?.length, 1, "跨过一列就有一个拐点");
+  assert.ok(Math.abs(bend[0].y - (at.get("OCR").y + 88)) > 100, "拐点不和那一列的卡片重叠");
+});
+
 test("分岔两路各占一列,汇合的卡排在两路都走完之后", () => {
   const nodes = ["读", "岔", "A", "B", "合"].map((name) => ({ name }));
   const edges = [
     { from: "读", to: "岔" }, { from: "岔", to: "A" }, { from: "岔", to: "B" },
     { from: "A", to: "合" }, { from: "B", to: "合" },
   ];
-  const at = new Map(layout(nodes, edges).map((p) => [p.node.name, p]));
+  const at = new Map(layout(nodes, edges).placed.map((p) => [p.node.name, p]));
   assert.ok(at.get("A").x === at.get("B").x, "两路同列");
   assert.ok(at.get("合").x > at.get("A").x, "汇合在后");
   assert.ok(at.get("A").y !== at.get("B").y, "两路不重叠");
