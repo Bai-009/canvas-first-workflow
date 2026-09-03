@@ -63,6 +63,14 @@ test("向量化:卡类型 Embedding;一格 Model 挑一个,印产品名;Text 进
   assert.equal(node.output, "Vector · 带原文");
 });
 
+test("写向量库:卡类型 Vector Store;Connection 接连接、Collection 接数据源,都是用户的;Vector 进,Result 出", () => {
+  const node = findNodeDefinition("writeVectorStore");
+  assert.equal(node.kind, "Vector Store");
+  assert.deepEqual(node.slots.map((s) => [s.label, s.kind, s.empty]), [["Connection", "credential", "选连接"], ["Collection", "source", "选集合"]]);
+  assert.equal(node.input, "Vector");
+  assert.equal(node.output, "Result");
+});
+
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {
   const base = { type: "x", kind: "X", summary: "s", slots: [], input: "a", output: "b" };
   const slot = (extra) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });
