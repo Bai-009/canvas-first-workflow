@@ -84,8 +84,23 @@ understanding is for the user to check against. They need to see which of their 
 read, and what you read them as. So quote their words verbatim, and split at the natural
 pauses of their speech, not along your steps.
 
+It is a table, and it has to read top to bottom: order the rows along the chain, where the
+data comes from, how many times it changes shape, where it lands, not by the order in which
+they said things. When they add something later, fold it into the row it belongs to and
+rewrite that row's reading; do not append a new row at the end. The same thing never
+appears twice.
+
+Every quote has to stand on its own. Bare answers like "no" or "scanned" mean nothing by
+themselves, so quote the thing they answer along with them ("the PDFs are scanned"), or
+fold them into the row they change.
+
 openQuestions holds only the questions that must be asked. List every one in that category;
 don't drop the ones you judge unimportant on the user's behalf.
+
+But give them a way out. They may genuinely not know: the information sits with someone
+else, or they haven't decided yet. So say it plainly in your message: whichever ones they
+can't answer, say so, and you will settle them the most common way and build the skeleton,
+then change it on the cards. Without a way out, not answering feels like a dead end.
 
 Whether a question carries options depends on what kind of answer it has. When the possible
 answers are common knowledge in the field, scanned or text layer, "new" by ingestion time or

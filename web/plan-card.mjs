@@ -59,8 +59,8 @@ export function createPlanCard({ card, stage, onStart }) {
       secs.push($(".sec-says"));
     }
     if (plan) {
-      $(".plan-pair").innerHTML = plan.understanding
-        .map((u) => `<dt>${esc(u.quote)}</dt><dd>${esc(u.reading)}</dd>`).join("");
+      $(".plan-table tbody").innerHTML = plan.understanding
+        .map((u) => `<tr><td>${esc(u.quote)}</td><td>${esc(u.reading)}</td></tr>`).join("");
       secs.push($(".sec-understanding"));
       $(".plan-route").innerHTML = plan.steps
         .map((s) => `<span>${esc(s.title)}</span>`).join("<i>→</i>");
@@ -146,6 +146,8 @@ export function createPlanCard({ card, stage, onStart }) {
       await wait(620);
       card.style.height = "auto";
       card.classList.remove("morph");
+      /* 落位后再关一次:这一趟里如果还有没跑完的内容渲染,别让它把入口又亮出来。 */
+      go.hidden = true;
       setSay(status, true);
       moving = false;
     },

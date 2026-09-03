@@ -30,6 +30,9 @@ function placeholder() {
   else el.placeholder = "还想改点什么";
 }
 
+const titlesOf = (refs) =>
+  refs.map((ref) => plan?.steps.find((s) => s.ref === ref)?.title ?? ref).join("、");
+
 const canSend = () => $("input").value.trim() !== "" && !busy;
 const refreshSend = () => ($("send").disabled = !canSend());
 
@@ -73,6 +76,8 @@ const feed = still ? {} : new EventSource("/api/events");
 feed.onmessage = (e) => {
   const event = JSON.parse(e.data);
   if (event.type === "thinking") { busy = event.who; refreshSend(); }
+  /* 这一波要做哪几步,写到画布上——等着的人得知道当下在做什么。 */
+  if (event.type === "wave") view.waiting(titlesOf(event.refs));
   if (event.type === "plan") {
     busy = null;
     plan = event.plan;
@@ -89,6 +94,7 @@ feed.onmessage = (e) => {
   if (event.type === "run") {
     busy = null;
     refreshSend();
+    view.waiting(null);
     view.draw(event.canvas);
     const run = event.run;
     const bad = run.steps.find((s) => s.outcome === "rejected" || s.outcome === "failed");
@@ -97,13 +103,19 @@ feed.onmessage = (e) => {
       ? (bad.reasons ? `${bad.ref} 未通过:${bad.reasons.join(";")}` : `${bad.ref} 出错:${bad.error}`)
       : run.problems.length ? run.problems.join(";") : "");
   }
-  if (event.type === "error") { busy = null; refreshSend(); say(event.message); }
+  if (event.type === "error") { busy = null; refreshSend(); view.waiting(null); say(event.message); }
 };
 
 const state = await fetch("/api/state").then((r) => r.json());
 plan = state.plan;
 placeholder();
-if (state.canvas.nodes.length) {
+/* 生成到一半刷新页面,状态不能丢:还在跑就把那一格重新摆回画布上。 */
+if (state.turn === "executor" && state.wave) {
+  card.restore(state, "正在生成");
+  view.waiting(titlesOf(state.wave));
+  view.draw(state.canvas);
+  view.fit();
+} else if (state.canvas.nodes.length) {
   card.restore(state, `已生成 ${state.canvas.nodes.length} 个节点`);
   view.draw(state.canvas);
   view.fit();

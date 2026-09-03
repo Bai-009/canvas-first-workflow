@@ -9,6 +9,15 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
   const byType = new Map(table.map((d) => [d.type, d]));
   const nodes = new Map();
   let scale = 1, tx = 0, ty = 0, userMoved = false, box = { w: 1, h: 1 };
+  let last = { placed: [], canvas: { nodes: [], edges: [] } };
+
+  /* 等着的时候画布不是一张白纸:正在做哪一步就写在画布上,
+     线从已经落定的那几张卡伸过来,下一张卡就从这儿长出去。 */
+  const pendingEl = document.createElement("div");
+  pendingEl.className = "pending";
+  pendingEl.hidden = true;
+  world.appendChild(pendingEl);
+  let pending = null;
 
   const apply = () => (world.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`);
 
@@ -80,12 +89,52 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
       }
     }
 
+    last = { placed, canvas };
+    drawPending();
+
     box = placed.length
       ? { w: Math.max(...placed.map((p) => p.x)) + TILE, h: Math.max(...placed.map((p) => p.y)) + TILE }
       : { w: 1, h: 1 };
+    if (pending) {
+      const spot = pendingSpot();
+      box = { w: Math.max(box.w, spot.x + pendingEl.offsetWidth), h: Math.max(box.h, spot.y + 60) };
+    }
     wires.setAttribute("width", box.w);
     wires.setAttribute("height", box.h);
     if (!userMoved) fit();
+  }
+
+  /* 下一张卡会落在哪一列,标记就站在哪儿:已经有卡就接在最右边那一列后面,
+     一张都还没有就站在原点,镜头会把它放到正中。 */
+  function pendingSpot() {
+    const { placed } = last;
+    if (!placed.length) return { x: 0, y: 0 };
+    const col = Math.max(...placed.map((p) => p.x)) + TILE + 112;
+    const tail = placed.filter((p) => p.x + TILE + 112 > col - 1);
+    const y = tail.reduce((sum, p) => sum + p.y, 0) / (tail.length || 1);
+    return { x: col, y: y + TILE / 2 - 22 };
+  }
+
+  function drawPending() {
+    pendingEl.hidden = !pending;
+    if (!pending) return;
+    pendingEl.innerHTML = `<span class="pending-dot"></span><span>${pending}</span>`;
+    const spot = pendingSpot();
+    pendingEl.style.left = `${spot.x}px`;
+    pendingEl.style.top = `${spot.y}px`;
+    /* 从没有下家的那几张卡伸一条虚线过来。 */
+    const { placed, canvas } = last;
+    const busy = new Set(canvas.edges.map((e) => e.from));
+    for (const p of placed) {
+      if (busy.has(p.node.name)) continue;
+      const path = document.createElementNS(SVG, "path");
+      path.setAttribute("class", "wire waiting");
+      const x0 = p.x + TILE, y0 = p.y + TILE / 2;
+      const x1 = spot.x - 10, y1 = spot.y + 22;
+      const dx = Math.max(40, (x1 - x0) / 2);
+      path.setAttribute("d", `M ${x0} ${y0} C ${x0 + dx} ${y0}, ${x1 - dx} ${y1}, ${x1} ${y1}`);
+      wires.appendChild(path);
+    }
   }
 
   viewport.addEventListener("wheel", (e) => {
@@ -126,5 +175,14 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     if (!e.target.closest(".node")) world.querySelectorAll(".node.open").forEach((n) => n.classList.remove("open"));
   });
 
-  return { draw, fit, refit: () => { userMoved = false; fit(); } };
+  return {
+    draw,
+    fit,
+    refit: () => { userMoved = false; fit(); },
+    /* 正在做哪一步。传 null 就是做完了,标记收掉。 */
+    waiting(text) {
+      pending = text;
+      draw(last.canvas);
+    },
+  };
 }

@@ -63,7 +63,7 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
        同一波里的步拿到的是这一波开始前的画布 —— 它们本来就互不依赖,看不见对方是对的。
        收回的改动按波内先后一条一条查、一条一条进画布,顺序是定的。
        每次开始都从头走;没变的步执行者会说已经有了。 */
-    async start({ onStep } = {}) {
+    async start({ onStep, onWave } = {}) {
       requireUserTurn("开始");
       const current = plan.currentPlan;
       if (!current) throw new Error("还没有方案,先在主输入框说一句");
@@ -81,6 +81,8 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
       };
       try {
         waves: for (const wave of stepWaves(current)) {
+          /* 开工前先喊一声这一波要做哪几步:画布上等着的人得知道当下在做什么。 */
+          try { onWave?.([...wave]); } catch {}
           const settled = await Promise.all(
             wave.map(async (ref) => {
               const context = assembleTable(current, ref, { canvas, annotations });

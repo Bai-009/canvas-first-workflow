@@ -66,12 +66,13 @@ export async function createWebServer() {
   });
   let task = "";
   let speech = "";
+  let wave = null;
 
   const routes = {
     "GET /api/node-table": (_req, res) => json(res, table),
     "GET /api/events": (_req, res) => feed.join(res),
     "GET /api/state": (_req, res) => json(res, {
-      task, speech, canvas: session.canvas, plan: session.currentPlan, revision: session.revision,
+      task, speech, wave, canvas: session.canvas, plan: session.currentPlan, revision: session.revision,
       turn: session.turn, hasExecutor: session.hasExecutor, annotations: session.annotations,
     }),
     "POST /api/say": async (req, res) => {
@@ -90,10 +91,13 @@ export async function createWebServer() {
       feed.send({ type: "thinking", who: "executor" });
       try {
         const run = await session.start({
+          onWave: (refs) => { wave = refs; feed.send({ type: "wave", refs }); },
           onStep: ({ step, canvas }) => feed.send({ type: "step", step, canvas }),
         });
+        wave = null;
         feed.send({ type: "run", run, canvas: session.canvas });
       } catch (error) {
+        wave = null;
         feed.send({ type: "error", message: error.message });
       }
     },
