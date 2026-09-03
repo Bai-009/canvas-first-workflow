@@ -53,6 +53,11 @@ const answerTool = (name) => ({ error: `unknown tool ${name}; the only tool is s
 
 const toolReply = (call, content) => ({ role: "tool", tool_call_id: call.id, content: JSON.stringify(content) });
 
+/* 模型偶尔不走工具,把这一交当正文写出来——`submit_step({...})`,或者 Anthropic 那套
+   `<invoke name="submit_step">`。接口那头看不到工具调用,于是这一轮等于什么都没交。
+   认出来要说清楚是「没收到」,不然它以为交过了,下一轮接着往下说。 */
+const WROTE_IT_OUT = /<(?:invoke|function_calls|antml:invoke)\b|\bsubmit_step\s*\(/i;
+
 /* 一步。返回 { result(状态机认的), submission(模型交的原样), rounds, messages(整段对话), events(每个动作) }。
    没交成抛错,错误上挂着 messages 和 events,实录照样能存。 */
 export async function runStep(context, { callModel, systemPrompt, maxRounds = 30, signal, onEvent = () => {} }) {
@@ -76,7 +81,20 @@ export async function runStep(context, { callModel, systemPrompt, maxRounds = 30
     messages.push(reply);
     if (reply.content) note({ round, kind: "said", text: reply.content });
     const calls = reply.tool_calls ?? [];
-    if (calls.length === 0) throw fail(`执行者说话没交(第 ${round} 回合):${reply.content || "(什么都没说)"}`);
+    /* 说话不交:不算交,但也不至于就地作废。来回上限本来就是留给这种情况的,
+       原来第一回合说句话就抛错,后面二十九个来回一个都没用上。
+       把「没收到」说回去,让它重来。 */
+    if (calls.length === 0) {
+      const wrote = WROTE_IT_OUT.test(reply.content ?? "");
+      note({ round, kind: "no-call", wrote });
+      messages.push({
+        role: "user",
+        content: wrote
+          ? "上一条把 submit_step 写在正文里了,那不是一次调用,没有被收到。请真的调用 submit_step 交这一步。"
+          : "这一轮没有调用任何工具。这一步要靠 submit_step 交上来才算做完。",
+      });
+      continue;
+    }
 
     for (const call of calls) {
       const name = call.function?.name;

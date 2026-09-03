@@ -19,7 +19,6 @@ export function createPlanCard({ card, stage, onStart }) {
   const dot = $(".plan-dot");
   const go = $(".plan-go");
   const close = $(".plan-close");
-  const fresh = $(".plan-new");
   let mini = false;
   let moving = false;
   /* 边写边看的时候,记着每一块已经露了几条,只补新的那几条。 */
@@ -141,7 +140,6 @@ export function createPlanCard({ card, stage, onStart }) {
       followChat();
       go.hidden = true;
       close.hidden = true;
-      fresh.hidden = true;
       setSay("正在理解需求");
       place();
     },
@@ -212,7 +210,6 @@ export function createPlanCard({ card, stage, onStart }) {
       card.style.height = "auto";
       go.hidden = true;
       close.hidden = true;
-      fresh.hidden = false;
       place();
       setSay(status, true);
     },
@@ -244,7 +241,6 @@ export function createPlanCard({ card, stage, onStart }) {
       card.classList.remove("morph");
       /* 落位后再关一次:这一趟里如果还有没跑完的内容渲染,别让它把入口又亮出来。 */
       go.hidden = true;
-      fresh.hidden = false;
       setSay(status, true);
       moving = false;
     },
@@ -261,7 +257,6 @@ export function createPlanCard({ card, stage, onStart }) {
       card.style.padding = OPEN.pad;
       place();
       card.classList.add("open");
-      fresh.hidden = true;
       body.style.maxHeight = "";
       body.style.opacity = "";
       body.style.marginTop = "";
@@ -286,7 +281,6 @@ export function createPlanCard({ card, stage, onStart }) {
     reflow() { if (!moving) place(); },
     onGo: (fn) => go.addEventListener("click", fn),
     onClose: (fn) => close.addEventListener("click", fn),
-    onNew: (fn) => fresh.addEventListener("click", (e) => { e.stopPropagation(); fn(); }),
   };
 }
 

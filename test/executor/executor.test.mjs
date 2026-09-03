@@ -133,11 +133,45 @@ test("交回对不上节点表(类型不在表里、格子不存在),原因退�
   assert.equal(out.result.nodes[0].type, "llm");
 });
 
-test("说话不交:抛错带着它说的话,整段对话挂在错误上", async () => {
-  const { callModel } = scripted([{ role: "assistant", content: "I cannot build this step." }]);
-  await assert.rejects(runStep(context(), { callModel, systemPrompt: "P" }), (error) => {
-    assert.match(error.message, /说话没交.*I cannot build this step/);
-    assert.equal(error.messages.length, 3);
+/* 说话不交不算交,但也不至于就地作废——来回上限本来就是留给这种情况的。
+   原来第一回合说句话就抛错,后面二十九个来回一个都没用上。 */
+test("说话不交:把「没收到」说回去,下一回合交了就收下", async () => {
+  const good = { kind: "patch", nodes: [{ name: "A", type: "code", params: { code: "// a" }, blanks: [] }], edges: [] };
+  const { callModel } = scripted([
+    { role: "assistant", content: "先想想这一步要什么。" },
+    assistant([call("submit_step", good, "c2")]),
+  ]);
+  const out = await runStep(context(), { callModel, systemPrompt: "P" });
+  assert.equal(out.rounds, 2);
+  const nudge = [...out.messages].reverse().find((m) => m.role === "user");
+  assert.match(nudge.content, /没有调用任何工具/);
+  assert.deepEqual(out.result.nodes, [{ name: "A", step: "s1", type: "code", params: { code: "// a" }, blanks: [] }]);
+});
+
+/* 真模型实录:Kimi K3 有时候不走工具,把这一交当正文写出来——`submit_step({...})`。
+   接口那头看不到工具调用,这一轮等于什么都没交。得说清楚是「没收到」,
+   不然它以为交过了,下一轮接着往下说。 */
+test("把 submit_step 写在正文里:当没交,而且说清是没收到", async () => {
+  const good = { kind: "patch", nodes: [{ name: "A", type: "code", params: { code: "// a" }, blanks: [] }], edges: [] };
+  const { callModel } = scripted([
+    { role: "assistant", content: 'submit_step({ "kind": "patch", "nodes": [] })' },
+    assistant([call("submit_step", good, "c2")]),
+  ]);
+  const out = await runStep(context(), { callModel, systemPrompt: "P" });
+  assert.equal(out.rounds, 2);
+  const told = [...out.messages].reverse().find((m) => m.role === "user");
+  assert.match(told.content, /写在正文里.*没有被收到/);
+  assert.ok(out.events.some((e) => e.kind === "no-call" && e.wrote === true));
+});
+
+test("一直说话不交:来回用完才作废,整段对话挂在错误上", async () => {
+  const { callModel } = scripted([
+    { role: "assistant", content: "I cannot build this step." },
+    { role: "assistant", content: "still thinking." },
+  ]);
+  await assert.rejects(runStep(context(), { callModel, systemPrompt: "P", maxRounds: 2 }), (error) => {
+    assert.match(error.message, /来回 2 次没交/);
+    assert.ok(error.messages.length >= 3);
     return true;
   });
 });
@@ -176,8 +210,8 @@ test("插口:onEvent 拿到事件和上下文;给了目录,每一步自己的实
 test("插口:出错也存实录,错照样抛出去", async () => {
   const dir = mkdtempSync(join(tmpdir(), "executor-"));
   const { callModel } = scripted([{ role: "assistant", content: "no" }]);
-  const executor = createExecutor({ callModel, systemPrompt: "P", save: dir });
-  await assert.rejects(executor(context(), {}), /说话没交/);
+  const executor = createExecutor({ callModel, systemPrompt: "P", save: dir, maxRounds: 1 });
+  await assert.rejects(executor(context(), {}), /来回 1 次没交/);
   assert.deepEqual(readdirSync(join(dir, "01-s1")).sort(), ["context.json", "error.txt", "events.json", "messages.json"]);
 });
 

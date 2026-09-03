@@ -38,6 +38,10 @@ function stopAt(run) {
   return { ref: last.ref, why: named(why) };
 }
 
+/* 手上有东西的时候才给「新建」:空画布上没什么可以重开的。 */
+let started = false;
+const canReset = () => ($("fresh").hidden = !started);
+
 /* 停了:那一格上摆一张卡,写清哪一步、为什么、能做什么。输入框跟着改口。 */
 function showBreak() {
   placeholder();
@@ -82,6 +86,8 @@ async function send() {
     return rerun();
   }
   if (card.isMini) await card.toCenter();
+  started = true;
+  canReset();
   card.ask(text);
   const r = await post("/api/say", { text });
   if (r.error) card.status(r.error);
@@ -119,7 +125,7 @@ card.onGo(async () => {
 });
 card.onClose(async () => { await card.back(); view.fit(); });
 /* 新建:这一条清掉,画布空出来,重新说一句。 */
-card.onNew(() => post("/api/reset"));
+$("fresh").addEventListener("click", () => post("/api/reset"));
 /* 断口那张卡:按「重走」就接着走,点卡身就是要跟这一步说话,光标落到输入框。 */
 view.onBreak({ rerun, talk: () => $("input").focus() });
 $("plan").addEventListener("click", async () => {
@@ -168,6 +174,8 @@ feed.onmessage = (e) => {
 
 const state = await fetch("/api/state").then((r) => r.json());
 plan = state.plan;
+started = Boolean(state.task || state.plan || state.canvas.nodes.length);
+canReset();
 placeholder();
 /* 生成到一半刷新页面,状态不能丢:还在跑就把那一格重新摆回画布上。 */
 if (state.turn === "executor" && state.wave) {

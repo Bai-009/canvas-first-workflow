@@ -21,11 +21,13 @@ const LEAD = 460, LAND = 560, REST = 420;
    先展开再挪镜头,展开的那一下人在看别处。 */
 const FOCUS_LEAD = 300;
 
-/* 还没走到的那几步之间隔多远。不用 PITCH——PITCH 是真卡片的列距,拿它排
-   还没发生的步等于宣称它们会落在那儿,而落在哪要等卡片下来才知道;
-   而且那样整幅画会被撑到几千像素宽,镜头只能一路缩。这几个点只是「还剩几步」
-   的记号,排紧一点,整幅东西才摆得进画面正中。 */
-const STEP_GAP = 72;
+/* 还没走到的那几步:一个点一步,这是它们之间的距离。
+   不用 PITCH——PITCH 是真卡片的列距,拿它排还没发生的步等于宣称它们会落在那儿,
+   而落在哪要等卡片下来才知道。
+   这条轨道不进镜头的取景框(见 resize):它有多长都不该把已经建好的那几张卡挤小。
+   于是它可以一直往右伸,伸出画面之外——末端不是被切断,是淡掉。 */
+const STEP_GAP = 176;
+const TRACK_TAIL = 620;
 
 /* 画布这一头只做一件事:把画布数据摆到屏幕上,新长出来的卡带一下动静。
    它不认得任何一种具体节点——那些全在节点表里。 */
@@ -47,7 +49,16 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
      线要自己走出来,重画一次就等于从头走一次。 */
   const gWires = svg("g", {});
   const gTrack = svg("g", {});
-  wires.append(gWires, gTrack);
+  /* 轨道的末端要淡掉,不能是一刀切。渐变按世界坐标铺,每次重画时定两头。 */
+  const fade = svg("linearGradient", { id: "trackFade", gradientUnits: "userSpaceOnUse" });
+  fade.append(
+    svg("stop", { offset: "0", "stop-color": "#c3c9d3", "stop-opacity": "1" }),
+    svg("stop", { offset: "0.42", "stop-color": "#c9cfd8", "stop-opacity": "0.7" }),
+    svg("stop", { offset: "1", "stop-color": "#ced4dc", "stop-opacity": "0" }),
+  );
+  const defs = svg("defs", {});
+  defs.appendChild(fade);
+  wires.append(defs, gWires, gTrack);
 
   /* 等着的时候,进度长在链路自己的轨道上:左边是已经建好的真卡片,
      头上那个点是下一张卡出现的地方,右边几个淡点是还没走到的几步。
@@ -241,18 +252,24 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     for (const fn of idleWaiters.splice(0)) fn();
   }
 
+  /* 两个范围,分开算:
+     box 是镜头的取景框——已经建好的那几张卡,加上下一格的落点。轨道不算在里头,
+     它有多长都不该把这几张卡挤小。
+     SVG 得比取景框大,不然轨道画到一半就没画布了。 */
   function resize() {
     const seen = visible();
     box = seen.length
       ? { w: Math.max(...seen.map((p) => p.x)) + TILE, h: Math.max(...seen.map((p) => p.y)) + TILE }
       : { w: 1, h: 1 };
+    let paper = box;
     if (pending) {
       const at = head();
       const ahead = Math.max(0, (pending.remaining ?? 1) - 1);
-      box = { w: Math.max(box.w, at.x + ahead * STEP_GAP + 40), h: Math.max(box.h, at.y + 120) };
+      box = { w: Math.max(box.w, at.x + (pending.broken ? 320 : 40)), h: Math.max(box.h, at.y + 120) };
+      paper = { w: Math.max(box.w, at.x + ahead * STEP_GAP + TRACK_TAIL), h: box.h };
     }
-    wires.setAttribute("width", box.w);
-    wires.setAttribute("height", box.h);
+    wires.setAttribute("width", paper.w);
+    wires.setAttribute("height", paper.h);
   }
 
   /* 下一张卡会落在哪一格,头就在哪儿。已经落地的卡里最右一列往后接一格,
@@ -291,13 +308,21 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
         x1: p.x + TILE, y1: p.y + TILE / 2, x2: at.x - 14, y2: at.y,
       }));
     }
-    /* 还没走到的那几步:一条平线,一步一个点。 */
+    /* 还没走到的那几步:一条往右伸出去的线,一步一个点。线比点走得远得多,
+       而且是淡出去的——链路到这儿并没有结束,只是还没长出来。 */
     if (ahead) {
-      gTrack.appendChild(svg("line", {
-        class: "track", x1: at.x + 14, y1: at.y, x2: at.x + ahead * STEP_GAP, y2: at.y,
-      }));
+      const from = at.x + 16, to = at.x + ahead * STEP_GAP + TRACK_TAIL;
+      fade.setAttribute("x1", from);
+      fade.setAttribute("x2", to);
+      fade.setAttribute("y1", at.y);
+      fade.setAttribute("y2", at.y);
+      gTrack.appendChild(svg("line", { class: "track", x1: from, y1: at.y, x2: to, y2: at.y }));
       for (let i = 1; i <= ahead; i++) {
-        gTrack.appendChild(svg("circle", { class: "track-dot", cx: at.x + i * STEP_GAP, cy: at.y, r: 3 }));
+        const x = at.x + i * STEP_GAP;
+        gTrack.appendChild(svg("circle", {
+          class: "track-dot", cx: x, cy: at.y, r: 3.4,
+          opacity: (1 - (i - 1) / Math.max(ahead, 1) * 0.72).toFixed(2),
+        }));
       }
     }
     /* 断了就把那一格摆成一张卡:哪一步、为什么、以及能做什么,都在同一个地方。
