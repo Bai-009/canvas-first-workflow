@@ -24,6 +24,12 @@ const defaultSystemPrompt = loadSystemPrompt("zh");
 
 const MAX_GATE_RETRIES = 3;
 
+/* 模型偶尔不走工具,把整份方案当正文写出来——一段 <invoke name="propose_plan">。
+   这种一轮里方案没交上来,而正文又是一坨给机器看的东西:直接当成一次没交,
+   让它重来。留着就是把 XML 摆到用户脸上,而且这一轮白跑。 */
+const FAKE_CALL = /<(?:invoke|function_calls|tool_call)\b[^>]*>|<invoke\b/i;
+const spokenOnly = (text) => (text ?? "").split(FAKE_CALL)[0].trim();
+
 /* 边写边看:模型一个字一个字往外吐的时候,把手上这半份交出去。
    说的话原样累加;方案是半截 JSON,退到最近能收口的地方读一遍。
    一秒最多刷十次——再密人眼也读不过来,只会闪。 */
@@ -58,9 +64,20 @@ export async function runPlanAgent({ callModel, messages, systemPrompt = default
 
   for (let attempt = 0; attempt <= MAX_GATE_RETRIES; attempt++) {
     const reply = await callModel(transcript, { signal, onDelta: onDraft && draftReporter(spoken, onDraft) });
-    if (reply.content) spoken.push(reply.content);
-    const speech = spoken.join("\n\n");
+    const faked = !reply.tool_calls?.length && FAKE_CALL.test(reply.content ?? "");
+    if (reply.content) spoken.push(faked ? spokenOnly(reply.content) : reply.content);
+    const speech = spoken.filter(Boolean).join("\n\n");
     const calls = reply.tool_calls ?? [];
+
+    /* 方案写在正文里 = 没交。跟没过校验一样,让它重来一次。 */
+    if (faked) {
+      lastErrors = ["方案写在正文里,没有走 propose_plan"];
+      transcript.push(
+        { role: "assistant", content: spokenOnly(reply.content) },
+        { role: "user", content: "上一条里的方案写在正文里,没有经过 propose_plan,所以没有被收到。请调用 propose_plan 重新交一次完整的方案。" },
+      );
+      continue;
+    }
 
     if (calls.length === 0) {
       return { speech, plan: null, transcript: [...transcript, reply] };

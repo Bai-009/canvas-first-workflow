@@ -80,6 +80,9 @@ export async function createWebServer() {
     "GET /api/state": (_req, res) => json(res, {
       task, speech, chat, wave, canvas: session.canvas, plan: session.currentPlan, revision: session.revision,
       turn: session.turn, hasExecutor: session.hasExecutor, annotations: session.annotations,
+      /* 上一趟跑成什么样。停在哪一步、为什么停,刷新回来还得看得见——
+         这些原来只走 SSE,刷新一次就没了。 */
+      run: session.runs.at(-1) ?? null,
     }),
     "POST /api/say": async (req, res) => {
       const { text } = await body(req);
