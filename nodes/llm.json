@@ -1,6 +1,7 @@
 {
   "type": "llm",
   "kind": "LLM",
+  "color": "#d97706",
   "summary": "每条数据过一次模型:把 Prompt 和这条数据交给模型,按 Output Schema 出一条记录。抽字段、分类、摘要、改写都用它",
   "slots": [
     {

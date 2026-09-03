@@ -45,11 +45,17 @@
       },
       "minItems": 2,
       "description": "多出口节点才写:出口名,线上的 output 写它(条件分岔是 true / false)。单出口不写"
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-f]{6}$",
+      "description": "卡上这类节点的颜色:图标底色、空位底色、卡的外圈都取它。画卡的人不另立一张配色表,加一个节点只改这一个文件"
     }
   },
   "required": [
     "type",
     "kind",
+    "color",
     "summary",
     "slots",
     "output"

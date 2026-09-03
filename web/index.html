@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>画布</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600&display=swap">
+<style>
+  :root {
+    --paper:#fff; --canvas:#eef0f3; --surface:#f4f5f7; --line:#e4e6ea;
+    --ink:#1a1d22; --ink-2:#545b65; --ink-3:#8f96a0;
+    --font:"Inter","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Monaco,Consolas,monospace;
+    --tile:176px;
+    --spring:cubic-bezier(.22,1.28,.32,1);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0;overflow:hidden;background:var(--canvas);color:var(--ink);
+    font-family:var(--font);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+
+  .viewport{position:absolute;inset:0;cursor:grab}
+  .viewport.grabbing{cursor:grabbing}
+  .world{position:absolute;top:0;left:0;transform-origin:0 0}
+
+  /* 线是结构不是内容,报不出判断,所以零强调:中性灰、单一粗细。 */
+  .wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+  .wire{fill:none;stroke:#aeb5c0;stroke-width:2.6;stroke-linecap:round}
+  .arrow{fill:#aeb5c0}
+  .port-label{font-family:var(--font);font-size:11px;font-weight:500;fill:var(--ink-3)}
+  .port-label rect{fill:var(--canvas)}
+
+  .node{position:absolute;width:var(--tile);height:var(--tile)}
+  .card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:var(--tile);border-radius:24px;background:var(--paper);cursor:pointer;
+    transition:width 420ms var(--spring),border-radius 420ms var(--spring),box-shadow 300ms ease;
+    box-shadow:0 18px 34px -18px rgba(20,26,38,.30),0 4px 10px -4px rgba(20,26,38,.08),0 0 0 1px rgba(20,26,38,.05)}
+  .node.open{z-index:20}
+  .node.open .card{width:540px;border-radius:22px;padding:18px;
+    box-shadow:0 40px 80px -24px rgba(20,26,38,.32),0 12px 24px -8px rgba(20,26,38,.10),
+      0 0 0 1px rgba(20,26,38,.06),0 0 0 4px color-mix(in srgb,var(--c) 12%,transparent)}
+
+  .icon{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;border-radius:9px;
+    background:color-mix(in srgb,var(--c) 13%,#fff);color:var(--c)}
+  .icon svg{width:17px;height:17px}
+
+  /* 收起 */
+  .mini{padding:17px;display:flex;flex-direction:column;height:var(--tile)}
+  .node.open .mini{display:none}
+  .mini-top{display:flex;align-items:center;gap:9px}
+  .mini-kind{flex:1;min-width:0;color:var(--c);font-size:11.5px;font-weight:500;line-height:15px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mark{flex:0 0 auto;color:var(--ink-3);font-size:12px;line-height:15px}
+  .dot-c{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--c)}
+  .mini-fill{flex:1}
+  .mini-name{margin:0;font-size:14.5px;font-weight:550;line-height:20px;color:var(--ink);
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .mini-evi{margin:4px 0 0;height:16px;font-size:11.5px;line-height:16px;color:var(--ink-3)}
+  .mini-evi.pending{color:var(--c)}
+
+  /* 展开 */
+  .full{display:none}
+  .node.open .full{display:block}
+  .full-top{display:flex;align-items:center;gap:11px;margin-bottom:12px}
+  .full-name{margin:0;flex:1;font-size:15px;font-weight:550;line-height:22px}
+  .full-kind{flex:0 0 auto;color:var(--c);font-size:11.5px;font-weight:600;letter-spacing:.02em}
+  .note{margin:0 0 12px;font-size:13px;line-height:19px;color:var(--ink-2)}
+  .fields{padding:6px 15px;border-radius:12px;background:var(--surface)}
+  .field{display:flex;align-items:center;gap:14px;min-height:40px;font-size:13.5px}
+  .field + .field{border-top:1px solid #eceef1}
+  .lbl{flex:0 0 118px;color:var(--ink-3);font-size:12.5px;font-weight:500;letter-spacing:.01em}
+  .slot{display:inline-flex;align-items:center;gap:6px;font:inherit;border:0;border-radius:7px;padding:3px 10px;
+    background:color-mix(in srgb,var(--c) 11%,transparent);color:color-mix(in srgb,var(--c) 88%,#2b3038)}
+  .slot svg{width:13px;height:13px;flex:0 0 auto}
+  .val{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+  .txt{color:var(--ink)}
+  .sec{margin:14px 0 6px;font-size:12.5px;color:var(--ink-3);font-weight:500;letter-spacing:.01em}
+  .prompt{margin:0;padding:12px 15px;border-radius:12px;background:var(--surface);
+    font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--ink-2);white-space:pre-wrap;
+    max-height:220px;overflow:auto}
+  .io{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);display:grid;
+    grid-template-columns:auto 1fr;gap:3px 12px;font-size:11.5px;line-height:17px;color:var(--ink-3)}
+  .io b{font-weight:500;color:var(--ink-3);letter-spacing:.02em}
+  .io span{color:var(--ink-2)}
+  .io .name{color:var(--ink);font-weight:550}
+
+  .head{position:absolute;left:24px;top:20px;z-index:40;max-width:52ch;pointer-events:none}
+  .head .task{margin:0;font-size:14px;line-height:20px;color:var(--ink-2)}
+  .head .sub{margin:5px 0 0;font-size:11.5px;color:var(--ink-3)}
+</style>
+</head>
+<body>
+  <div class="head"><p class="task" id="task"></p><p class="sub" id="sub"></p></div>
+  <div class="viewport" id="viewport"><div class="world" id="world">
+    <svg class="wires" id="wires"></svg>
+  </div></div>
+  <script type="module" src="./main.mjs"></script>
+</body>
+</html>

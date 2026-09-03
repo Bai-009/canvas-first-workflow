@@ -106,10 +106,12 @@ test("节点表收口:十一张,每张都有卡类型", () => {
   const table = loadNodeTable();
   assert.deepEqual(table.map((n) => n.type).sort(), ["code", "condition", "embedText", "llm", "ocr", "parseDocument", "readFile", "schedule", "splitText", "writeDatabase", "writeVectorStore"]);
   assert.ok(table.every((n) => n.kind));
+  /* 卡上那一抹颜色也归节点表:画卡的人不另立一张配色表。 */
+  assert.ok(table.every((n) => /^#[0-9a-f]{6}$/.test(n.color)));
 });
 
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {
-  const base = { type: "x", kind: "X", summary: "s", slots: [], input: "a", output: "b" };
+  const base = { type: "x", kind: "X", color: "#123456", summary: "s", slots: [], input: "a", output: "b" };
   const slot = (extra) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });
   assert.deepEqual(checkNodeDefinition(base), []);
   assert.match(checkNodeDefinition(slot({ kind: "magic" })).join("\n"), /取值不在允许范围内/);
@@ -119,6 +121,7 @@ test("契约:格子只有八种;挑一个必须给 options;默认值得在 optio
   assert.match(checkNodeDefinition({ ...base, slots: [{ key: "a", label: "A", kind: "text" }, { key: "a", label: "B", kind: "text" }] }).join("\n"), /重复/);
   assert.match(checkNodeDefinition({ ...base, extra: 1 }).join("\n"), /没有的字段/);
   assert.match(checkNodeDefinition({ ...base, ports: ["true"] }).join("\n"), /ports/);
+  assert.match(checkNodeDefinition({ ...base, color: "蓝" }).join("\n"), /color/);
 });
 
 test("表里有一个坏文件,整张表不上桌", () => {

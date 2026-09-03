@@ -1,6 +1,7 @@
 {
   "type": "condition",
   "kind": "Condition",
+  "color": "#65a30d",
   "summary": "按条件把每条数据送到 true 或 false 两个出口之一,数据原样带过去。筛选也用它:不要的那一路不接",
   "slots": [
     { "key": "condition", "label": "Condition", "kind": "conditions" }
