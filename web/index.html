@@ -218,9 +218,17 @@
      字多了往上长,长到 7 行封顶再自己滚,不遮画布。 */
   .bar form{display:flex;align-items:flex-end;gap:10px;padding:8px 8px 8px 18px;border-radius:24px;
     background:var(--paper);box-shadow:0 8px 24px -10px rgba(20,26,38,.20),0 0 0 1px rgba(20,26,38,.06)}
-  .bar textarea{min-width:0;flex:1;height:32px;min-height:32px;max-height:164px;padding:5px 0;
-    border:0;outline:none;background:transparent;resize:none;overflow-y:auto;
-    font:inherit;font-size:14.5px;line-height:22px;color:var(--ink)}
+  /* 高度不靠 JS 量。量出来的是某一刻的数,写死之后字体晚一步就位、窗口一变就不对了,
+     而且错了是往大里错——一行字撑开好几行的空。
+     改成一个隐形的替身跟输入框叠在同一格里:替身是普通文字,它多高这一格就多高,
+     输入框跟着这一格。字体几时就位、窗口怎么变,都是浏览器自己重排。 */
+  .grow{flex:1;min-width:0;display:grid}
+  .grow::after{content:attr(data-value) " ";visibility:hidden;white-space:pre-wrap;word-break:break-word}
+  /* box-sizing 要单独写:* 选择器不匹配伪元素,替身会比输入框高出一个 padding。
+     封顶两边都要写:只封外面那层,输入框还是照长,长出去的部分被裁掉,光标就跑到看不见的地方。 */
+  .grow > textarea,.grow::after{grid-area:1/1;box-sizing:border-box;min-height:32px;max-height:164px;
+    padding:5px 0;border:0;margin:0;font:inherit;font-size:14.5px;line-height:22px;color:var(--ink)}
+  .grow > textarea{outline:none;background:transparent;resize:none;overflow-y:auto}
   .bar textarea::placeholder{color:var(--ink-3)}
   /* 没字可发的时候按钮不该是一坨灰饼:只留一个箭头,有字了才实心。 */
   .bar button{width:32px;height:32px;flex:0 0 auto;display:grid;place-items:center;border:0;
@@ -260,8 +268,8 @@
 
   <div class="bar">
     <form id="form">
-      <textarea id="input" rows="1" autocomplete="off" placeholder="描述你要做的数据处理"
-        aria-label="描述你要做的数据处理"></textarea>
+      <div class="grow" id="grow" data-value=""><textarea id="input" rows="1" autocomplete="off"
+        placeholder="描述你要做的数据处理" aria-label="描述你要做的数据处理"></textarea></div>
       <button id="send" type="submit" aria-label="发送" disabled>
         <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M8 12.8V3.9M8 3.9 4.1 7.8M8 3.9l3.9 3.9"
           fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>

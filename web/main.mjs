@@ -39,12 +39,9 @@ const waitingOn = (refs) => ({
 const canSend = () => $("input").value.trim() !== "" && !busy;
 const refreshSend = () => ($("send").disabled = !canSend());
 
-/* 输入框跟着字长高。先归零再读 scrollHeight——不归零它只会长不会缩。 */
-function grow() {
-  const el = $("input");
-  el.style.height = "auto";
-  el.style.height = `${Math.min(el.scrollHeight, 164)}px`;
-}
+/* 输入框跟着字长高:把同一段字抄给那个隐形的替身,高度归 CSS 算。
+   这里不量任何东西——量出来的数会过期,替身不会。 */
+const grow = () => { $("grow").dataset.value = $("input").value; };
 
 async function send() {
   if (!canSend()) return;
