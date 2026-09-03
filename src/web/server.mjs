@@ -65,12 +65,13 @@ export async function createWebServer() {
     systemPrompt: loadSystemPrompt(process.env.PLAN_PROMPT_LANG || "zh"),
   });
   let task = "";
+  let speech = "";
 
   const routes = {
     "GET /api/node-table": (_req, res) => json(res, table),
     "GET /api/events": (_req, res) => feed.join(res),
     "GET /api/state": (_req, res) => json(res, {
-      task, canvas: session.canvas, plan: session.currentPlan, revision: session.revision,
+      task, speech, canvas: session.canvas, plan: session.currentPlan, revision: session.revision,
       turn: session.turn, hasExecutor: session.hasExecutor, annotations: session.annotations,
     }),
     "POST /api/say": async (req, res) => {
@@ -79,7 +80,8 @@ export async function createWebServer() {
       if (!task) task = text.trim();
       feed.send({ type: "thinking", who: "plan" });
       const turn = await session.say(text.trim());
-      feed.send({ type: "plan", task, plan: turn.plan, diff: turn.diff, revision: turn.revision, speech: turn.speech });
+      speech = turn.speech ?? "";
+      feed.send({ type: "plan", task, plan: turn.plan, diff: turn.diff, revision: turn.revision, speech });
       return json(res, { ok: true });
     },
     "POST /api/start": async (_req, res) => {
