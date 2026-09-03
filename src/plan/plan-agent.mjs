@@ -30,27 +30,20 @@ const MAX_GATE_RETRIES = 3;
 function draftReporter(spoken, onDraft) {
   let text = "";
   let args = "";
-  let reason = "";
   let last = 0;
   return (delta) => {
     if (delta.kind === "text") text += delta.text;
     else if (delta.kind === "args") args += delta.text;
-    else if (delta.kind === "reason") reason += delta.text;
     const now = Date.now();
     if (now - last < 100) return;
     last = now;
     onDraft({
       speech: [...spoken, text].filter(Boolean).join("\n\n"),
       plan: args ? draftPlan(parsePartial(args)) : null,
-      reason: tailOf(reason),
+      /* 它在想,还是在写。想的内容不交出去:那是内心独白,而且是断的。 */
+      phase: text || args ? "writing" : "thinking",
     });
   };
-}
-
-/* 想到哪儿了:取最后一句完整的,一行放得下。整段推理堆到界面上没人看。 */
-function tailOf(reason) {
-  const parts = reason.split(/[。！？\n]+/).map((s) => s.trim()).filter(Boolean);
-  return parts.at(-1)?.slice(0, 40) ?? "";
 }
 
 /* 一轮设计:模型先说话,可能再提交一份方案。
@@ -119,10 +112,10 @@ export async function runPlanAgent({ callModel, messages, systemPrompt = default
 
 /* 设计者的调用器:通用插座加上它唯一的工具 propose_plan。 */
 export function callerFromEnv(env = process.env) {
-  /* 方案是写给人看着长出来的,所以默认不让它先闷头想:MODEL_REASONING=low 可以要回来。 */
+  /* 推理是它的智力,不关。想调强度用 MODEL_REASONING(low / high / max)。 */
   return modelCallerFromEnv(env, {
     tools: [{ type: "function", function: proposePlanTool }],
-    reasoning: env.MODEL_REASONING ?? "none",
+    reasoning: env.MODEL_REASONING,
   });
 }
 

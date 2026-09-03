@@ -93,7 +93,7 @@ export function createPlanCard({ card, stage, onStart }) {
       go.hidden = true;
       close.hidden = true;
       fresh.hidden = true;
-      setSay("正在生成方案");
+      setSay("正在理解需求");
       place();
     },
 
@@ -119,9 +119,11 @@ export function createPlanCard({ card, stage, onStart }) {
 
     /* 模型还在写的时候:一条一条补上去,已经露过的不重画。
        写好的先站住,后面的接着长——这才是人读东西的样子。 */
-    draft({ speech, plan, reason }) {
+    draft({ speech, plan, phase }) {
       if (mini) return;
-      /* 想的过程是模型的内心独白,不是产品说的话,不往界面上放。 */
+      /* 等的时候只报一件事,报到底:先是在想,动笔之后是在写。
+         想的内容不上界面——那是内心独白,而且是断的。 */
+      if (!plan?.steps.length) setSay(phase === "writing" ? "正在生成方案" : "正在理解需求");
       if (speech && speech.length !== shown.says) {
         $(".plan-says").innerHTML = rich(speech);
         $(".sec-says").hidden = false;
