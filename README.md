@@ -12,6 +12,8 @@
 
 一条工作流在你眼前长出来，你随手就能改它。
 
+用户不看 Agent 的对话文字，只看画布，也能感受到自己的自然语言正在被系统持续理解，并逐步变成一条真实工作流。
+
 契约、Gate、状态机、乐观并发，所有这些都是为这件事服务的，不是它本身。
 
 ## 架构一句话
@@ -46,8 +48,8 @@ Plan Agent 这一段是这么切的：
 | Plan 阶段的多轮会话 `src/plan/plan-session.mjs` | 有。攒对话记录，方案只在过闸时换，回合制，能停 |
 | 真模型验证 | 有。deepseek-v4-pro 上跑过三个场景、三次修订轮，原始输出和完整对话记录在 `fixtures/observed/`，行为记录在 `docs/观察.md` |
 | 画布原型 `prototype/` | 有。Plan 阶段的内容是真实模型输出，执行阶段是手写的愿景演示 |
-| 状态机 `src/state-machine/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
-| 画布侧 Gate | 一半。机器能查的几条在状态机里（节点标的是哪一步、编号不撞、线接在存在的节点上、走完整张画布查形状）；节点类型对平台目录的检查要等执行者带着目录来 |
+| 状态机 `src/state-machine/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；互不依赖的步同一波一起做；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
+| 画布侧 Gate | 一半。机器能查的几条在状态机里（节点标的是哪一步、名字不撞、线接在存在的节点上、走完整张画布查形状）；节点类型对平台目录的检查要等执行者带着目录来 |
 | 平台目录与检索工具 `src/executor/n8n-catalog.mjs` | 有。从 n8n 官方镜像导出全部 559 种节点的参数说明（`fixtures/n8n/catalog.json`，脚本可重新导出）。给模型的不是整份目录，是三层披露：常驻十来行、搜索回候选、点名才给参数，分操作的节点先给操作菜单 |
 | Execution Agent 与它的输出契约 | 一半。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、三个工具的说明、交回形状的契约（`contracts/step-submission.schema.json`）、让模型来回查看交的循环（`src/executor/executor.mjs`）都有了，在真模型上单独跑过一步（`fixtures/observed/run10-执行者-s1/`）。还没接进状态机，怎么定的和还差什么见 `docs/执行者.md`。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
 
