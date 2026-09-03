@@ -110,8 +110,7 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
               run.endedBy = "stopped";
               break waves;
             }
-            const after = current.steps.find((step) => step.ref === ref)?.dependsOn ?? [];
-            const reasons = checkResult(result, ref, canvas, after);
+            const reasons = checkResult(result, current.steps.find((step) => step.ref === ref), canvas);
             if (reasons.length) {
               record({ ref, outcome: "rejected", canvasVersion: canvas.version, reasons });
               run.endedBy = "rejected";
@@ -157,7 +156,11 @@ const isPlainObject = (value) =>
 
 /* 画布闸门:第一道是信封(形状对不对、名字撞不撞、线接没接上),第二道是对得上节点表(src/nodes/check-nodes.mjs)。
    两道在同一个函数里,执行者交回时和状态机提交前走的是同一道。 */
-export function checkResult(result, ref, canvas, dependsOn = []) {
+/* 闸门。收的是方案里那一步本身,不是它的编号:这一道要看「接在谁后面」,
+   而可选参数是会被忘的——执行者自己那一道就忘过,于是它查得比状态机松,
+   自己那关过了、到状态机才被退,而它已经没有机会改了。 */
+export function checkResult(result, step, canvas) {
+  const { ref, dependsOn = [] } = step;
   if (!isPlainObject(result)) return ["交回的不是一个对象"];
   if (result.kind === "covered") return [];
   if (result.kind !== "patch") return [`交回的 kind 是 ${JSON.stringify(result.kind)},只认 patch 和 covered`];

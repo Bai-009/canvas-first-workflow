@@ -381,18 +381,22 @@ test("Plan Agent 在跑的时候不能开始、不能批注;停掉的是 Plan Ag
 
 test("画布闸门里机器能查的几条", () => {
   const canvas = { nodes: [node("s1", "n1")], edges: [], version: 1 };
-  assert.deepEqual(checkResult(covered, "s2", canvas), []);
-  assert.deepEqual(checkResult(null, "s2", canvas), ["交回的不是一个对象"]);
-  assert.match(checkResult({ kind: "done" }, "s2", canvas)[0], /只认 patch 和 covered/);
-  assert.match(checkResult(patch([]), "s2", canvas)[0], /没有节点/);
-  assert.match(checkResult(patch([node("s2", "n1")]), "s2", canvas)[0], /n1 已被 s1 用了/);
-  assert.match(checkResult(patch([node("s2", "n2"), node("s2", "n2")]), "s2", canvas)[0], /n2 重复/);
-  assert.match(checkResult(patch([node("s2", "n2")], [{ from: "n7", to: "n2" }]), "s2", canvas)[0], /接了不存在的节点/);
-  assert.match(checkResult(patch([node("s2", "n2")], [{ from: "n2", to: "n2" }]), "s2", canvas)[0], /接到了自己/);
-  assert.match(checkResult(patch([node("s2", "n2")], [{ from: "n1", to: "n1" }]), "s2", canvas).join(), /两头都不是 s2 的节点|接到了自己/);
-  assert.match(checkResult(patch([{ ...node("s2", "n2"), blanks: [1] }]), "s2", canvas)[0], /blanks 不是字符串数组/);
+  /* 闸门收的是方案里那一步本身:它要看「接在谁后面」。这里的 s2 是链路的头, */
+  /* 单独查形状那几条不牵扯上游。 */
+  const s2 = { ref: "s2", dependsOn: [] };
+  const s1 = { ref: "s1", dependsOn: [] };
+  assert.deepEqual(checkResult(covered, s2, canvas), []);
+  assert.deepEqual(checkResult(null, s2, canvas), ["交回的不是一个对象"]);
+  assert.match(checkResult({ kind: "done" }, s2, canvas)[0], /只认 patch 和 covered/);
+  assert.match(checkResult(patch([]), s2, canvas)[0], /没有节点/);
+  assert.match(checkResult(patch([node("s2", "n1")]), s2, canvas)[0], /n1 已被 s1 用了/);
+  assert.match(checkResult(patch([node("s2", "n2"), node("s2", "n2")]), s2, canvas)[0], /n2 重复/);
+  assert.match(checkResult(patch([node("s2", "n2")], [{ from: "n7", to: "n2" }]), s2, canvas)[0], /接了不存在的节点/);
+  assert.match(checkResult(patch([node("s2", "n2")], [{ from: "n2", to: "n2" }]), s2, canvas)[0], /接到了自己/);
+  assert.match(checkResult(patch([node("s2", "n2")], [{ from: "n1", to: "n1" }]), s2, canvas).join(), /两头都不是 s2 的节点|接到了自己/);
+  assert.match(checkResult(patch([{ ...node("s2", "n2"), blanks: [1] }]), s2, canvas)[0], /blanks 不是字符串数组/);
   /* 同一步自己原来的编号可以再用:原地改 */
-  assert.deepEqual(checkResult(patch([node("s1", "n1")]), "s1", canvas), []);
+  assert.deepEqual(checkResult(patch([node("s1", "n1")]), s1, canvas), []);
 });
 
 test("整张画布查一遍:每一步有节点,接在谁后面就有线从那一步接过来", () => {

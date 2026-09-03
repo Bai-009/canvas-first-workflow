@@ -89,6 +89,27 @@ test("闸门不认的交回,原因退给模型,它再交", async () => {
   assert.deepEqual(out.result.nodes, [{ name: "A", step: "s1", type: "code", params: { code: "// a" }, blanks: [] }]);
 });
 
+/* 闸门只有一道,但有两处在调:执行者自己这一道,和状态机那一道。
+   两处查得不一样,自己这关过了、到状态机才被退,而那时候它已经没机会改了。
+   「接在谁后面」这一条就漏过一次:执行者拿不到 dependsOn,状态机拿得到。 */
+test("接在上一步后面却不接线:执行者自己这一道就退回去,同一个来回里改了再交", async () => {
+  const on = context({
+    step: { ref: "s2", title: "切块", dependsOn: ["s1"] },
+    canvas: { nodes: [{ name: "读文件", step: "s1", type: "readFile", params: {}, blanks: [] }], edges: [], version: 1 },
+  });
+  const loose = { kind: "patch", nodes: [{ name: "切块", type: "code", params: { code: "// x" }, blanks: [] }], edges: [] };
+  const wired = { ...loose, edges: [{ from: "读文件", to: "切块" }] };
+  const { callModel } = scripted([
+    assistant([call("submit_step", loose)]),
+    assistant([call("submit_step", wired, "c2")]),
+  ]);
+  const out = await runStep(on, { callModel, systemPrompt: "P" });
+  assert.equal(out.rounds, 2);
+  const rejection = JSON.parse(out.messages[3].content);
+  assert.match(rejection.rejected.join(";"), /s2 接在 s1 后面,却没有一条线从那几步的节点接进来/);
+  assert.deepEqual(out.result.edges, [{ from: "读文件", to: "切块" }]);
+});
+
 test("叫了没有的工具(搜、查都撤了),当答案退给模型,来回继续", async () => {
   const { callModel } = scripted([
     assistant([call("search_nodes", { query: "ocr" })]),

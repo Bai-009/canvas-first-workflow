@@ -90,7 +90,7 @@ export async function runStep(context, { callModel, systemPrompt, maxRounds = 30
       }
       if (name === "submit_step") {
         const result = toPatch(args, ref);
-        const reasons = checkResult(result, ref, context.canvas);
+        const reasons = checkResult(result, context.step, context.canvas);
         if (reasons.length) {
           messages.push(toolReply(call, { rejected: reasons }));
           note({ round, kind: "rejected", reasons });
