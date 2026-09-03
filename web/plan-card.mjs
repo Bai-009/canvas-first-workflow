@@ -24,6 +24,40 @@ export function createPlanCard({ card, stage, onStart }) {
   let moving = false;
   /* 边写边看的时候,记着每一块已经露了几条,只补新的那几条。 */
   let shown = { says: 0, understanding: 0, steps: 0, asks: 0 };
+  /* 这一条从头到尾说过的话。谁说的看形不看名:自己说的是一块浅底,
+     Plan Agent 说的就是正文——画面上不出现「你」「它」这种称呼。 */
+  let thread = [];
+
+  const chatBox = () => $(".plan-chat");
+  /* 写的时候跟着看,写完了回到方案:正在落字的是最后那一条,在卡片最底下;
+     一轮说完,该读的是理解和路线,卡片回到顶上。 */
+  const followChat = () => { if (!mini) $(".plan-body").scrollTop = $(".plan-body").scrollHeight; };
+  const turnHtml = (t) => (t.who === "user"
+    ? `<div class="plan-turn me">${esc(t.text)}</div>`
+    : `<div class="plan-turn plan-says">${rich(t.text)}</div>`);
+
+  /* 整条重画。新的那条在最底下,所以画完滚到底。 */
+  function paintChat() {
+    const box = chatBox();
+    box.innerHTML = thread.map(turnHtml).join("");
+    $(".sec-chat").hidden = thread.length === 0;
+    box.scrollTop = box.scrollHeight;
+  }
+
+  /* 正在写的那一条单独更新,前面说过的话不跟着重画。 */
+  function paintLive(text) {
+    const box = chatBox();
+    let el = box.querySelector(".plan-turn.live");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "plan-turn plan-says live";
+      box.appendChild(el);
+    }
+    el.innerHTML = rich(text);
+    $(".sec-chat").hidden = false;
+    box.scrollTop = box.scrollHeight;
+    followChat();
+  }
 
   const place = () => {
     if (mini) {
@@ -53,7 +87,7 @@ export function createPlanCard({ card, stage, onStart }) {
   };
 
   /* 卡上的内容照方案填,返回这一轮要落下来的几块。 */
-  function fill({ task, speech, plan }) {
+  function fill({ task, speech, chat, plan }) {
     /* 需求写的是方案里的 goal,不是用户敲进来的第一句。第一句可能是「你好」,
        真正的需求是聊出来的——goal 就是模型把这一轮聊下来的东西收成的一句话。
        方案还没出来之前,先摆着用户自己的话。 */
@@ -62,10 +96,10 @@ export function createPlanCard({ card, stage, onStart }) {
     const secs = [];
     for (const sec of card.querySelectorAll(".plan-sec")) sec.hidden = true;
     shown = { says: 0, understanding: 0, steps: 0, asks: 0 };
-    if (speech) {
-      $(".plan-says").innerHTML = rich(speech);
-      secs.push($(".sec-says"));
-    }
+    /* 服务端交回来的 chat 已经把这一轮的回话接在末尾了,所以不再单独补 speech。
+       只有还没接上的时候(刷新回来正好卡在中间)才拿 speech 当最后一条。 */
+    if (chat) thread = [...chat];
+    if (speech && thread.at(-1)?.who !== "agent") thread = [...thread, { who: "agent", text: speech }];
     if (plan) {
       $(".plan-table tbody").innerHTML = plan.understanding
         .map((u) => `<tr><td>${esc(u.quote)}</td><td>${esc(u.reading)}</td></tr>`).join("");
@@ -79,6 +113,12 @@ export function createPlanCard({ card, stage, onStart }) {
         secs.push($(".sec-asks"));
       }
     }
+    /* 对话摆在最后一块:紧挨着输入框。方案那几块的位置就固定住了,
+       不会因为多聊了两句被顶到看不见的地方——待确认尤其不能被顶走。 */
+    if (thread.length) {
+      paintChat();
+      secs.push($(".sec-chat"));
+    }
     return secs;
   }
 
@@ -90,10 +130,15 @@ export function createPlanCard({ card, stage, onStart }) {
     async ask(text) {
       card.hidden = false;
       card.classList.add("open");
-      $(".plan-text").textContent = text;
+      /* 第一句之后需求就归 goal 管了,这里只在还没有方案的时候顶上。 */
+      if (!thread.length) $(".plan-text").textContent = text;
       for (const sec of card.querySelectorAll(".plan-sec")) sec.hidden = true;
-      for (const sel of [".plan-says", ".plan-table tbody", ".plan-route", ".plan-asks"]) $(sel).innerHTML = "";
+      for (const sel of [".plan-table tbody", ".plan-route", ".plan-asks"]) $(sel).innerHTML = "";
       shown = { says: 0, understanding: 0, steps: 0, asks: 0 };
+      /* 按下发送这句话就上墙。模型要想三十秒,不能让它先消失三十秒。 */
+      thread = [...thread, { who: "user", text }];
+      paintChat();
+      followChat();
       go.hidden = true;
       close.hidden = true;
       fresh.hidden = true;
@@ -118,7 +163,12 @@ export function createPlanCard({ card, stage, onStart }) {
         go.hidden = false;
         go.classList.add("drop");
       }
-      if (!mini) place();
+      /* 刚看着它一个字一个字写完,别把人甩回顶上。刷新回来的那一下不一样:
+         没人在看写字,该先看见方案。streamed 正好分得开这两种。 */
+      if (!mini) {
+        if (!streamed) $(".plan-body").scrollTop = 0;
+        place();
+      }
     },
 
     /* 模型还在写的时候:一条一条补上去,已经露过的不重画。
@@ -129,8 +179,7 @@ export function createPlanCard({ card, stage, onStart }) {
          想的内容不上界面——那是内心独白,而且是断的。 */
       if (!plan?.steps.length) setSay(phase === "writing" ? "正在生成方案" : "正在理解需求");
       if (speech && speech.length !== shown.says) {
-        $(".plan-says").innerHTML = rich(speech);
-        $(".sec-says").hidden = false;
+        paintLive(speech);
         shown.says = speech.length;
       }
       if (!plan) return place();

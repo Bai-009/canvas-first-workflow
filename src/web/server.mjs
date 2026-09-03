@@ -67,6 +67,9 @@ export async function createWebServer() {
   let session = newSession();
   let task = "";
   let speech = "";
+  /* 这一条从头到尾说了什么,一句一句留着:Plan Agent 就是在这里跟人说话的。
+     模型手里那份 transcript 是给模型看的(带 tool 调用和结果),不是给人读的。 */
+  let chat = [];
   let wave = null;
   /* 新开一条:上一条正在跑的先叫停,它后面再交回来的东西不算数。 */
   let gen = 0;
@@ -75,20 +78,23 @@ export async function createWebServer() {
     "GET /api/node-table": (_req, res) => json(res, table),
     "GET /api/events": (_req, res) => feed.join(res),
     "GET /api/state": (_req, res) => json(res, {
-      task, speech, wave, canvas: session.canvas, plan: session.currentPlan, revision: session.revision,
+      task, speech, chat, wave, canvas: session.canvas, plan: session.currentPlan, revision: session.revision,
       turn: session.turn, hasExecutor: session.hasExecutor, annotations: session.annotations,
     }),
     "POST /api/say": async (req, res) => {
       const { text } = await body(req);
       if (!text?.trim()) return json(res, { error: "说了空话" }, 400);
       if (!task) task = text.trim();
+      chat = [...chat, { who: "user", text: text.trim() }];
       feed.send({ type: "thinking", who: "plan" });
-      /* 边写边看:模型还在写的时候,把手上这半份推给页面。 */
+      /* 边写边看:模型还在写的时候,把手上这半份推给页面。
+         这一轮它的话还在写,所以草稿单独走 speech,不进 chat。 */
       const turn = await session.say(text.trim(), {
-        onDraft: (draft) => feed.send({ type: "draft", task, ...draft }),
+        onDraft: (draft) => feed.send({ type: "draft", task, chat, ...draft }),
       });
       speech = turn.speech ?? "";
-      feed.send({ type: "plan", task, plan: turn.plan, diff: turn.diff, revision: turn.revision, speech });
+      if (speech) chat = [...chat, { who: "agent", text: speech }];
+      feed.send({ type: "plan", task, chat, plan: turn.plan, diff: turn.diff, revision: turn.revision, speech });
       return json(res, { ok: true });
     },
     /* 新开一条:上一条正在跑的先叫停,它后面再交回来的东西不算数。 */
@@ -98,6 +104,7 @@ export async function createWebServer() {
       session = newSession();
       task = "";
       speech = "";
+      chat = [];
       wave = null;
       feed.send({ type: "reset" });
       return json(res, { ok: true });

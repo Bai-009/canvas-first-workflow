@@ -157,6 +157,12 @@
   .plan-sec[hidden]{display:none}
   .plan-h{margin:0 0 8px;color:var(--ink-3);font-size:11px;font-weight:500}
 
+  /* 对话:一句一句留着,谁说的看形不看名——自己说的是一块浅底,
+     Plan Agent 说的就是正文。这里不写「你」「它」,画面上没有人。
+     线程自己封顶自己滚,底下的理解、路线、待确认不会被顶出视野。 */
+  .plan-chat{display:flex;flex-direction:column;gap:9px;max-height:34vh;overflow-y:auto}
+  .plan-turn.me{align-self:flex-end;max-width:84%;padding:6px 12px;border-radius:13px;
+    background:var(--surface);color:var(--ink);font-size:12.5px;line-height:19px}
   .plan-says{font-size:12.5px;line-height:19px;color:var(--ink-2)}
   .plan-says p{margin:0 0 9px}
   .plan-says p:last-child{margin-bottom:0}
@@ -236,12 +242,12 @@
     <span class="plan-label">需求</span>
     <p class="plan-text"></p>
     <div class="plan-body">
-      <div class="plan-sec sec-says" hidden><p class="plan-h">说明</p><div class="plan-says"></div></div>
       <div class="plan-sec sec-understanding" hidden><p class="plan-h">理解</p>
         <table class="plan-table"><thead><tr><th>原文</th><th>解读</th></tr></thead><tbody></tbody></table></div>
       <div class="plan-sec sec-route" hidden><p class="plan-h">路线</p><div class="plan-route"></div></div>
       <div class="plan-sec sec-asks" hidden><p class="plan-h">待确认</p><div class="plan-asks"></div>
         <p class="plan-hint">答不上的说一声，先按最常见的口径搭。</p></div>
+      <div class="plan-sec sec-chat" hidden><div class="plan-chat"></div></div>
     </div>
     <div class="plan-foot">
       <span class="plan-dot"></span>
