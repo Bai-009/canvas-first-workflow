@@ -31,6 +31,14 @@ test("读文件:卡类型 File;两格 Folder 接数据源、Pattern 真打字;�
   assert.equal(node.output, "File");
 });
 
+test("OCR:卡类型 OCR;只有 Engine 一格,凭证是平台的事;File 进 Text 出", () => {
+  const node = findNodeDefinition("ocr");
+  assert.equal(node.kind, "OCR");
+  assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Engine", "pick"]]);
+  assert.equal(node.input, "File");
+  assert.equal(node.output, "Text");
+});
+
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {
   const base = { type: "x", kind: "X", summary: "s", slots: [], input: "a", output: "b" };
   const slot = (extra) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });

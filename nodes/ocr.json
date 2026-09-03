@@ -1,0 +1,10 @@
+{
+  "type": "ocr",
+  "kind": "OCR",
+  "summary": "扫描件、图片这种没有文字层的文件,用 OCR 识别成文本,每个文件出一条。有文字层的用解析文档,不用它",
+  "slots": [
+    { "key": "engine", "label": "Engine", "kind": "pick", "options": ["Mistral OCR"], "default": "Mistral OCR" }
+  ],
+  "input": "File",
+  "output": "Text"
+}
