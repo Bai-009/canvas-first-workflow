@@ -71,6 +71,14 @@ test("写向量库:卡类型 Vector Store;Connection 接连接、Collection 接�
   assert.equal(node.output, "Result");
 });
 
+test("定时触发:卡类型 Trigger;一格 Schedule 真打字,带默认值;起点,没有 input;Event 出", () => {
+  const node = findNodeDefinition("schedule");
+  assert.equal(node.kind, "Trigger");
+  assert.deepEqual(node.slots.map((s) => [s.label, s.kind, s.default]), [["Schedule", "text", "每天 00:00"]]);
+  assert.equal(node.input, undefined);
+  assert.equal(node.output, "Event");
+});
+
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {
   const base = { type: "x", kind: "X", summary: "s", slots: [], input: "a", output: "b" };
   const slot = (extra) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });

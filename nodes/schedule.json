@@ -1,0 +1,9 @@
+{
+  "type": "schedule",
+  "kind": "Trigger",
+  "summary": "按时间表启动这条链:每天几点、每几小时。链的起点,不进数据,触发一次出一条",
+  "slots": [
+    { "key": "schedule", "label": "Schedule", "kind": "text", "default": "每天 00:00" }
+  ],
+  "output": "Event"
+}
