@@ -33,15 +33,16 @@
   .wire{fill:none;stroke:#aeb5c0;stroke-width:2.6;stroke-linecap:round}
   .tip{fill:none;stroke:#aeb5c0;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
   .port{fill:#aeb5c0}
-  /* 线跟着它接住的那张卡一起出场。 */
-  .edge{transition:opacity 340ms ease}
-  .edge.fresh{opacity:0}
+  /* 线自己走一遍再接上卡片:箭头等线走到了才出现。
+     出发点那个圆点是上游卡片的出口,线没走它也在。 */
+  .edge .tip,.edge .port-label{transition:opacity 240ms ease}
+  .edge.held .tip,.edge.held .port-label{opacity:0}
   .port-label{font-family:var(--font);font-size:11px;font-weight:500;fill:var(--ink-3)}
   .port-label rect{fill:var(--canvas)}
 
   /* 进度长在链路自己的轨道上:头上那个点是下一张卡出现的地方,
      右边一条淡线带着几个点,是还没走到的几步。除此之外画布上不加东西。 */
-  .track{stroke:#d7dbe2;stroke-width:2;stroke-linecap:round}
+  .track{fill:none;stroke:#d7dbe2;stroke-width:2;stroke-linecap:round}
   .track-dot{fill:#d7dbe2}
   .track-head{fill:var(--accent);animation:headPulse 1.6s ease-in-out infinite}
   @keyframes headPulse{0%,100%{opacity:.34;r:5}50%{opacity:1;r:7}}
@@ -53,14 +54,27 @@
   .track-label[hidden]{display:none}
 
   .node{position:absolute;width:var(--tile);height:var(--tile)}
+  /* 高度写死成一格,不写 auto:从 auto 起步的高度动画浏览器不认,展开会是硬跳。
+     撑开的过程要裁边,不然内容会先漏在框外面。 */
   .card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:var(--tile);border-radius:24px;background:var(--paper);cursor:pointer;
+    width:var(--tile);height:var(--tile);overflow:hidden;
+    border-radius:24px;background:var(--paper);cursor:pointer;
     transition:width 420ms var(--spring),border-radius 420ms var(--spring),box-shadow 300ms ease;
     box-shadow:0 18px 34px -18px rgba(20,26,38,.30),0 4px 10px -4px rgba(20,26,38,.08),0 0 0 1px rgba(20,26,38,.05)}
+  .card:hover{box-shadow:0 22px 40px -18px rgba(20,26,38,.34),0 6px 14px -4px rgba(20,26,38,.10),
+    0 0 0 1px rgba(20,26,38,.07)}
   .node.open{z-index:20}
   .node.open .card{width:540px;border-radius:22px;padding:18px;
     box-shadow:0 40px 80px -24px rgba(20,26,38,.32),0 12px 24px -8px rgba(20,26,38,.10),
       0 0 0 1px rgba(20,26,38,.06),0 0 0 4px color-mix(in srgb,var(--c) 12%,transparent)}
+  /* 撑开:宽、高、位移必须同一条时长同一条曲线。位移是照着高度算出来的
+     （卡片钉住上沿往下长）,两条跑得不一样快,上沿就会飘。 */
+  .node.morph .card{transition:width 560ms var(--spring),height 560ms var(--spring),
+    transform 560ms var(--spring),border-radius 560ms var(--spring),box-shadow 320ms ease}
+  /* 退到背景里的那几张只改透明度:聚焦的时候别的卡不许再跟着缩一下。 */
+  .node.dim .card{opacity:.32;box-shadow:0 1px 2px rgba(20,26,38,.04),0 0 0 1px rgba(20,26,38,.04)}
+  /* 量高度的那一帧不许有过渡,量完就恢复。 */
+  .node.measuring,.node.measuring *{transition:none !important}
 
   .icon{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;border-radius:9px;
     background:color-mix(in srgb,var(--c) 13%,#fff);color:var(--c)}

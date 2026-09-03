@@ -17,7 +17,7 @@ const LANE = TILE + GAP_Y;
    线才有流的样子,不是一根根横杠。幅度远小于分岔两路的间距,
    所以岔开的两路照样分得清。 */
 const AMP = 48;
-const wave = (col) => Math.round(AMP * Math.sin(col * 0.9));
+export const wave = (col) => Math.round(AMP * Math.sin(col * 0.9));
 
 const keyOf = (e) => `${e.from}>${e.to}>${e.output ?? ""}`;
 
@@ -89,21 +89,29 @@ export function layout(nodes, edges) {
   return { placed, route };
 }
 
-/* 线:从上游右沿的中点到下游左沿的中点,横着出、横着进,中间一段贝塞尔。
-   控制点取横向距离的 0.52,和原型一致——两端各留一段真正水平的线,
-   卡片挨得近的时候也不会拱起来。经过拐点时同样是水平进、水平出。 */
-export function wire(from, to, through = []) {
-  const points = [
-    { x: from.x + TILE, y: from.y + TILE / 2 },
-    ...through,
-    { x: to.x, y: to.y + TILE / 2 },
-  ];
+/* 一串点连成一条线:横着出、横着进,控制点取横向距离的 0.52,和原型一致——
+   两端各留一段真正水平的线,卡片挨得近的时候也不会拱起来。
+
+   画布上只有这一种曲率:已经建好的线、等着的虚线、还没走到的那截轨道,
+   全从这儿出。同一条链上出现两种曲率,眼睛立刻看出是两个东西拼的。 */
+export function path(points) {
   let d = `M ${points[0].x} ${points[0].y}`;
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1], b = points[i];
     const dx = (b.x - a.x) * 0.52;
     d += ` C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
   }
+  return d;
+}
+
+/* 线:从上游右沿的中点到下游左沿的中点。经过拐点时同样是水平进、水平出。 */
+export function wire(from, to, through = []) {
+  const points = [
+    { x: from.x + TILE, y: from.y + TILE / 2 },
+    ...through,
+    { x: to.x, y: to.y + TILE / 2 },
+  ];
+  const d = path(points);
   const head = points[0], next = points[1];
   const tail = points[points.length - 1];
   return { d, x0: head.x, y0: head.y, x1: tail.x, y1: tail.y, dx: (next.x - head.x) * 0.52, next };

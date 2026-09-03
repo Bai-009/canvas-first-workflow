@@ -101,13 +101,15 @@ feed.onmessage = (e) => {
   if (event.type === "run") {
     busy = null;
     refreshSend();
-    view.waiting(null);
     view.draw(event.canvas);
-    const run = event.run;
-    const bad = run.steps.find((s) => s.outcome === "rejected" || s.outcome === "failed");
-    card.status(bad ? `停在 ${bad.ref}` : `已生成 ${event.canvas.nodes.length} 个节点`);
-    /* 断了就把断口留在画布上,不弹东西。 */
-    if (bad) view.waiting({ title: bad.reasons ? bad.reasons[0] : bad.error, remaining: 0, broken: true });
+    view.waiting(null);
+    const bad = event.run.steps.find((s) => s.outcome === "rejected" || s.outcome === "failed");
+    /* 收场的话等卡全落地了再说:还在落的时候报「已生成 9 个」,画布上只有 4 张。
+       断了就把断口留在画布上,不弹东西。 */
+    view.onIdle(() => {
+      card.status(bad ? `停在 ${bad.ref}` : `已生成 ${event.canvas.nodes.length} 个节点`);
+      if (bad) view.waiting({ title: bad.reasons ? bad.reasons[0] : bad.error, remaining: 0, broken: true });
+    });
   }
   if (event.type === "error") { busy = null; refreshSend(); view.waiting(null); card.status(event.message); }
 };
