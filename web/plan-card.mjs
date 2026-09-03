@@ -93,6 +93,9 @@ export function createPlanCard({ card, stage, onStart }) {
     /* 交回来了:说明、理解、路线、待确认,一条一条落。 */
     async show(state) {
       await drop(fill(state));
+      /* 这里必须自己取出来:页面上有个 id 是 plan 的元素,浏览器会把它变成同名全局变量,
+         少写一行 const 就会读到那个 div,状态和「开始生成」全哑掉。 */
+      const { plan } = state;
       const open = plan?.openQuestions.length ?? 0;
       setSay(plan ? `${plan.steps.length} 步 · ${open ? `${open} 项待确认` : "待确认已清"}` : "未出方案", true);
       /* 收在右上角的时候不再冒出「开始生成」:那是中央这张卡上的动作。 */
