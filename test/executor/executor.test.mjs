@@ -26,18 +26,25 @@ function scripted(replies) {
   return { callModel, seen };
 }
 
-test("五样贴标签,画布上的 id 在模型那边叫 name", () => {
-  const text = stepMessage(context({ canvas: { nodes: [{ id: "读 PDF", step: "s1", type: "x", params: {}, blanks: [] }], edges: [], version: 1 } }));
+test("五样贴标签,画布上的节点原样发给模型,名字就叫 name", () => {
+  const text = stepMessage(context({ canvas: { nodes: [{ name: "读 PDF", step: "s1", type: "x", params: {}, blanks: [] }], edges: [], version: 1 } }));
   for (const tag of ["plan", "step", "canvas", "open_questions", "annotations"]) assert.match(text, new RegExp(`<${tag}>[\\s\\S]*</${tag}>`));
   assert.match(text, /"name": "读 PDF"/);
-  assert.doesNotMatch(text, /"id": "读 PDF"/);
+  assert.doesNotMatch(text, /"id":/);
 });
 
-test("模型交的换成状态机认的:name 变 id,step 补上,出口留着", () => {
+test("模型交的换成状态机认的:只补 step,其余原样带过去,出口留着", () => {
   const patch = toPatch({ kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: ["x"] }], edges: [{ from: "U", to: "A" }, { from: "A", to: "B", output: "false" }] }, "s2");
-  assert.deepEqual(patch.nodes, [{ id: "A", step: "s2", type: "t", params: {}, blanks: ["x"] }]);
+  assert.deepEqual(patch.nodes, [{ name: "A", step: "s2", type: "t", params: {}, blanks: ["x"] }]);
   assert.deepEqual(patch.edges, [{ from: "U", to: "A" }, { from: "A", to: "B", output: "false" }]);
   assert.deepEqual(toPatch({ kind: "covered", nodes: [{ name: "留着" }] }, "s2"), { kind: "covered" });
+});
+
+/* 路过的层不许挑格子:契约上加一格,中间一行代码都不用改,它自己就能走到画布。
+   这条钉住的是架构,不是某个字段——note 之前就是死在这儿的。 */
+test("契约上新加的格子原样穿过执行器,不用改中间层", () => {
+  const patch = toPatch({ kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: [], note: "为什么这么接", 将来新加的: 1 }], edges: [] }, "s2");
+  assert.deepEqual(patch.nodes[0], { name: "A", step: "s2", type: "t", params: {}, blanks: [], note: "为什么这么接", 将来新加的: 1 });
 });
 
 test("一步的来回:搜、查、交;答案接在对话后面,交的过闸门就还回去", async () => {
@@ -64,7 +71,7 @@ test("一步的来回:搜、查、交;答案接在对话后面,交的过闸门�
   assert.ok(describeReply.properties.some((p) => p.name === "fileSelector"));
   assert.deepEqual(events, ["tool", "tool", "submitted"]);
   assert.equal(out.result.kind, "patch");
-  assert.deepEqual(out.result.nodes.map((n) => [n.id, n.step]), [["Every day", "s1"], ["Read PDFs", "s1"]]);
+  assert.deepEqual(out.result.nodes.map((n) => [n.name, n.step]), [["Every day", "s1"], ["Read PDFs", "s1"]]);
   assert.deepEqual(out.submission, submission);
 });
 
@@ -76,7 +83,7 @@ test("闸门不认的交回,原因退给模型,它再交", async () => {
   assert.equal(out.rounds, 2);
   const rejection = JSON.parse(out.messages[3].content);
   assert.match(rejection.rejected.join(";"), /params/);
-  assert.deepEqual(out.result.nodes, [{ id: "A", step: "s1", type: "t", params: {}, blanks: [] }]);
+  assert.deepEqual(out.result.nodes, [{ name: "A", step: "s1", type: "t", params: {}, blanks: [] }]);
 });
 
 test("查详情报错(没有那种操作)当答案退给模型,来回继续", async () => {
@@ -84,7 +91,7 @@ test("查详情报错(没有那种操作)当答案退给模型,来回继续", as
     assistant([call("describe_node", { type: "n8n-nodes-base.postgres", operation: "fly" })]),
     assistant([call("submit_step", { kind: "covered" }, "c2")], "nothing to change"),
   ]);
-  const out = await runStep(context({ canvas: { nodes: [{ id: "A", step: "s1", type: "t", params: {}, blanks: [] }], edges: [], version: 1 } }), { callModel, systemPrompt: "P" });
+  const out = await runStep(context({ canvas: { nodes: [{ name: "A", step: "s1", type: "t", params: {}, blanks: [] }], edges: [], version: 1 } }), { callModel, systemPrompt: "P" });
   assert.match(JSON.parse(out.messages[3].content).error, /没有 fly 这种操作/);
   assert.deepEqual(out.result, { kind: "covered" });
   assert.equal(out.events[1].kind, "said");

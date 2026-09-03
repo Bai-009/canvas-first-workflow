@@ -1,5 +1,5 @@
 import { createPlanSession } from "../plan/plan-session.mjs";
-import { stepOrder, assembleTable } from "./step-context.mjs";
+import { stepWaves, assembleTable } from "./step-context.mjs";
 
 /* 整条链的会话:Plan 那一半原样用 createPlanSession,这里往下长一段。
    手里多攥三样:画布、批注、跑过的记录。多三个动作:开始、批注、停。
@@ -7,7 +7,7 @@ import { stepOrder, assembleTable } from "./step-context.mjs";
 
    执行者是一个插口:async (context, { signal }) => 结果。context 就是拼好的上下文
    (整份方案、这一步、画布、这一步没答的问题、这一步的批注)。结果两种:
-     { kind: "patch", nodes: [{ id, step, type, params, blanks }], edges: [{ from, to }] }
+     { kind: "patch", nodes: [{ name, step, type, params, blanks, note }], edges: [{ from, to, output }] }
        —— 这一步的全部节点,整份重出;状态机换掉画布上这一步原有的节点
      { kind: "covered" } —— 画布上已经有了,不动
    结果好不好状态机不看;只查机器缺了转不动的那几条(见 checkResult),查不过就停在这一步。 */
@@ -44,7 +44,7 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
       return plan.say(text, options);
     },
 
-    /* 批注挂在步骤编号上,不挂在节点上:节点重建它还在。 */
+    /* 批注挂在步骤号上,不挂在节点上:节点重建它还在。 */
     annotate(step, text) {
       requireUserTurn("批注");
       const current = plan.currentPlan;
@@ -58,7 +58,9 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
       return structuredClone(annotations);
     },
 
-    /* 按开始:从 s1 起一步一步做。每一步拼一次上下文,喊一次执行者,收回的改动查过就进画布。
+    /* 按开始:按波次走。一波里的步互不依赖,同时交给执行者;一波走完才开下一波。
+       同一波里的步拿到的是这一波开始前的画布 —— 它们本来就互不依赖,看不见对方是对的。
+       收回的改动按波内先后一条一条查、一条一条进画布,顺序是定的。
        每次开始都从头走;没变的步执行者会说已经有了。 */
     async start() {
       requireUserTurn("开始");
@@ -70,44 +72,52 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
       const { signal } = controller;
       const run = { revision: plan.revision, steps: [], endedBy: null, problems: [] };
       try {
-        for (const ref of stepOrder(current)) {
-          const context = assembleTable(current, ref, { canvas, annotations });
-          let result;
-          try {
-            result = await executor(context, { signal });
-          } catch (error) {
-            if (signal.aborted || error?.name === "AbortError") {
+        waves: for (const wave of stepWaves(current)) {
+          const settled = await Promise.all(
+            wave.map(async (ref) => {
+              const context = assembleTable(current, ref, { canvas, annotations });
+              try {
+                return { ref, result: await executor(context, { signal }) };
+              } catch (error) {
+                return { ref, error };
+              }
+            })
+          );
+          for (const { ref, result, error } of settled) {
+            if (error) {
+              if (signal.aborted || error?.name === "AbortError") {
+                run.steps.push({ ref, outcome: "stopped", canvasVersion: canvas.version });
+                run.endedBy = "stopped";
+              } else {
+                run.steps.push({ ref, outcome: "failed", canvasVersion: canvas.version, error: error.message });
+                run.endedBy = "error";
+              }
+              break waves;
+            }
+            /* 执行者不理会停止信号、停了以后还交回东西的,一样不收:停了画布就停在上次提交 */
+            if (signal.aborted) {
               run.steps.push({ ref, outcome: "stopped", canvasVersion: canvas.version });
               run.endedBy = "stopped";
-            } else {
-              run.steps.push({ ref, outcome: "failed", canvasVersion: canvas.version, error: error.message });
-              run.endedBy = "error";
+              break waves;
             }
-            break;
+            const reasons = checkResult(result, ref, canvas);
+            if (reasons.length) {
+              run.steps.push({ ref, outcome: "rejected", canvasVersion: canvas.version, reasons });
+              run.endedBy = "rejected";
+              break waves;
+            }
+            if (result.kind === "covered") {
+              run.steps.push({ ref, outcome: "covered", canvasVersion: canvas.version });
+              continue;
+            }
+            commit(canvas, ref, result);
+            run.steps.push({
+              ref,
+              outcome: "done",
+              canvasVersion: canvas.version,
+              nodes: result.nodes.map((node) => node.name),
+            });
           }
-          /* 执行者不理会停止信号、停了以后还交回东西的,一样不收:停了画布就停在上次提交 */
-          if (signal.aborted) {
-            run.steps.push({ ref, outcome: "stopped", canvasVersion: canvas.version });
-            run.endedBy = "stopped";
-            break;
-          }
-          const reasons = checkResult(result, ref, canvas);
-          if (reasons.length) {
-            run.steps.push({ ref, outcome: "rejected", canvasVersion: canvas.version, reasons });
-            run.endedBy = "rejected";
-            break;
-          }
-          if (result.kind === "covered") {
-            run.steps.push({ ref, outcome: "covered", canvasVersion: canvas.version });
-            continue;
-          }
-          commit(canvas, ref, result);
-          run.steps.push({
-            ref,
-            outcome: "done",
-            canvasVersion: canvas.version,
-            nodes: result.nodes.map((node) => node.id),
-          });
         }
         if (!run.endedBy) {
           run.endedBy = "finished";
@@ -146,26 +156,26 @@ export function checkResult(result, ref, canvas) {
   if (!Array.isArray(edges)) return ["edges 不是数组"];
 
   const seen = new Set();
-  const others = new Map(canvas.nodes.filter((node) => node.step !== ref).map((node) => [node.id, node.step]));
+  const others = new Map(canvas.nodes.filter((node) => node.step !== ref).map((node) => [node.name, node.step]));
   nodes.forEach((node, index) => {
-    const label = node?.id ? `节点 ${node.id}` : `第 ${index + 1} 个节点`;
+    const label = node?.name ? `节点 ${node.name}` : `第 ${index + 1} 个节点`;
     if (!isPlainObject(node)) return reasons.push(`${label} 不是对象`);
-    if (typeof node.id !== "string" || !node.id) reasons.push(`${label} 缺 id`);
+    if (typeof node.name !== "string" || !node.name) reasons.push(`${label} 缺 name`);
     if (typeof node.type !== "string" || !node.type) reasons.push(`${label} 缺 type`);
     if (node.step !== ref) reasons.push(`${label} 标的是 ${JSON.stringify(node.step)},这一轮做的是 ${ref}`);
     if (!isPlainObject(node.params)) reasons.push(`${label} 的 params 不是对象`);
     if (!Array.isArray(node.blanks) || node.blanks.some((blank) => typeof blank !== "string")) {
       reasons.push(`${label} 的 blanks 不是字符串数组`);
     }
-    if (typeof node.id === "string" && node.id) {
-      if (seen.has(node.id)) reasons.push(`节点编号 ${node.id} 重复`);
-      seen.add(node.id);
-      if (others.has(node.id)) reasons.push(`节点编号 ${node.id} 已被 ${others.get(node.id)} 用了`);
+    if (typeof node.name === "string" && node.name) {
+      if (seen.has(node.name)) reasons.push(`节点名 ${node.name} 重复`);
+      seen.add(node.name);
+      if (others.has(node.name)) reasons.push(`节点名 ${node.name} 已被 ${others.get(node.name)} 用了`);
     }
   });
   if (reasons.length) return reasons;
 
-  const mine = new Set(nodes.map((node) => node.id));
+  const mine = new Set(nodes.map((node) => node.name));
   const all = new Set([...others.keys(), ...mine]);
   for (const edge of edges) {
     if (!isPlainObject(edge) || typeof edge.from !== "string" || typeof edge.to !== "string") {
@@ -181,23 +191,23 @@ export function checkResult(result, ref, canvas) {
 }
 
 /* 换掉这一步原有的节点。线的归属:进这一步的线由这一步自己在改动里声明,所以老的进线全部去掉、
-   换成改动里的;出这一步的线是下游声明的,只要这头的节点编号还在(原地改),就留着;
-   编号没了的,碰到它的线一起去掉,下游那一步重走时会看见自己没接上。版本加一。 */
+   换成改动里的;出这一步的线是下游声明的,只要这头的节点名还在(原地改),就留着;
+   名字没了的,碰到它的线一起去掉,下游那一步重走时会看见自己没接上。版本加一。 */
 function commit(canvas, ref, patch) {
-  const oldIds = new Set(canvas.nodes.filter((node) => node.step === ref).map((node) => node.id));
+  const oldIds = new Set(canvas.nodes.filter((node) => node.step === ref).map((node) => node.name));
   const nodes = [
-    ...canvas.nodes.filter((node) => !oldIds.has(node.id)),
+    ...canvas.nodes.filter((node) => !oldIds.has(node.name)),
     ...patch.nodes.map((node) => structuredClone(node)),
   ];
-  const live = new Set(nodes.map((node) => node.id));
+  const live = new Set(nodes.map((node) => node.name));
   const kept = canvas.edges.filter(
     (edge) => !oldIds.has(edge.to) && live.has(edge.from) && live.has(edge.to)
   );
-  const declared = (patch.edges ?? []).map((edge) => ({ from: edge.from, to: edge.to }));
+  const declared = patch.edges ?? [];
   const seen = new Set();
   canvas.nodes = nodes;
   canvas.edges = [...kept, ...declared].filter((edge) => {
-    const key = `${edge.from}→${edge.to}`;
+    const key = `${edge.from}→${edge.to}#${edge.output ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -209,8 +219,8 @@ function commit(canvas, ref, patch) {
    接在谁后面的有没有一条线真的从那一步接过来。查出来的只记在这一轮的记录里,先不自动发回。 */
 export function wholeCanvasProblems(plan, canvas) {
   const problems = [];
-  const ids = new Set(canvas.nodes.map((node) => node.id));
-  const nodesOf = (ref) => canvas.nodes.filter((node) => node.step === ref).map((node) => node.id);
+  const ids = new Set(canvas.nodes.map((node) => node.name));
+  const nodesOf = (ref) => canvas.nodes.filter((node) => node.step === ref).map((node) => node.name);
   for (const step of plan.steps) {
     const mine = nodesOf(step.ref);
     if (mine.length === 0) {

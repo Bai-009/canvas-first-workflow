@@ -20,37 +20,29 @@ export function callerFromEnv(env = process.env) {
 
 const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
-/* 五样贴标签。画布上的节点在状态机里叫 id,在模型那边叫 name:发出去时换叫法,交回来再换回去。 */
+/* 五样贴标签。画布原样发:节点的名字全线只有 name 一个叫法,这里不换。 */
 export function stepMessage(context) {
   const { plan, step, canvas, openQuestions, instructions } = context;
-  const nodes = canvas.nodes.map(({ id, ...rest }) => ({ name: id, ...rest }));
   const block = (tag, value) => `<${tag}>\n${JSON.stringify(value, null, 2)}\n</${tag}>`;
   return [
     block("plan", plan),
     block("step", step),
-    block("canvas", { nodes, edges: canvas.edges }),
+    block("canvas", { nodes: canvas.nodes, edges: canvas.edges }),
     block("open_questions", openQuestions),
     block("annotations", instructions),
   ].join("\n\n");
 }
 
-/* 模型交的 → 状态机认的:name 变 id,step 由这里补,线上的出口留着。形状不对的原样递过去让闸门说话。 */
+/* 模型交的 → 状态机认的。这一层只拥有一样东西:节点属于哪一步(step),所以只补这一样,
+   其余原样带过去。路过的层不许挑格子——挑一次,以后契约上新加的格子就在这儿悄没声地没了。
+   形状不对的也原样递过去,让闸门说话。 */
 export function toPatch(submission, ref) {
   if (!isObject(submission)) return submission;
   if (submission.kind === "covered") return { kind: "covered" };
   const nodes = Array.isArray(submission.nodes)
-    ? submission.nodes.map((node) =>
-        isObject(node) ? { id: node.name, step: ref, type: node.type, params: node.params, blanks: node.blanks } : node
-      )
+    ? submission.nodes.map((node) => (isObject(node) ? { ...node, step: ref } : node))
     : submission.nodes;
-  const edges = Array.isArray(submission.edges)
-    ? submission.edges.map((edge) =>
-        isObject(edge) && edge.output !== undefined
-          ? { from: edge.from, to: edge.to, output: edge.output }
-          : isObject(edge) ? { from: edge.from, to: edge.to } : edge
-      )
-    : submission.edges;
-  return { kind: submission.kind, nodes, edges };
+  return { kind: submission.kind, nodes, edges: submission.edges };
 }
 
 function answerTool(name, args) {

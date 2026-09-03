@@ -6,15 +6,15 @@ export default async function fixedExecutor(context) {
   const { step, canvas, openQuestions, instructions } = context;
   const already = canvas.nodes.some((node) => node.step === step.ref);
   if (already && instructions.length === 0) return { kind: "covered" };
-  const id = `${step.ref}-固定答复`;
+  const name = `${step.ref}-固定答复`;
   const edges = step.dependsOn.flatMap((dep) =>
-    canvas.nodes.filter((node) => node.step === dep).map((node) => ({ from: node.id, to: id }))
+    canvas.nodes.filter((node) => node.step === dep).map((node) => ({ from: node.name, to: name }))
   );
   return {
     kind: "patch",
     nodes: [
       {
-        id,
+        name,
         step: step.ref,
         type: "固定答复(不是真节点)",
         params: { 标题: step.title, 批注: instructions },

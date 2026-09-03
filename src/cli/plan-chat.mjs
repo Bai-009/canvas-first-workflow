@@ -98,7 +98,7 @@ function renderCanvas(canvas) {
   const lines = [`画布 v${canvas.version} · ${canvas.nodes.length} 个节点 · ${canvas.edges.length} 条线`];
   for (const n of canvas.nodes) {
     const blanks = n.blanks.length ? ` · 留空:${n.blanks.join("、")}` : "";
-    lines.push(`  ${n.id}  [${n.step}] ${n.type}${blanks}`);
+    lines.push(`  ${n.name}  [${n.step}] ${n.type}${blanks}`);
   }
   for (const e of canvas.edges) lines.push(`  ${e.from} → ${e.to}`);
   return lines.join("\n");

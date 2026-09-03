@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createWorkflowSession, checkResult, wholeCanvasProblems } from "../../src/state-machine/workflow-session.mjs";
+import { stepWaves } from "../../src/state-machine/step-context.mjs";
+import fixedExecutor from "../../fixtures/doubles/fixed-executor.mjs";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 const run8 = read("../../fixtures/observed/run8-原因版提示词/turn-2.plan.json");
@@ -21,7 +23,7 @@ const submitting = (plan) => async () => ({
 });
 
 /* 执行者的固定答复:按这一步的编号查表。 */
-const node = (step, id, extra = {}) => ({ id, step, type: `${step} 的节点`, params: {}, blanks: [], ...extra });
+const node = (step, name, extra = {}) => ({ name, step, type: `${step} 的节点`, params: {}, blanks: [], ...extra });
 const patch = (nodes, edges = []) => ({ kind: "patch", nodes, edges });
 const covered = { kind: "covered" };
 const chain = {
@@ -45,6 +47,66 @@ async function sessionWithPlan(executor) {
   return session;
 }
 
+/* 一个 If 的两条分支落到同一个节点上,是两条不同的线。出口丢了或者被当成重复线并掉,
+   画布上就只剩一条,分支消失——用户看到的工作流跟真正的工作流不是一回事。 */
+test("分支的出口留在画布上:同一对节点之间,true 和 false 是两条线", async () => {
+  const branching = {
+    s1: () => patch([node("s1", "岔路")]),
+    s2: () => patch([node("s2", "收口")], [
+      { from: "岔路", to: "收口", output: "true" },
+      { from: "岔路", to: "收口", output: "false" },
+    ]),
+    s3: () => covered,
+    s4: () => covered,
+  };
+  const session = await sessionWithPlan(byStep(branching).executor);
+  await session.start();
+  assert.deepEqual(session.canvas.edges, [
+    { from: "岔路", to: "收口", output: "true" },
+    { from: "岔路", to: "收口", output: "false" },
+  ]);
+});
+
+/* 计划从来就是个图不是条线:接在同一个前序后面、彼此不依赖的步,该同时走。 */
+test("走步排成波次:互不依赖的步凑一波", () => {
+  assert.deepEqual(
+    stepWaves({ steps: [
+      { ref: "s1", dependsOn: [] },
+      { ref: "s2", dependsOn: ["s1"] },
+      { ref: "s3", dependsOn: ["s1"] },
+      { ref: "s4", dependsOn: ["s2", "s3"] },
+    ] }),
+    [["s1"], ["s2", "s3"], ["s4"]]
+  );
+  assert.throws(() => stepWaves({ steps: [
+    { ref: "a", dependsOn: ["b"] }, { ref: "b", dependsOn: ["a"] },
+  ] }), /互相等着/);
+});
+
+/* 同一波里的两步拿到同一版画布,说明它们真的一起走了,不是排队。
+   看不见对方是对的 —— 它们本来就互不依赖。 */
+test("同一波的步同时走:两边拿到的是同一版画布", async () => {
+  const forked = structuredClone(run8);
+  forked.steps[0].dependsOn = [];
+  forked.steps[1].dependsOn = ["s1"];
+  forked.steps[2].dependsOn = ["s1"];
+  forked.steps[3].dependsOn = ["s2", "s3"];
+  const seen = {};
+  const handlers = {
+    s1: () => patch([node("s1", "n1")]),
+    s2: (context) => { seen.s2 = context.canvas.version; return patch([node("s2", "n2")], [{ from: "n1", to: "n2" }]); },
+    s3: (context) => { seen.s3 = context.canvas.version; return patch([node("s3", "n3")], [{ from: "n1", to: "n3" }]); },
+    s4: () => patch([node("s4", "n4")], [{ from: "n2", to: "n4" }, { from: "n3", to: "n4" }]),
+  };
+  const session = createWorkflowSession({ callModel: submitting(forked), executor: byStep(handlers).executor });
+  await session.say("每天定时把新增的合同 PDF 解析出关键字段,写进数据库");
+  const run = await session.start();
+  assert.equal(run.endedBy, "finished");
+  assert.deepEqual(run.steps.map((s) => s.ref), ["s1", "s2", "s3", "s4"]);
+  assert.equal(seen.s2, seen.s3);
+  assert.deepEqual(run.problems, []);
+});
+
 test("没有方案不能开始;执行者位置空着也不能开始", async () => {
   const empty = createWorkflowSession({ callModel: submitting(run8), executor: byStep(chain).executor });
   await assert.rejects(empty.start(), /还没有方案/);
@@ -65,7 +127,7 @@ test("按开始:四步按顺序做完,画布版本每提交加一,记录写的�
   assert.equal(run.endedBy, "finished");
   assert.deepEqual(run.problems, []);
   assert.equal(run.revision, 1);
-  assert.deepEqual(session.canvas.nodes.map((n) => n.id), ["n1", "n2", "n3", "n4"]);
+  assert.deepEqual(session.canvas.nodes.map((n) => n.name), ["n1", "n2", "n3", "n4"]);
   assert.deepEqual(session.canvas.edges, [
     { from: "n1", to: "n2" }, { from: "n2", to: "n3" }, { from: "n3", to: "n4" },
   ]);
@@ -84,7 +146,7 @@ test("每一步的上下文:整份方案、这一步、做到这步时的画布�
   assert.deepEqual(c1.canvas, { nodes: [], edges: [], version: 0 });
   assert.deepEqual(c1.openQuestions, []);
   assert.deepEqual(c1.instructions, []);
-  assert.deepEqual(c3.canvas.nodes.map((n) => n.id), ["n1", "n2"]);   // s3 开工时画布上有 s1 s2 的节点
+  assert.deepEqual(c3.canvas.nodes.map((n) => n.name), ["n1", "n2"]);   // s3 开工时画布上有 s1 s2 的节点
   assert.equal(c3.canvas.version, 2);
   assert.deepEqual(c3.openQuestions.map((q) => q.ref), ["q3"]);
   assert.deepEqual(c3.instructions, ["金额字段要带币种"]);
@@ -133,7 +195,7 @@ test("按停:正在做的这一步作废,画布停在上次提交;再开始从 s
   assert.deepEqual(run.steps.map((s) => [s.ref, s.outcome, s.canvasVersion]), [["s1", "done", 1], ["s2", "stopped", 1]]);
   assert.equal(run.endedBy, "stopped");
   assert.equal(session.canvas.version, 1);
-  assert.deepEqual(session.canvas.nodes.map((n) => n.id), ["n1"]);
+  assert.deepEqual(session.canvas.nodes.map((n) => n.name), ["n1"]);
   assert.equal(session.turn, "user");
   assert.equal(session.stop(), false);
 });
@@ -162,12 +224,12 @@ test("批注挂在步骤上;再开始从 s1 重走,s1 拿到批注,s2 看到新�
     ...chain,
     s1: (context) => { seenByS1.push(context.instructions); s1Version += 1; return patch([node("s1", `n1-v${s1Version}`)]); },
     s2: (context) => {
-      seenByS2.push(context.canvas.nodes.filter((n) => n.step === "s1").map((n) => n.id));
-      const upstream = context.canvas.nodes.find((n) => n.step === "s1").id;
+      seenByS2.push(context.canvas.nodes.filter((n) => n.step === "s1").map((n) => n.name));
+      const upstream = context.canvas.nodes.find((n) => n.step === "s1").name;
       return patch([node("s2", "n2")], [{ from: upstream, to: "n2" }]);
     },
-    s3: (context) => (context.canvas.nodes.some((n) => n.id === "n3") ? covered : chain.s3()),
-    s4: (context) => (context.canvas.nodes.some((n) => n.id === "n4") ? covered : chain.s4()),
+    s3: (context) => (context.canvas.nodes.some((n) => n.name === "n3") ? covered : chain.s3()),
+    s4: (context) => (context.canvas.nodes.some((n) => n.name === "n4") ? covered : chain.s4()),
   });
   const session = await sessionWithPlan(executor);
   const run1 = await session.start();
@@ -179,7 +241,7 @@ test("批注挂在步骤上;再开始从 s1 重走,s1 拿到批注,s2 看到新�
   assert.deepEqual(seenByS2, [["n1-v1"], ["n1-v2"]]);
   assert.deepEqual(run2.steps.map((s) => [s.ref, s.outcome]), [["s1", "done"], ["s2", "done"], ["s3", "covered"], ["s4", "covered"]]);
   /* 老的 s1 节点连同它的线一起换掉;新 s1 接到 s2 */
-  assert.deepEqual(session.canvas.nodes.filter((n) => n.step === "s1").map((n) => n.id), ["n1-v2"]);
+  assert.deepEqual(session.canvas.nodes.filter((n) => n.step === "s1").map((n) => n.name), ["n1-v2"]);
   assert.deepEqual(session.canvas.edges, [{ from: "n2", to: "n3" }, { from: "n3", to: "n4" }, { from: "n1-v2", to: "n2" }]);
   assert.deepEqual(run2.problems, []);
   assert.equal(session.runs.length, 2);
@@ -190,9 +252,9 @@ test("上游重做了、下游却说已经有了:线断了,整张画布查出来
   const { executor } = byStep({
     ...chain,
     s1: () => { s1Version += 1; return patch([node("s1", `n1-v${s1Version}`)]); },
-    s2: (context) => (context.canvas.nodes.some((n) => n.id === "n2") ? covered : patch([node("s2", "n2")], [{ from: "n1-v1", to: "n2" }])),
-    s3: (context) => (context.canvas.nodes.some((n) => n.id === "n3") ? covered : chain.s3()),
-    s4: (context) => (context.canvas.nodes.some((n) => n.id === "n4") ? covered : chain.s4()),
+    s2: (context) => (context.canvas.nodes.some((n) => n.name === "n2") ? covered : patch([node("s2", "n2")], [{ from: "n1-v1", to: "n2" }])),
+    s3: (context) => (context.canvas.nodes.some((n) => n.name === "n3") ? covered : chain.s3()),
+    s4: (context) => (context.canvas.nodes.some((n) => n.name === "n4") ? covered : chain.s4()),
   });
   const session = await sessionWithPlan(executor);
   await session.start();
@@ -282,4 +344,20 @@ test("整张画布查一遍:每一步有节点,接在谁后面就有线从那一
     version: 4,
   };
   assert.deepEqual(wholeCanvasProblems(run8, canvas), ["s3 接在 s2 后面,画布上却没有一条线从 s2 接到 s3"]);
+});
+
+/* 固定答复是命令行里唯一能插进状态机的东西。它交的形状不跟着契约走,/start 就在闸门上死,测试却照样全绿——
+   09-03 改名(id → name)时就这么漏过一回。所以让它真的插进来走一遍。 */
+test("固定答复插进状态机能走完整条链,再开始一次全是已经有了", async () => {
+  const session = await sessionWithPlan(fixedExecutor);
+  const first = await session.start();
+  assert.equal(first.endedBy, "finished");
+  assert.deepEqual(first.steps.map((s) => s.outcome), ["done", "done", "done", "done"]);
+  assert.deepEqual(first.problems, []);
+  const canvas = session.canvas;
+  assert.deepEqual(canvas.nodes.map((n) => n.name).sort(), ["s1-固定答复", "s2-固定答复", "s3-固定答复", "s4-固定答复"]);
+  assert.ok(canvas.edges.length > 0);
+  assert.ok(canvas.edges.every((e) => typeof e.from === "string" && typeof e.to === "string"));
+  const second = await session.start();
+  assert.deepEqual(second.steps.map((s) => s.outcome), ["covered", "covered", "covered", "covered"]);
 });
