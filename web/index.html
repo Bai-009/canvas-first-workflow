@@ -48,18 +48,27 @@
   @keyframes headPulse{0%,100%{opacity:.34;r:5}50%{opacity:1;r:7}}
   .wire.waiting{stroke:#d7dbe2;stroke-dasharray:5 7;animation:wireFlow 1.1s linear infinite}
   @keyframes wireFlow{to{stroke-dashoffset:-24}}
-  .track-break{fill:none;stroke:#c0c6d0;stroke-width:2}
-  /* 一行字,一行到底:再长也不许在画布上摊开成一段文章。
-     断口那一下例外——底下要写清为什么断,那句话给两行,再长就截断。 */
+  /* 停住的那一步:长在它本该出现的那一格上。是一张卡,但一眼看得出不是建好的卡——
+     只有一圈描边,没有影子;哪一步、为什么、能做什么,都在同一个地方。 */
+  .stop{position:absolute;width:300px;transform:translate(0,-50%);padding:14px 16px 13px;
+    border-radius:18px;background:var(--paper);box-shadow:0 0 0 1px var(--line);cursor:pointer}
+  .stop[hidden]{display:none}
+  .stop-top{display:flex;align-items:center;gap:9px}
+  .stop-mark{flex:0 0 auto;width:9px;height:9px;border-radius:50%;border:2px solid #c0c6d0}
+  .stop-name{margin:0;font-size:14px;font-weight:550;line-height:20px;color:var(--ink)}
+  .stop-why{margin:8px 0 0;font-size:12.5px;line-height:19px;color:var(--ink-3)}
+  .stop-why[hidden]{display:none}
+  .stop-again{margin-top:12px;border:0;border-radius:9px;padding:6px 13px;background:var(--accent);
+    color:#fff;font:inherit;font-size:12.5px;cursor:pointer;transition:background 160ms ease}
+  .stop-again:hover{background:#2458c7}
+  /* 一行字,一行到底:再长也不许在画布上摊开成一段文章。 */
   .track-label{position:absolute;transform-origin:50% 0;white-space:nowrap;max-width:320px;
     overflow:hidden;text-overflow:ellipsis;
     font-size:13px;line-height:20px;color:var(--ink-2);pointer-events:none}
   .track-label[hidden]{display:none}
   /* 换行的那一版必须写死宽度,不能只写 max-width:.world 没有宽度,
      绝对定位的孩子拿到的可用宽是 0,于是每个字换一行。 */
-  .track-label.broken{white-space:normal;width:360px;max-width:none;text-align:center}
-  .track-why{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
-    margin-top:2px;font-size:12px;line-height:17px;color:var(--ink-3)}
+
 
   .node{position:absolute;width:var(--tile);height:var(--tile)}
   /* 高度写死成一格,不写 auto:从 auto 起步的高度动画浏览器不认,展开会是硬跳。
@@ -213,13 +222,10 @@
     color:#fff;font:inherit;font-size:12.5px;font-weight:500;cursor:pointer;transition:filter 140ms ease}
   .plan-go:hover{filter:brightness(1.06)}
   .plan-go[hidden],.plan-close[hidden]{display:none}
-  .plan-close,.plan-new,.plan-again{margin-left:auto;flex:0 0 auto;border:0;background:none;color:var(--ink-3);
+  .plan-close,.plan-new{margin-left:auto;flex:0 0 auto;border:0;background:none;color:var(--ink-3);
     font:inherit;font-size:12px;cursor:pointer}
-  .plan-close:hover,.plan-new:hover,.plan-again:hover{color:var(--ink)}
-  .plan-new[hidden],.plan-again[hidden]{display:none}
-  /* 两个都在的时候只有第一个把自己推到右边,否则中间会被撑开。 */
-  .plan-again + .plan-new{margin-left:14px}
-  .plan-again:not([hidden]){color:var(--accent)}
+  .plan-close:hover,.plan-new:hover{color:var(--ink)}
+  .plan-new[hidden]{display:none}
 
   .bar{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);z-index:50;
     width:min(680px,calc(100vw - 48px))}
@@ -271,7 +277,6 @@
       <span class="plan-say"></span>
       <button class="plan-go" hidden>开始生成</button>
       <button class="plan-close" hidden>收起</button>
-      <button class="plan-again" hidden>重走</button>
       <button class="plan-new" hidden>新建</button>
     </div>
   </div>

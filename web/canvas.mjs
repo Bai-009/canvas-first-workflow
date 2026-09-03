@@ -56,6 +56,19 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
   labelEl.className = "track-label";
   labelEl.hidden = true;
   world.appendChild(labelEl);
+
+  /* 停住的那一步就长在它本该出现的那一格上——画布上的东西都是卡片,停也是。
+     摆在右上角等于让人在两个地方之间来回找:出事的地方在这儿,能做的事在那儿。 */
+  const stopEl = document.createElement("div");
+  stopEl.className = "stop";
+  stopEl.hidden = true;
+  stopEl.innerHTML =
+    '<div class="stop-top"><i class="stop-mark"></i><h3 class="stop-name"></h3></div>' +
+    '<p class="stop-why"></p><button class="stop-again" type="button">重走</button>';
+  world.appendChild(stopEl);
+  let onBreak = {};
+  stopEl.querySelector(".stop-again").addEventListener("click", (e) => { e.stopPropagation(); onBreak.rerun?.(); });
+  stopEl.addEventListener("click", () => onBreak.talk?.());
   let pending = null, closeTrack = false;
 
   /* 自己挪的镜头是有过渡的:一跳一跳的镜头看不出东西是从哪儿长出来的。
@@ -87,7 +100,7 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
   function fit() {
     if (opened) return;
     const { pad, w, h } = room();
-    const cap = pending ? RUN_SCALE : 1;
+    const cap = pending && !pending.broken ? RUN_SCALE : 1;
     scale = Math.max(MIN_SCALE, Math.min(cap, w / box.w, h / box.h));
     const wide = box.w * scale, tall = box.h * scale;
     /* 放不下就右端对齐:刚长出来的那几张在眼前,往左拖能看回去。 */
@@ -260,7 +273,9 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
 
   function track() {
     gTrack.replaceChildren();
-    labelEl.hidden = !pending;
+    const broken = Boolean(pending?.broken);
+    labelEl.hidden = !pending || broken;
+    stopEl.hidden = !broken;
     if (!pending) return;
     const at = head();
     const ahead = Math.max(0, (pending.remaining ?? 1) - 1);
@@ -285,18 +300,18 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
         gTrack.appendChild(svg("circle", { class: "track-dot", cx: at.x + i * STEP_GAP, cy: at.y, r: 3 }));
       }
     }
-    gTrack.appendChild(svg("circle", { class: pending.broken ? "track-break" : "track-head", cx: at.x, cy: at.y, r: 7 }));
-
-    /* 断在这儿的话,断口底下要写清楚为什么——「停在 s2」是个位置,不是个理由。 */
-    labelEl.textContent = "";
-    labelEl.append(pending.title);
-    if (pending.note) {
-      const why = document.createElement("span");
-      why.className = "track-why";
-      why.textContent = pending.note;
-      labelEl.appendChild(why);
+    /* 断了就把那一格摆成一张卡:哪一步、为什么、以及能做什么,都在同一个地方。
+       没断的时候还是一个脉动的点加一行字。 */
+    if (broken) {
+      stopEl.style.left = `${at.x}px`;
+      stopEl.style.top = `${at.y}px`;
+      stopEl.querySelector(".stop-name").textContent = pending.title;
+      stopEl.querySelector(".stop-why").textContent = pending.note ?? "";
+      stopEl.querySelector(".stop-why").hidden = !pending.note;
+      return;
     }
-    labelEl.classList.toggle("broken", Boolean(pending.broken));
+    gTrack.appendChild(svg("circle", { class: "track-head", cx: at.x, cy: at.y, r: 7 }));
+    labelEl.textContent = pending.title;
     labelEl.style.left = `${at.x}px`;
     labelEl.style.top = `${at.y + 26}px`;
     labelEl.style.transform = `translate(-50%,0) scale(${1 / scale})`;
@@ -419,6 +434,8 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
       pending = info;
       draw(last.canvas);
     },
+    /* 断口那张卡上能做的两件事:按「重走」,或者点一下卡身去跟这一步说话。 */
+    onBreak(handlers) { onBreak = handlers; },
     /* 卡全落地了再报数。还在落的时候报「已生成 9 个」,画布上只有 4 张。 */
     onIdle(fn) {
       if (!playing && !queue.length) return void fn();

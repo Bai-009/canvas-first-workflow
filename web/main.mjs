@@ -26,6 +26,8 @@ let broke = null;
 const done = new Set();
 
 const titleOf = (ref) => plan?.steps.find((s) => s.ref === ref)?.title ?? ref;
+/* 闸门说的是编号,画布上写的是名字。同一件事两个叫法,读的人得在心里换算一遍。 */
+const named = (text) => String(text ?? "").replace(/\bs\d+\b/g, (ref) => titleOf(ref));
 
 /* 这一趟停在哪儿。跑完了、或者最后那一步是做完/已经有了,就是没停。 */
 function stopAt(run) {
@@ -33,15 +35,14 @@ function stopAt(run) {
   const last = run.steps.at(-1);
   if (!last || last.outcome === "done" || last.outcome === "covered") return null;
   const why = last.reasons?.[0] ?? last.error ?? (last.outcome === "stopped" ? "按了停" : "");
-  return { ref: last.ref, why };
+  return { ref: last.ref, why: named(why) };
 }
 
-/* 停了:画布上把断口和理由标出来,右上角给出「重走」,输入框改口。 */
+/* 停了:那一格上摆一张卡,写清哪一步、为什么、能做什么。输入框跟着改口。 */
 function showBreak() {
-  card.canRerun(Boolean(broke));
   placeholder();
   if (!broke) return;
-  view.waiting({ title: `停在 ${titleOf(broke.ref)}`, note: broke.why, remaining: 0, broken: true });
+  view.waiting({ title: titleOf(broke.ref), note: broke.why, remaining: 0, broken: true });
 }
 
 /* 输入框的提示按阶段换:没方案时说要什么,有待确认时先答它,答完了就是改。 */
@@ -119,7 +120,8 @@ card.onGo(async () => {
 card.onClose(async () => { await card.back(); view.fit(); });
 /* 新建:这一条清掉,画布空出来,重新说一句。 */
 card.onNew(() => post("/api/reset"));
-card.onAgain(() => rerun());
+/* 断口那张卡:按「重走」就接着走,点卡身就是要跟这一步说话,光标落到输入框。 */
+view.onBreak({ rerun, talk: () => $("input").focus() });
 $("plan").addEventListener("click", async () => {
   if (!card.isMini) return;
   await card.toCenter();

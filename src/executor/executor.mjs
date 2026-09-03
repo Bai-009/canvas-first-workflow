@@ -149,6 +149,10 @@ export function createExecutor({ callModel, systemPrompt = loadSystemPrompt(), m
    EXECUTOR_SAVE=目录 时每一步的实录存进去。 */
 let plugged = null;
 export default async function executor(context, options) {
-  plugged ??= createExecutor({ callModel: callerFromEnv(), save: process.env.EXECUTOR_SAVE });
+  /* 实录默认开着,写在 .runs/ 下面(已忽略)。跑停了想知道为什么,只能问实录——
+     它关着的时候一趟跑完什么都没留下,人只看见「停在 s2」,谁也说不出原因。
+     不想留就 EXECUTOR_SAVE=none。 */
+  const where = process.env.EXECUTOR_SAVE ?? ".runs";
+  plugged ??= createExecutor({ callModel: callerFromEnv(), save: where === "none" ? undefined : where });
   return plugged(context, options);
 }
