@@ -36,6 +36,15 @@
       "type": "string",
       "minLength": 1,
       "description": "出去什么:类型词,卡的 Output 行印它,下一个节点从这儿接。例:JSON · Output Schema"
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 2,
+      "description": "多出口节点才写:出口名,线上的 output 写它(条件分岔是 true / false)。单出口不写"
     }
   },
   "required": [
@@ -72,7 +81,7 @@
             "text",
             "upload"
           ],
-          "description": "人怎么给这一格值,八种:source 接数据源(目录、表);credential 接连接——只给用户自己的系统(数据库、存储、邮箱),从已接入的连接里挑,平台自带的能力(模型、OCR、向量化)不出这一格,平台有账号;pick 挑一个;number 填个数;body 正文(AI 写的 prompt、代码、SQL,成块显示);conditions 给条件;text 真打字;upload 上传一份(JSON Schema 这类文件)"
+          "description": "人怎么给这一格值,八种:source 接数据源(目录、表);credential 接连接——只给用户自己的系统(数据库、存储、邮箱),从已接入的连接里挑,平台自带的能力(模型、OCR、向量化)不出这一格,平台有账号;pick 挑一个;number 填个数;body 正文(prompt、代码、SQL,成块显示);conditions 给条件;正文和条件一律 AI 写,信息够就写完整,只在用户那边的值单独开一格;text 真打字;upload 上传一份(JSON Schema 这类文件)"
         },
         "options": {
           "type": "array",

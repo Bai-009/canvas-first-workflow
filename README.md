@@ -51,7 +51,7 @@ Plan Agent 这一段是这么切的：
 | 状态机 `src/state-machine/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；互不依赖的步同一波一起做；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
 | 画布侧 Gate | 一半。机器能查的几条在状态机里（节点标的是哪一步、名字不撞、线接在存在的节点上、走完整张画布查形状）；节点类型对平台目录的检查要等执行者带着目录来 |
 | 平台目录与检索工具 `src/executor/n8n-catalog.mjs` | 有。从 n8n 官方镜像导出全部 559 种节点的参数说明（`fixtures/n8n/catalog.json`，脚本可重新导出）。给模型的不是整份目录，是三层披露：常驻十来行、搜索回候选、点名才给参数，分操作的节点先给操作菜单 |
-| 我们自己的节点表 `nodes/` | 有八个：LLM、读文件、OCR、解析文档、切块、向量化、写向量库、定时触发（`nodes/`），契约 `contracts/node-definition.schema.json`，读表就校。执行者还没换到这张表上，还在查 n8n 的目录 |
+| 我们自己的节点表 `nodes/` | 有，十一张收口：定时触发、读文件、解析文档、OCR、切块、向量化、写向量库、LLM、写数据库、条件分岔、写代码。契约 `contracts/node-definition.schema.json`，读表就校。执行者还没换到这张表上，还在查 n8n 的目录 |
 | Execution Agent 与它的输出契约 | 有。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、三个工具的说明、交回形状的契约（`contracts/step-submission.schema.json`）、让模型来回查看交的循环（`src/executor/executor.mjs`）；插进状态机，在真模型上走完过一整条链（`fixtures/observed/run11-执行者走完整条链/`），批注后重走碰到目录里没有的能力时停在那一步（`run12-批注重走/`）。怎么定的和还差什么见 `docs/执行者.md`。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
 
 所以现在这个仓库是：**设计者和执行者都做出来了，在真模型上走完过一整条链；状态机做出来了，测试守着；画布上那段生长在原型里还是演的，命令行里能走出真节点，画布还没接上命令行。**

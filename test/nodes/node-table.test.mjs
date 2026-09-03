@@ -79,6 +79,35 @@ test("定时触发:卡类型 Trigger;一格 Schedule 真打字,带默认值;起�
   assert.equal(node.output, "Event");
 });
 
+test("写数据库:Connection、Table 是用户的,Mode、Mapping 挑一个带默认值;JSON 进,Result 出", () => {
+  const node = findNodeDefinition("writeDatabase");
+  assert.equal(node.kind, "Database");
+  assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Connection", "credential"], ["Table", "source"], ["Mode", "pick"], ["Mapping", "pick"]]);
+  assert.equal(node.input, "JSON");
+  assert.equal(node.output, "Result");
+});
+
+test("条件分岔:一格条件 AI 写;两个出口 true / false;数据原样带过去", () => {
+  const node = findNodeDefinition("condition");
+  assert.equal(node.kind, "Condition");
+  assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Condition", "conditions"]]);
+  assert.deepEqual(node.ports, ["true", "false"]);
+});
+
+test("写代码:Language 挑一个,Code 正文 AI 写;进出都是 Any", () => {
+  const node = findNodeDefinition("code");
+  assert.equal(node.kind, "Code");
+  assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Language", "pick"], ["Code", "body"]]);
+  assert.equal(node.input, "Any");
+  assert.equal(node.output, "Any");
+});
+
+test("节点表收口:十一张,每张都有卡类型", () => {
+  const table = loadNodeTable();
+  assert.deepEqual(table.map((n) => n.type).sort(), ["code", "condition", "embedText", "llm", "ocr", "parseDocument", "readFile", "schedule", "splitText", "writeDatabase", "writeVectorStore"]);
+  assert.ok(table.every((n) => n.kind));
+});
+
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {
   const base = { type: "x", kind: "X", summary: "s", slots: [], input: "a", output: "b" };
   const slot = (extra) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });
@@ -89,6 +118,7 @@ test("契约:格子只有八种;挑一个必须给 options;默认值得在 optio
   assert.match(checkNodeDefinition(slot({ kind: "text", options: ["x"] })).join("\n"), /不该有 options/);
   assert.match(checkNodeDefinition({ ...base, slots: [{ key: "a", label: "A", kind: "text" }, { key: "a", label: "B", kind: "text" }] }).join("\n"), /重复/);
   assert.match(checkNodeDefinition({ ...base, extra: 1 }).join("\n"), /没有的字段/);
+  assert.match(checkNodeDefinition({ ...base, ports: ["true"] }).join("\n"), /ports/);
 });
 
 test("表里有一个坏文件,整张表不上桌", () => {
