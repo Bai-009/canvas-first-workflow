@@ -159,7 +159,8 @@
     display:flex;align-items:center;justify-content:space-between;gap:20px;pointer-events:none}
   .top > *{pointer-events:auto}
   .logo{display:flex;align-items:center;gap:8px;color:var(--ink)}
-  .logo svg{display:block;width:19px;height:19px}
+  /* 标记是横向的形,不塞进方框里:高度定死,宽度随它自己的比例。 */
+  .logo svg{display:block;height:13px;width:auto}
   .logo-t{font-size:14px;font-weight:450;letter-spacing:-.004em;color:var(--ink-2)}
   .logo-t b{font-weight:580;color:var(--ink)}
   /* 「新建」是「这一条不要了,重开」——跟方案卡没关系,不该挤在卡的页脚里。 */
@@ -276,10 +277,16 @@
 <body>
   <header class="top">
     <span class="logo">
-      <!-- 画布上那条起伏的线本身:起点一个实心点,一路升上去。 -->
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="4.2" cy="17.8" r="2.6" fill="currentColor"/><path
-        d="M4.2 17.8 C 9 17.8, 9.6 6.2, 14.6 6.2 C 17.6 6.2, 19 8.6, 21.2 8.6"
-        fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <!-- 起点一个实心的端口点,一段升上去的线,然后三个越来越淡的点接着走:
+           走过的那一段,和还没走到的那几步。画布上就是这么一回事。 -->
+      <svg viewBox="0 0 31 15" fill="currentColor" aria-hidden="true">
+        <circle cx="2.8" cy="11.6" r="2.6"/>
+        <path d="M2.8 11.6 C 7.4 11.6, 7.8 3.8, 12.4 3.8 L 15 3.8"
+          fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>
+        <circle cx="19.6" cy="3.8" r="1.85" opacity=".62"/>
+        <circle cx="24.2" cy="3.8" r="1.85" opacity=".38"/>
+        <circle cx="28.6" cy="3.8" r="1.85" opacity=".2"/>
+      </svg>
       <span class="logo-t"><b>Canvas</b>Flow</span>
     </span>
     <button class="fresh" id="fresh" hidden>新建</button>
