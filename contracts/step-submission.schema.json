@@ -30,6 +30,10 @@
             "type": "array",
             "items": { "type": "string" },
             "description": "Parameters left for the user to fill, plus required credential names (e.g. \"postgres\"). Empty when nothing is left open."
+          },
+          "note": {
+            "type": "string",
+            "description": "One sentence to the user, in the language the user wrote in. State why this node and this parameter shape, and how you treated what you left in blanks. The values are already in params; when the note repeats them, the reasoning is recorded nowhere and the user cannot tell which node to correct."
           }
         },
         "required": ["name", "type", "params", "blanks"],

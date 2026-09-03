@@ -33,7 +33,7 @@ Work in this order.
 - `name` is the node's identity on the canvas and the label the user sees. When rebuilding a step, reuse the existing names so that edges from downstream steps stay attached; a renamed node loses them, and every downstream step has to be rebuilt.
 - Declare the edges that enter your nodes: from upstream nodes, and between your own nodes. Edges leaving your nodes toward later steps belong to those steps.
 - A sub-node such as a chat model connects to its parent (e.g. Information Extractor) with an ordinary edge from the model node to the parent.
-- The submission is the whole result. Text outside the tool call is not shown to anyone; the user reads the canvas.
+- Text outside the tool call is not shown to the user. `note` is where you speak to them.
 
 # Example
 
@@ -60,13 +60,15 @@ submit_step({
           "combinator": "and"
         }
       },
-      "blanks": []
+      "blanks": [],
+      "note": "按上一步产出的 status 分流；不是 paid 的都走 false 那一路，留着人工看。"
     },
     {
       "name": "Save unpaid orders for review",
       "type": "n8n-nodes-base.readWriteFile",
       "params": { "operation": "write", "fileName": "", "dataPropertyName": "data" },
-      "blanks": ["fileName"]
+      "blanks": ["fileName"],
+      "note": "未付的先写成文件留档，不在这一步处理；写到哪儿是你的地盘，我留空了。"
     }
   ],
   "edges": [

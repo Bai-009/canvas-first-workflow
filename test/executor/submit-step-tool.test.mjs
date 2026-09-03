@@ -22,10 +22,11 @@ test("交步工具:名字、三种格子、契约元数据不进参数", () => {
   for (const meta of ["$schema", "$id", "title"]) assert.equal(meta in parameters, false);
 });
 
-test("交步工具:节点四格必填,线上出口可选,除 params 外每层封死", () => {
+test("交步工具:节点四格必填,note 有位子但不强制,线上出口可选,除 params 外每层封死", () => {
   const { parameters } = submitStepTool.function;
   const node = parameters.properties.nodes.items;
   assert.deepEqual(node.required, ["name", "type", "params", "blanks"]);
+  assert.equal(typeof node.properties.note.description, "string");
   const edge = parameters.properties.edges.items;
   assert.deepEqual(edge.required, ["from", "to"]);
   assert.match(edge.properties.output.description, /true.*false.*done.*loop/s);
