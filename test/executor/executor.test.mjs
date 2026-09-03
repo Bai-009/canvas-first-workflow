@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { stepMessage, toPatch, runStep } from "../../src/executor/executor.mjs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { stepMessage, toPatch, runStep, createExecutor } from "../../src/executor/executor.mjs";
 
 const context = (overrides = {}) => ({
   plan: { goal: "每天把新合同写进库", steps: [{ ref: "s1", title: "读文件", dependsOn: [] }], openQuestions: [] },
@@ -110,4 +113,41 @@ test("来回到上限没交,这一步作废", async () => {
   const replies = Array.from({ length: 3 }, (_, i) => assistant([call("search_nodes", { query: "again" }, `c${i}`)]));
   const { callModel } = scripted(replies);
   await assert.rejects(runStep(context(), { callModel, systemPrompt: "P", maxRounds: 2 }), /来回 2 次没交/);
+});
+
+/* 接口抛的错(网络、限流、key 不对)也要带着对话记录:出错那一步的实录最该看,不能是空的 */
+test("接口抛错,错误上也挂着对话记录和事件", async () => {
+  const callModel = async () => { throw new Error("模型接口返回 429"); };
+  await assert.rejects(runStep(context(), { callModel, systemPrompt: "P" }), (error) => {
+    assert.match(error.message, /429/);
+    assert.equal(error.messages.length, 2);
+    assert.deepEqual(error.events, []);
+    return true;
+  });
+});
+
+test("插口:onEvent 拿到事件和上下文;给了目录,每一步自己的实录存进去", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "executor-"));
+  const submission = { kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: [] }], edges: [] };
+  const { callModel } = scripted([assistant([call("submit_step", submission)])]);
+  const seen = [];
+  const executor = createExecutor({ callModel, systemPrompt: "P", save: dir, onEvent: (event, ctx) => seen.push([ctx.step.ref, event.kind]) });
+  const result = await executor(context(), {});
+  assert.equal(result.kind, "patch");
+  assert.deepEqual(seen, [["s1", "submitted"]]);
+  assert.deepEqual(readdirSync(join(dir, "01-s1")).sort(), ["context.json", "events.json", "messages.json", "patch.json", "submission.json"]);
+  assert.equal(JSON.parse(readFileSync(join(dir, "01-s1", "messages.json"), "utf8")).length, 3);
+});
+
+test("插口:出错也存实录,错照样抛出去", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "executor-"));
+  const { callModel } = scripted([{ role: "assistant", content: "no" }]);
+  const executor = createExecutor({ callModel, systemPrompt: "P", save: dir });
+  await assert.rejects(executor(context(), {}), /说话没交/);
+  assert.deepEqual(readdirSync(join(dir, "01-s1")).sort(), ["context.json", "error.txt", "events.json", "messages.json"]);
+});
+
+test("默认导出就是插口:是个函数,import 时不读模型配置", async () => {
+  const mod = await import("../../src/executor/executor.mjs");
+  assert.equal(typeof mod.default, "function");
 });

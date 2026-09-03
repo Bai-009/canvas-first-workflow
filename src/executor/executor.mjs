@@ -2,7 +2,8 @@
    桌上的五样贴上标签发给模型,带三个工具;模型要搜就搜、要查详情就查,当场答它,答案接在对话后面;
    它一交,交的东西先过状态机那道闸门(同一道,不另造),过了就还给状态机,没过就把原因退给它再来。
    来回有上限;说话不交也算没交。 */
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { searchNodes, describeNode, catalogTools } from "./n8n-catalog.mjs";
 import { submitStepTool } from "./submit-step-tool.mjs";
 import { checkResult } from "../state-machine/workflow-session.mjs";
@@ -70,7 +71,13 @@ export async function runStep(context, { callModel, systemPrompt, maxRounds = 12
   const fail = (message) => Object.assign(new Error(message), { messages, events });
 
   for (let round = 1; round <= maxRounds; round++) {
-    const reply = await callModel(messages, { signal, tools: executorTools });
+    let reply;
+    try {
+      reply = await callModel(messages, { signal, tools: executorTools });
+    } catch (error) {
+      /* 接口抛的错(网络、限流、key 不对)也带上对话记录:出错那一步的实录最该看,不能是空的 */
+      throw Object.assign(error, { messages, events });
+    }
     messages.push(reply);
     if (reply.content) note({ round, kind: "said", text: reply.content });
     const calls = reply.tool_calls ?? [];
@@ -105,10 +112,48 @@ export async function runStep(context, { callModel, systemPrompt, maxRounds = 12
   throw fail(`执行者来回 ${maxRounds} 次没交,这一步作废`);
 }
 
-/* 插进状态机的那个函数:拿桌上的五样,还状态机认的结果。 */
-export function createExecutor({ callModel, systemPrompt = loadSystemPrompt(), maxRounds = 12, onEvent } = {}) {
-  return async function executor(context, { signal } = {}) {
-    const { result } = await runStep(context, { callModel, systemPrompt, maxRounds, signal, onEvent });
-    return result;
+/* 插进状态机的那个函数:拿桌上的五样,还状态机认的结果。
+   onEvent(事件, 上下文) 让外面看得见它一路在干什么,上下文带着是哪一步——一波里可能两步同时在做。
+   save 给了目录,每一步自己的对话记录、事件、交的原样都存进去:实录是执行者自己层的东西,
+   它自己存,状态机不经手;出错也存,错照样抛。 */
+export function createExecutor({ callModel, systemPrompt = loadSystemPrompt(), maxRounds = 12, onEvent, save } = {}) {
+  let count = 0;
+  return async function executor(context, { signal, onEvent: onEventForThisCall = onEvent } = {}) {
+    const ref = context.step.ref;
+    const dir = save ? join(save, `${String(++count).padStart(2, "0")}-${ref}`) : null;
+    const keep = (name, value) => {
+      if (!dir || value === undefined) return;
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, name), typeof value === "string" ? value : `${JSON.stringify(value, null, 2)}\n`);
+    };
+    keep("context.json", context);
+    try {
+      const outcome = await runStep(context, {
+        callModel,
+        systemPrompt,
+        maxRounds,
+        signal,
+        onEvent: onEventForThisCall ? (event) => onEventForThisCall(event, context) : undefined,
+      });
+      keep("messages.json", outcome.messages);
+      keep("events.json", outcome.events);
+      keep("submission.json", outcome.submission);
+      keep("patch.json", outcome.result);
+      return outcome.result;
+    } catch (error) {
+      keep("messages.json", error.messages);
+      keep("events.json", error.events);
+      keep("error.txt", `${error.message}\n`);
+      throw error;
+    }
   };
+}
+
+/* 默认导出就是插口:EXECUTOR_MODULE=src/executor/executor.mjs。
+   模型配置到第一次被叫到才从 .env 读,免得谁一 import 这个模块就要 key;
+   EXECUTOR_SAVE=目录 时每一步的实录存进去。 */
+let plugged = null;
+export default async function executor(context, options) {
+  plugged ??= createExecutor({ callModel: callerFromEnv(), save: process.env.EXECUTOR_SAVE });
+  return plugged(context, options);
 }
