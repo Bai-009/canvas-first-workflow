@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Bai-009/canvas-first-workflow/contracts/node-definition.schema.json",
+  "title": "一个节点的定义",
+  "description": "我们自己定义的节点,一个节点一个文件(nodes/*.json)。一张表喂三处:执行者照它填,闸门照它查,卡照它画。写下来的只有卡上灰的那部分:卡类型、格子表、进来什么、出去什么;名字、旁白、格子里的值是执行者每次填的,不在这里。",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z][a-zA-Z0-9]*$",
+      "description": "机器用的标识,画布节点的 type 写它,全表唯一。例:llm"
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "卡右上角的类型标签,用行业叫法。例:LLM"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "一句话:这个节点做什么、什么时候用。常驻在执行者的提示词里,是它挑节点的依据;不上卡"
+    },
+    "slots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/slot"
+      },
+      "description": "格子表,按卡上从上到下的顺序"
+    },
+    "input": {
+      "type": "string",
+      "minLength": 1,
+      "description": "进来什么:每条是什么形态,卡的 Input 行印它。例:每条一段文本"
+    },
+    "output": {
+      "type": "string",
+      "minLength": 1,
+      "description": "出去什么:每条是什么形态,卡的 Output 行印它,下一个节点从这儿接。例:每条一条记录,结构按 Output Schema"
+    }
+  },
+  "required": [
+    "type",
+    "kind",
+    "summary",
+    "slots",
+    "input",
+    "output"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "slot": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^[a-z][a-zA-Z0-9]*$",
+          "description": "params 里的键,执行者按它填,闸门按它查"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "description": "卡上这一格的名字,用行业叫法。例:Model、Output Schema、Prompt"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "source",
+            "credential",
+            "pick",
+            "number",
+            "body",
+            "conditions",
+            "text",
+            "upload"
+          ],
+          "description": "人怎么给这一格值,八种:source 接数据源(目录、表);credential 接连接(凭证);pick 挑一个;number 填个数;body 正文(AI 写的 prompt、代码、SQL,成块显示);conditions 给条件;text 真打字;upload 上传一份(JSON Schema 这类文件)"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "description": "kind 是 pick 时必须给:能挑的值"
+        },
+        "default": {
+          "description": "平台给的默认值。有默认值、不填也能跑的格不算空位"
+        },
+        "empty": {
+          "type": "string",
+          "minLength": 1,
+          "description": "这一格没定时,卡上那个入口写什么。例:上传 JSON Schema。不写就按格子种类的通用说法"
+        },
+        "required": {
+          "type": "boolean",
+          "default": true,
+          "description": "跑起来必须有值。没值又没默认值,就得在 blanks 里"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "kind"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
