@@ -86,15 +86,15 @@ export function createPlanCard({ card, stage, onStart }) {
       for (const sec of card.querySelectorAll(".plan-sec")) sec.hidden = true;
       go.hidden = true;
       close.hidden = true;
-      setSay("正在出方案");
+      setSay("正在生成方案");
       place();
     },
 
-    /* 交回来了:它说的话、理解、路线、待确认,一条一条落。 */
+    /* 交回来了:说明、理解、路线、待确认,一条一条落。 */
     async show(state) {
       await drop(fill(state));
       const open = plan?.openQuestions.length ?? 0;
-      setSay(plan ? `${plan.steps.length} 步 · ${open ? `${open} 项待确认` : "待确认已清"}` : "没出方案", true);
+      setSay(plan ? `${plan.steps.length} 步 · ${open ? `${open} 项待确认` : "待确认已清"}` : "未出方案", true);
       /* 收在右上角的时候不再冒出「开始生成」:那是中央这张卡上的动作。 */
       if (plan && !mini) {
         go.hidden = false;
@@ -186,7 +186,7 @@ export function createPlanCard({ card, stage, onStart }) {
   };
 }
 
-/* 它说的话是一段一段的,**重点**加粗,「- 」开头的排成一条条。 */
+/* 说明是一段一段的,**重点**加粗,「- 」开头的排成一条条。 */
 export function rich(text) {
   return String(text).split(/\n{2,}/).map((block) => {
     const lines = block.split("\n");

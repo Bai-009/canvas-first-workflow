@@ -57,7 +57,7 @@ $("form").addEventListener("submit", (e) => { e.preventDefault(); send(); });
 card.onGo(async () => {
   const r = await post("/api/start");
   if (r.error) return say(r.error);
-  await card.toMini("正在搭");
+  await card.toMini("正在生成");
   view.fit();
 });
 card.onClose(async () => { await card.back(); view.fit(); });
@@ -79,12 +79,12 @@ feed.onmessage = (e) => {
     refreshSend();
     placeholder();
     card.show(event);
-    say(event.plan ? "" : "没出方案,它先问了你几句。");
+    say("");
   }
   if (event.type === "step") {
     view.draw(event.canvas);
     const s = event.step;
-    card.status(s.outcome === "done" ? `正在搭 · ${s.nodes.join("、")}` : `${s.ref} ${s.outcome}`);
+    card.status(s.outcome === "done" ? `正在生成 · ${s.nodes.join("、")}` : `正在生成 · ${s.ref}`);
   }
   if (event.type === "run") {
     busy = null;
@@ -94,8 +94,8 @@ feed.onmessage = (e) => {
     const bad = run.steps.find((s) => s.outcome === "rejected" || s.outcome === "failed");
     card.status(bad ? `停在 ${bad.ref}` : `已生成 ${event.canvas.nodes.length} 个节点`);
     say(bad
-      ? (bad.reasons ? `没收,停在 ${bad.ref}:${bad.reasons.join(";")}` : `出错,停在 ${bad.ref}:${bad.error}`)
-      : run.problems.length ? `整张画布查了一遍,有问题:${run.problems.join(";")}` : "");
+      ? (bad.reasons ? `${bad.ref} 未通过:${bad.reasons.join(";")}` : `${bad.ref} 出错:${bad.error}`)
+      : run.problems.length ? run.problems.join(";") : "");
   }
   if (event.type === "error") { busy = null; refreshSend(); say(event.message); }
 };
@@ -111,5 +111,5 @@ if (state.canvas.nodes.length) {
   card.ask(state.task);
   await card.show(state);
 }
-if (!state.hasExecutor) say("执行者的位置空着:启动时给 EXECUTOR_MODULE。");
+if (!state.hasExecutor) say("执行者未接入:启动时设置 EXECUTOR_MODULE。");
 addEventListener("resize", () => { view.fit(); card.reflow(); });
