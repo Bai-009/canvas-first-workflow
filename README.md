@@ -116,7 +116,7 @@ node src/prototype/build-demo-data.mjs
 1. [docs/取舍.md](docs/取舍.md)：每一条契约决定是被什么麻烦逼出来的，放弃了哪条路。
 2. [prompts/plan-agent.md](prompts/plan-agent.md) 和 [contracts/plan-proposal.schema.json](contracts/plan-proposal.schema.json)：设计者被要求做什么，交出来的东西长什么样。
 3. [docs/观察.md](docs/观察.md) 和 `fixtures/observed/`：真模型实际做了什么，哪些成立，哪些裁定不是问题。
-4. [docs/架构.md](docs/架构.md)：四个角色的完整设计，包括还没做的执行者和状态机。
+4. [docs/架构.md](docs/架构.md)：整条环的权威描述——五个角色、一步怎么来回、三道验证、分支循环并行、铁律、现在有什么没什么。
 5. [docs/执行者.md](docs/执行者.md)：执行者的提示词是怎么一条条推出来的，还没做的部分。
 5. `prototype/`：看一遍演示，再看 [prototype/修改本.md](prototype/修改本.md) 里每一处改动的为什么。
 
@@ -137,7 +137,7 @@ fixtures/    手写的设计样例；observed/ 里真模型的原始输出，一
 docs/
   assets/      README 里的架构总览图，src/ 是它的网页源文件
   取舍.md      每一刀背后的麻烦与放弃的路
-  架构.md      四个角色、两段主链路、裁决点
+  架构.md      整条环的权威描述:角色、一步的来回、三道验证、铁律、现在有什么没什么
   状态机.md    回合制、账本、执行阶段的七条规则、代码做成了什么、待确认的洞
   执行者.md    提示词是怎么一条条推出来的、行家的写法、还没做的
   plan-契约.md PlanProposal 各字段为什么长这样
