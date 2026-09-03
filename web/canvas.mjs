@@ -1,5 +1,5 @@
 import { fullCard, miniCard } from "./card.mjs";
-import { layout, wire, wireLabelAt, path, wave, TILE, PITCH } from "./layout.mjs";
+import { layout, wire, wireLabelAt, wave, TILE, PITCH } from "./layout.mjs";
 
 const SVG = "http://www.w3.org/2000/svg";
 const svg = (name, attrs) => {
@@ -251,12 +251,12 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
      踩的是真链路接着走的那几个点。 */
   function head() {
     const seen = visible();
-    if (!seen.length) return { x: 0, y: TILE / 2, col: 0, base: TILE / 2 };
+    if (!seen.length) return { x: 0, y: TILE / 2 };
     const colOf = (p) => Math.round(p.x / PITCH);
     const col = Math.max(...seen.map(colOf)) + 1;
     const tail = seen.filter((p) => colOf(p) === col - 1);
     const base = tail.reduce((sum, p) => sum + p.y - wave(colOf(p)), 0) / (tail.length || 1) + TILE / 2;
-    return { x: col * PITCH, y: base + wave(col), col, base };
+    return { x: col * PITCH, y: base + wave(col) };
   }
 
   function track() {
@@ -266,22 +266,25 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     const at = head();
     const ahead = Math.max(0, (pending.remaining ?? 1) - 1);
 
-    /* 已经落定的那几张卡先把线接到头上来:和真线同一条规矩画。 */
+    /* 轨道是直的。起伏是真链路的事——卡片落在哪一行要等它落下来才知道,
+       branch 一分,后面几步的位置全变。拿起伏去画还没发生的几步是在猜,
+       猜出来的那道弯从一张卡都没有的时候就开始扭,难看在这里。 */
     const busy = new Set(last.canvas.edges.filter((e) => shown.has(e.to)).map((e) => e.from));
     for (const p of visible()) {
       if (busy.has(p.node.name)) continue;
-      gTrack.appendChild(svg("path", {
+      gTrack.appendChild(svg("line", {
         class: "wire waiting",
-        d: path([{ x: p.x + TILE, y: p.y + TILE / 2 }, { x: at.x - 14, y: at.y }]),
+        x1: p.x + TILE, y1: p.y + TILE / 2, x2: at.x - 14, y2: at.y,
       }));
     }
-    /* 还没走到的那几步:一步一个点,点落在真链路接着走的位置上,
-       线穿过这些点——所以它跟已经建好的那半截是同一条曲线,不是一根横杠。 */
+    /* 还没走到的那几步:一条平线,一步一个点。 */
     if (ahead) {
-      const next = [];
-      for (let i = 1; i <= ahead; i++) next.push({ x: at.x + i * PITCH, y: at.base + wave(at.col + i) });
-      gTrack.appendChild(svg("path", { class: "track", d: path([{ x: at.x + 14, y: at.y }, ...next]) }));
-      for (const q of next) gTrack.appendChild(svg("circle", { class: "track-dot", cx: q.x, cy: q.y, r: 3 }));
+      gTrack.appendChild(svg("line", {
+        class: "track", x1: at.x + 14, y1: at.y, x2: at.x + ahead * PITCH, y2: at.y,
+      }));
+      for (let i = 1; i <= ahead; i++) {
+        gTrack.appendChild(svg("circle", { class: "track-dot", cx: at.x + i * PITCH, cy: at.y, r: 3 }));
+      }
     }
     gTrack.appendChild(svg("circle", { class: pending.broken ? "track-break" : "track-head", cx: at.x, cy: at.y, r: 7 }));
 

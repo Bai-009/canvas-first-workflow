@@ -39,10 +39,18 @@ const waitingOn = (refs) => ({
 const canSend = () => $("input").value.trim() !== "" && !busy;
 const refreshSend = () => ($("send").disabled = !canSend());
 
+/* 输入框跟着字长高。先归零再读 scrollHeight——不归零它只会长不会缩。 */
+function grow() {
+  const el = $("input");
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, 164)}px`;
+}
+
 async function send() {
   if (!canSend()) return;
   const text = $("input").value.trim();
   $("input").value = "";
+  grow();
   refreshSend();
   if (card.isMini) await card.toCenter();
   card.ask(text);
@@ -50,10 +58,10 @@ async function send() {
   if (r.error) card.status(r.error);
 }
 
-/* 发送:按钮和回车都行。中文输入法确认候选词的那一下回车不算发送。 */
-$("input").addEventListener("input", refreshSend);
+/* 发送:按钮和回车都行。Shift+回车换行,中文输入法确认候选词的那一下回车不算发送。 */
+$("input").addEventListener("input", () => { grow(); refreshSend(); });
 $("input").addEventListener("keydown", (e) => {
-  if (e.key !== "Enter" || e.isComposing) return;
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
   e.preventDefault();
   send();
 });
@@ -108,7 +116,7 @@ feed.onmessage = (e) => {
        断了就把断口留在画布上,不弹东西。 */
     view.onIdle(() => {
       card.status(bad ? `停在 ${bad.ref}` : `已生成 ${event.canvas.nodes.length} 个节点`);
-      if (bad) view.waiting({ title: bad.reasons ? bad.reasons[0] : bad.error, remaining: 0, broken: true });
+      if (bad) view.waiting({ title: `停在 ${bad.ref}`, remaining: 0, broken: true });
     });
   }
   if (event.type === "error") { busy = null; refreshSend(); view.waiting(null); card.status(event.message); }
