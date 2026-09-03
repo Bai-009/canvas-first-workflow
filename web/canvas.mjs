@@ -1,5 +1,5 @@
 import { fullCard, miniCard } from "./card.mjs";
-import { layout, wire, wireLabelAt, TILE } from "./layout.mjs";
+import { layout, wire, wireLabelAt, TILE, PITCH } from "./layout.mjs";
 
 const SVG = "http://www.w3.org/2000/svg";
 
@@ -25,18 +25,44 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
   world.appendChild(labelEl);
   let pending = null;
 
-  const apply = () => (world.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`);
+  /* 自己挪的镜头是有过渡的:一跳一跳的镜头看不出东西是从哪儿长出来的。
+     用户在拖、在滚的时候不能有过渡,那会变成拖不动。 */
+  const apply = (glide = true) => {
+    world.classList.toggle("gliding", glide);
+    world.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+  };
 
-  /* 把整张图放进「还空着的那块」:方案面板占了右边、输入条占了底下,
-     镜头就不该把卡片摆到它们底下去。 */
-  function fit() {
+  /* 正在长的时候镜头跟着头走,卡片保持看得清的大小;跑完了再退回来看全景。
+     两种都躲开右边的需求框和底下的输入条。 */
+  const RUN_SCALE = 0.78;
+
+  function room() {
     const pad = 64;
     const { right, bottom } = insets();
-    const w = innerWidth - right - pad * 2;
-    const h = innerHeight - bottom - pad * 2;
-    scale = Math.min(1, w / box.w, h / box.h);
-    tx = pad + (w - box.w * scale) / 2;
+    return { pad, w: innerWidth - right - pad * 2, h: innerHeight - bottom - pad * 2 };
+  }
+
+  /* 画布本来就比窗口大。整条链塞不下的时候不再往小里缩——缩到看不清字,
+     等于把画布变成一张缩略图。缩到底就停,右端对齐:刚长出来的那几张在眼前,
+     往左拖能看回去。 */
+  const MIN_SCALE = 0.62;
+
+  function fit() {
+    if (pending) return follow();
+    const { pad, w, h } = room();
+    scale = Math.max(MIN_SCALE, Math.min(1, w / box.w, h / box.h));
+    const wide = box.w * scale;
+    tx = wide > w ? pad + w - wide : pad + (w - wide) / 2;
     ty = pad + (h - box.h * scale) / 2;
+    apply();
+  }
+
+  function follow() {
+    const { pad, w, h } = room();
+    const at = head();
+    scale = Math.min(RUN_SCALE, w / box.w, 1);
+    tx = pad + w / 2 - at.x * scale;
+    ty = pad + h / 2 - at.y * scale;
     apply();
   }
 
@@ -132,8 +158,6 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
 
   /* 下一张卡会落在哪一列,标记就站在哪儿:已经有卡就接在最右边那一列后面,
      一张都还没有就站在原点,镜头会把它放到正中。 */
-  const PITCH = TILE + 112;
-
   /* 下一张卡会落在哪一格,头就在哪儿。已经有卡就接在最右一列后面,
      一张都还没有就在原点——镜头会把它摆到正中。 */
   function head() {
@@ -190,7 +214,7 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     ty = e.clientY - (e.clientY - ty) * (next / scale);
     scale = next;
     userMoved = true;
-    apply();
+    apply(false);
   }, { passive: false });
 
   /* 按下先不抢指针,挪过 4 像素才算拖,否则那一下是点在卡片上。 */
@@ -210,7 +234,7 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     }
     tx = e.clientX - drag.x;
     ty = e.clientY - drag.y;
-    apply();
+    apply(false);
   });
   viewport.addEventListener("pointerup", (e) => {
     if (drag?.moved) viewport.releasePointerCapture(e.pointerId);

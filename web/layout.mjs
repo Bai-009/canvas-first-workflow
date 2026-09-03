@@ -4,8 +4,13 @@
    同一列里的上下顺序跟着上游走,让线尽量平。 */
 
 export const TILE = 176;
-const GAP_X = 112;
+const GAP_X = 260;
 const GAP_Y = 34;
+/* 一条链不摆在一条水平线上:每往右一列,高度按正弦错开一点,
+   线才有流的样子,不是一根根横杠。幅度远小于分岔两路的间距,
+   所以岔开的两路照样分得清。 */
+const AMP = 48;
+const wave = (col) => Math.round(AMP * Math.sin(col * 0.9));
 
 export function layout(nodes, edges) {
   const names = nodes.map((n) => n.name);
@@ -46,7 +51,7 @@ export function layout(nodes, edges) {
   const placed = nodes.map((n) => ({
     node: n,
     x: col.get(n.name) * (TILE + GAP_X),
-    y: row.get(n.name) * (TILE + GAP_Y),
+    y: row.get(n.name) * (TILE + GAP_Y) + wave(col.get(n.name)),
   }));
   const top = Math.min(...placed.map((p) => p.y));
   for (const p of placed) p.y -= top;
@@ -56,6 +61,8 @@ export function layout(nodes, edges) {
 /* 线:从上游右沿的中点到下游左沿的中点,横着出、横着进,中间一段贝塞尔。
    控制点取横向距离的 0.52,和原型一致——两端各留一段真正水平的线,
    卡片挨得近的时候也不会拱起来。 */
+export const PITCH = TILE + GAP_X;
+
 export function wire(from, to) {
   const x0 = from.x + TILE, y0 = from.y + TILE / 2;
   const x1 = to.x, y1 = to.y + TILE / 2;
