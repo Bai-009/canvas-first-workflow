@@ -4,17 +4,17 @@ import { assembleTable } from "../state-machine/step-context.mjs";
 import { callerFromEnv, loadSystemPrompt, runStep } from "../executor/executor.mjs";
 import { describe } from "./describe-event.mjs";
 
-/* 单独跑一步,不接状态机:拿一份方案、指一步,画布默认空的,执行者搜了什么、查了什么、交了什么打出来。
-   --plan <方案文件> --step s1 [--canvas <画布文件>] [--save <目录>] [--rounds 12]
+/* 单独跑一步,不接状态机:拿一份方案、指一步,画布默认空的,执行者交了什么、被退了什么打出来。
+   --plan <方案文件> --step s1 [--canvas <画布文件>] [--save <目录>] [--rounds 30]
    --save 把整段对话、模型交的原样、状态机认的形状、桌上的五样和这份记录存下来,fixtures/observed/ 里的实录就这么来。 */
 function parseArgs(argv) {
-  const args = { plan: null, step: null, canvas: null, save: null, rounds: 12 };
+  const args = { plan: null, step: null, canvas: null, save: null, rounds: 30 };
   for (let i = 0; i < argv.length; i++) {
     const key = argv[i].replace(/^--/, "");
     if (key in args) args[key] = key === "rounds" ? Number(argv[++i]) : argv[++i];
   }
   if (!args.plan || !args.step) {
-    console.error("用法:--plan <方案文件> --step s1 [--canvas <画布文件>] [--save <目录>] [--rounds 12]");
+    console.error("用法:--plan <方案文件> --step s1 [--canvas <画布文件>] [--save <目录>] [--rounds 30]");
     process.exit(2);
   }
   return args;

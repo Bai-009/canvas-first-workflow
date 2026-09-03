@@ -1,6 +1,6 @@
-/* 测试用的固定答复,不是执行者。问它做哪一步,它就交回一个占位节点,类型明写"固定答复",
+/* 测试用的固定答复,不是执行者。问它做哪一步,它就交回一个写代码节点,名字明写"固定答复",代码是一行注释,
    上游有节点就接一条线过来;画布上已经有这一步的节点、又没有新批注,就说 covered。
-   它不看方案的意思,不查平台,只为了让状态机动起来能被看见。
+   它不看方案的意思,只为了让状态机动起来能被看见。
    用法:EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs npm run plan:chat */
 export default async function fixedExecutor(context) {
   const { step, canvas, openQuestions, instructions } = context;
@@ -16,9 +16,10 @@ export default async function fixedExecutor(context) {
       {
         name,
         step: step.ref,
-        type: "固定答复(不是真节点)",
-        params: { 标题: step.title, 批注: instructions },
-        blanks: openQuestions.map((question) => question.ref),
+        type: "code",
+        params: { code: `// 固定答复,不是执行者写的:${step.title}` },
+        blanks: [],
+        note: `固定答复。没答的问题:${openQuestions.map((q) => q.ref).join(",") || "无"};批注:${instructions.length}`,
       },
     ],
     edges,

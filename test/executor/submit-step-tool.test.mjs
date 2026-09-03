@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { submitStepTool } from "../../src/executor/submit-step-tool.mjs";
 
-/* 每一层对象都不许自己加格子;params 例外,它装的是 n8n 的参数,键名由目录定,不能封死 */
+/* 每一层对象都不许自己加格子;params 例外,它装的是格子的值,键名由节点表定,契约上不封死,闸门第二道按表查 */
 function objectsIn(schema, path = "") {
   const found = [];
   if (schema && typeof schema === "object") {
@@ -29,7 +29,7 @@ test("交步工具:节点四格必填,note 有位子但不强制,线上出口可
   assert.equal(typeof node.properties.note.description, "string");
   const edge = parameters.properties.edges.items;
   assert.deepEqual(edge.required, ["from", "to"]);
-  assert.match(edge.properties.output.description, /true.*false.*done.*loop/s);
+  assert.match(edge.properties.output.description, /true.*false/s);
   for (const { path, schema } of objectsIn(parameters)) {
     if (path.endsWith("/params")) assert.equal("additionalProperties" in schema, false, `${path} 不能封死`);
     else assert.equal(schema.additionalProperties, false, `${path} 没封`);

@@ -1,3 +1,4 @@
+import { checkAgainstNodeTable } from "../nodes/check-nodes.mjs";
 import { createPlanSession } from "../plan/plan-session.mjs";
 import { stepWaves, assembleTable } from "./step-context.mjs";
 
@@ -144,7 +145,8 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
 const isPlainObject = (value) =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/* 画布闸门里机器能查的那几条。节点类型在不在平台目录里、必填的格填没填,要等执行者那一段带着目录来。 */
+/* 画布闸门:第一道是信封(形状对不对、名字撞不撞、线接没接上),第二道是对得上节点表(src/nodes/check-nodes.mjs)。
+   两道在同一个函数里,执行者交回时和状态机提交前走的是同一道。 */
 export function checkResult(result, ref, canvas) {
   if (!isPlainObject(result)) return ["交回的不是一个对象"];
   if (result.kind === "covered") return [];
@@ -187,7 +189,8 @@ export function checkResult(result, ref, canvas) {
     if (!all.has(edge.from) || !all.has(edge.to)) reasons.push(`${label} 接了不存在的节点`);
     else if (!mine.has(edge.from) && !mine.has(edge.to)) reasons.push(`${label} 两头都不是 ${ref} 的节点`);
   }
-  return reasons;
+  if (reasons.length) return reasons;
+  return checkAgainstNodeTable(nodes, edges, canvas.nodes);
 }
 
 /* 换掉这一步原有的节点。线的归属:进这一步的线由这一步自己在改动里声明,所以老的进线全部去掉、

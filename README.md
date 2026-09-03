@@ -49,10 +49,9 @@ Plan Agent 这一段是这么切的：
 | 真模型验证 | 有。deepseek-v4-pro 上跑过三个场景、三次修订轮，原始输出和完整对话记录在 `fixtures/observed/`，行为记录在 `docs/观察.md` |
 | 画布原型 `prototype/` | 有。Plan 阶段的内容是真实模型输出，执行阶段是手写的愿景演示 |
 | 状态机 `src/state-machine/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；互不依赖的步同一波一起做；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
-| 画布侧 Gate | 一半。机器能查的几条在状态机里（节点标的是哪一步、名字不撞、线接在存在的节点上、走完整张画布查形状）；节点类型对平台目录的检查要等执行者带着目录来 |
-| 平台目录与检索工具 `src/executor/n8n-catalog.mjs` | 有。从 n8n 官方镜像导出全部 559 种节点的参数说明（`fixtures/n8n/catalog.json`，脚本可重新导出）。给模型的不是整份目录，是三层披露：常驻十来行、搜索回候选、点名才给参数，分操作的节点先给操作菜单 |
-| 我们自己的节点表 `nodes/` | 有，十一张收口：定时触发、读文件、解析文档、OCR、切块、向量化、写向量库、LLM、写数据库、条件分岔、写代码。契约 `contracts/node-definition.schema.json`，读表就校。执行者还没换到这张表上，还在查 n8n 的目录 |
-| Execution Agent 与它的输出契约 | 有。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、三个工具的说明、交回形状的契约（`contracts/step-submission.schema.json`）、让模型来回查看交的循环（`src/executor/executor.mjs`）；插进状态机，在真模型上走完过一整条链（`fixtures/observed/run11-执行者走完整条链/`），批注后重走碰到目录里没有的能力时停在那一步（`run12-批注重走/`）。怎么定的和还差什么见 `docs/执行者.md`。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
+| 画布侧 Gate | 两道有了：信封（节点标的是哪一步、名字不撞、线接在存在的节点上、走完整张画布查形状）和对得上节点表（类型在表里、格子存在、要填的填了或留空、挑一个的值在能挑的里、多出口的线写了出口）。第三道「能渲染」还没有 |
+| 我们自己的节点表 `nodes/` | 有，十一张收口：定时触发、读文件、解析文档、OCR、切块、向量化、写向量库、LLM、写数据库、条件分岔、写代码。契约 `contracts/node-definition.schema.json`，读表就校。执行者换到这张表上了：整张表常驻在提示词里，没有搜、没有查，只有交；闸门第二道按表查交回的格子 |
+| Execution Agent 与它的输出契约 | 有。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、一个工具（交）、交回形状的契约（`contracts/step-submission.schema.json`）、让模型交、被退、再交的循环（`src/executor/executor.mjs`）；插进状态机，在真模型上走完过一整条链（`fixtures/observed/run11-执行者走完整条链/`），批注后重走碰到目录里没有的能力时停在那一步（`run12-批注重走/`）。怎么定的和还差什么见 `docs/执行者.md`。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点名明写「固定答复」，类型是写代码，正文一行注释，只为看状态机怎么动 |
 
 所以现在这个仓库是：**设计者和执行者都做出来了，在真模型上走完过一整条链；状态机做出来了，测试守着；画布上那段生长在原型里还是演的，命令行里能走出真节点，画布还没接上命令行。**
 
@@ -96,13 +95,13 @@ npm run plan:chat -- --save fixtures/observed/我的一次运行
 EXECUTOR_MODULE=src/executor/executor.mjs npm run plan:chat -- --save fixtures/observed/我的一次运行
 ```
 
-走步时它搜了什么、查了什么、交了什么一行行印出来；每一步它自己的对话记录存在 `--save` 目录的 `executor/` 下。`fixtures/observed/run11-执行者走完整条链/` 是这么跑出来的。只想看状态机怎么动，插测试用的固定答复：
+走步时它交了什么、被退了什么一行行印出来；每一步它自己的对话记录存在 `--save` 目录的 `executor/` 下。`fixtures/observed/run11-执行者走完整条链/` 是这么跑出来的。只想看状态机怎么动，插测试用的固定答复：
 
 ```bash
 EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs npm run plan:chat
 ```
 
-它交回的节点类型明写「固定答复(不是真节点)」，不是执行者。`fixtures/observed/run9-状态机走步-固定答复/` 是这么跑出来的一份记录：真模型出的方案，固定答复走的步。
+它交回的节点名明写「固定答复」，不是执行者。`fixtures/observed/run9-状态机走步-固定答复/` 是这么跑出来的一份记录：真模型出的方案，固定答复走的步。
 
 校验一份方案文件：
 
@@ -136,13 +135,13 @@ nodes/       我们自己的节点表，一个节点一个文件
 src/
   plan/          设计者这一半：Gate、提交工具定义、调用循环、方案差异、Plan 会话
   state-machine/ 状态机：从方案里读走步顺序与拼上下文、开始/停/批注/走步/画布/记录
-  executor/      执行者：平台目录的搜索与详情、交步的工具定义、一步的来回；默认导出就是插进状态机的插口
-  nodes/         读节点表，按契约校
+  executor/      执行者：节点表怎么摆给模型看、交步的工具定义、一步的来回；默认导出就是插进状态机的插口
+  nodes/         读节点表，按契约校；闸门第二道，交回的节点对得上表
   model/         跟模型说话的插座，OpenAI 兼容，两半共用
   cli/           多轮命令 plan:chat、单跑一步 executor:step、把执行者的动作印成人话
   prototype/     给画布原型生成演示数据
 test/        按 src 的目录一一对应
-fixtures/    手写的设计样例；observed/ 里真模型的原始输出，一次运行一个文件夹；doubles/ 里测试用的固定答复执行者；n8n/ 里从官方镜像导出的节点目录
+fixtures/    手写的设计样例；observed/ 里真模型的原始输出，一次运行一个文件夹；doubles/ 里测试用的固定答复执行者
 docs/
   assets/      README 里的架构总览图，src/ 是它的网页源文件
   取舍.md      每一刀背后的麻烦与放弃的路
@@ -155,7 +154,7 @@ docs/
   设计记录.md  建造过程的逐步记录，早期稿，以上面几份为准
   scenarios/   场景预演，早期稿
 prototype/   画布原型，修改本.md 记着每一处改动
-scripts/     render-figures.sh 出图；dump-n8n-nodes.sh 从 n8n 镜像导出节点说明，trim-n8n-nodes.mjs 精简成目录
+scripts/     render-figures.sh 出图
 AGENTS.md    人和 Agent 在这个仓库里怎么协作
 CLAUDE.md    Claude Code 每个会话先读的规矩，指向 AGENTS.md
 ```

@@ -23,14 +23,14 @@ const submitting = (plan) => async () => ({
 });
 
 /* 执行者的固定答复:按这一步的编号查表。 */
-const node = (step, name, extra = {}) => ({ name, step, type: `${step} 的节点`, params: {}, blanks: [], ...extra });
+const node = (step, name, extra = {}) => ({ name, step, type: "code", params: { code: `// ${step}` }, blanks: [], ...extra });
 const patch = (nodes, edges = []) => ({ kind: "patch", nodes, edges });
 const covered = { kind: "covered" };
 const chain = {
   s1: () => patch([node("s1", "n1")]),
   s2: () => patch([node("s2", "n2")], [{ from: "n1", to: "n2" }]),
-  s3: () => patch([node("s3", "n3", { blanks: ["fields"] })], [{ from: "n2", to: "n3" }]),
-  s4: () => patch([node("s4", "n4", { blanks: ["table"] })], [{ from: "n3", to: "n4" }]),
+  s3: () => patch([node("s3", "n3", { type: "llm", params: { prompt: "抽字段" }, blanks: ["outputSchema"] })], [{ from: "n2", to: "n3" }]),
+  s4: () => patch([node("s4", "n4", { type: "writeDatabase", params: {}, blanks: ["connection", "table"] })], [{ from: "n3", to: "n4" }]),
 };
 function byStep(handlers) {
   const contexts = [];
@@ -51,7 +51,7 @@ async function sessionWithPlan(executor) {
    画布上就只剩一条,分支消失——用户看到的工作流跟真正的工作流不是一回事。 */
 test("分支的出口留在画布上:同一对节点之间,true 和 false 是两条线", async () => {
   const branching = {
-    s1: () => patch([node("s1", "岔路")]),
+    s1: () => patch([node("s1", "岔路", { type: "condition", params: { condition: "input.ok" } })]),
     s2: () => patch([node("s2", "收口")], [
       { from: "岔路", to: "收口", output: "true" },
       { from: "岔路", to: "收口", output: "false" },

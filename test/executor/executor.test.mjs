@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { stepMessage, toPatch, runStep, createExecutor } from "../../src/executor/executor.mjs";
+import { stepMessage, toPatch, runStep, createExecutor, executorTools, loadSystemPrompt } from "../../src/executor/executor.mjs";
 
 const context = (overrides = {}) => ({
   plan: { goal: "每天把新合同写进库", steps: [{ ref: "s1", title: "读文件", dependsOn: [] }], openQuestions: [] },
@@ -50,54 +50,66 @@ test("契约上新加的格子原样穿过执行器,不用改中间层", () => {
   assert.deepEqual(patch.nodes[0], { name: "A", step: "s2", type: "t", params: {}, blanks: [], note: "为什么这么接", 将来新加的: 1 });
 });
 
-test("一步的来回:搜、查、交;答案接在对话后面,交的过闸门就还回去", async () => {
+test("一步的来回:交,过闸门就还回去;提示词里常驻整张节点表,只有一个工具", async () => {
   const submission = {
     kind: "patch",
     nodes: [
-      { name: "Every day", type: "n8n-nodes-base.scheduleTrigger", params: { rule: { interval: [{ field: "days" }] } }, blanks: [] },
-      { name: "Read PDFs", type: "n8n-nodes-base.readWriteFile", params: { fileSelector: "" }, blanks: ["fileSelector"] },
+      { name: "Every day", type: "schedule", params: {}, blanks: [] },
+      { name: "Read PDFs", type: "readFile", params: { pattern: "*.pdf" }, blanks: ["folder"], note: "目录是你的。" },
     ],
     edges: [{ from: "Every day", to: "Read PDFs" }],
   };
-  const { callModel, seen } = scripted([
-    assistant([call("search_nodes", { query: "read files from disk" })]),
-    assistant([call("describe_node", { type: "n8n-nodes-base.readWriteFile", operation: "read" }, "c2")]),
-    assistant([call("submit_step", submission, "c3")]),
-  ]);
+  const { callModel, seen } = scripted([assistant([call("submit_step", submission)])]);
   const events = [];
   const out = await runStep(context(), { callModel, systemPrompt: "P", onEvent: (e) => events.push(e.kind) });
-  assert.equal(out.rounds, 3);
-  assert.deepEqual(seen[2], ["system", "user", "assistant", "tool", "assistant", "tool"]);
-  const searchReply = JSON.parse(out.messages[3].content);
-  assert.ok(searchReply.some((n) => n.type === "n8n-nodes-base.readWriteFile"));
-  const describeReply = JSON.parse(out.messages[5].content);
-  assert.ok(describeReply.properties.some((p) => p.name === "fileSelector"));
-  assert.deepEqual(events, ["tool", "tool", "submitted"]);
-  assert.equal(out.result.kind, "patch");
+  assert.equal(out.rounds, 1);
+  assert.deepEqual(seen[0], ["system", "user"]);
+  assert.deepEqual(events, ["submitted"]);
   assert.deepEqual(out.result.nodes.map((n) => [n.name, n.step]), [["Every day", "s1"], ["Read PDFs", "s1"]]);
   assert.deepEqual(out.submission, submission);
+  assert.deepEqual(executorTools.map((t) => t.function.name), ["submit_step"]);
+  const prompt = loadSystemPrompt();
+  assert.doesNotMatch(prompt, /\{\{node_table\}\}/);
+  for (const type of ["schedule", "readFile", "parseDocument", "ocr", "splitText", "embedText", "writeVectorStore", "llm", "writeDatabase", "condition", "code"]) {
+    assert.match(prompt, new RegExp(`^- ${type} \\(`, "m"));
+  }
+  assert.match(prompt, /folder \(Folder\): the user's/);
+  assert.ok(prompt.indexOf("- schedule (") < prompt.indexOf("- readFile (") && prompt.indexOf("- readFile (") < prompt.indexOf("- code ("), "表按链的顺序摆");
+  assert.match(prompt, /outputs: true, false/);
 });
 
 test("闸门不认的交回,原因退给模型,它再交", async () => {
-  const bad = { kind: "patch", nodes: [{ name: "A", type: "t", params: "not an object", blanks: [] }], edges: [] };
-  const good = { kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: [] }], edges: [] };
+  const bad = { kind: "patch", nodes: [{ name: "A", type: "code", params: "not an object", blanks: [] }], edges: [] };
+  const good = { kind: "patch", nodes: [{ name: "A", type: "code", params: { code: "// a" }, blanks: [] }], edges: [] };
   const { callModel } = scripted([assistant([call("submit_step", bad)]), assistant([call("submit_step", good, "c2")])]);
   const out = await runStep(context(), { callModel, systemPrompt: "P" });
   assert.equal(out.rounds, 2);
   const rejection = JSON.parse(out.messages[3].content);
   assert.match(rejection.rejected.join(";"), /params/);
-  assert.deepEqual(out.result.nodes, [{ name: "A", step: "s1", type: "t", params: {}, blanks: [] }]);
+  assert.deepEqual(out.result.nodes, [{ name: "A", step: "s1", type: "code", params: { code: "// a" }, blanks: [] }]);
 });
 
-test("查详情报错(没有那种操作)当答案退给模型,来回继续", async () => {
+test("叫了没有的工具(搜、查都撤了),当答案退给模型,来回继续", async () => {
   const { callModel } = scripted([
-    assistant([call("describe_node", { type: "n8n-nodes-base.postgres", operation: "fly" })]),
+    assistant([call("search_nodes", { query: "ocr" })]),
     assistant([call("submit_step", { kind: "covered" }, "c2")], "nothing to change"),
   ]);
-  const out = await runStep(context({ canvas: { nodes: [{ name: "A", step: "s1", type: "t", params: {}, blanks: [] }], edges: [], version: 1 } }), { callModel, systemPrompt: "P" });
-  assert.match(JSON.parse(out.messages[3].content).error, /没有 fly 这种操作/);
+  const out = await runStep(context({ canvas: { nodes: [{ name: "A", step: "s1", type: "code", params: { code: "// a" }, blanks: [] }], edges: [], version: 1 } }), { callModel, systemPrompt: "P" });
+  assert.match(JSON.parse(out.messages[3].content).error, /unknown tool search_nodes/);
   assert.deepEqual(out.result, { kind: "covered" });
   assert.equal(out.events[1].kind, "said");
+});
+
+test("交回对不上节点表(类型不在表里、格子不存在),原因退给模型", async () => {
+  const wrongType = { kind: "patch", nodes: [{ name: "A", type: "n8n-nodes-base.postgres", params: {}, blanks: [] }], edges: [] };
+  const wrongSlot = { kind: "patch", nodes: [{ name: "A", type: "llm", params: { prompt: "p", temperature: 0.2 }, blanks: ["outputSchema"] }], edges: [] };
+  const good = { kind: "patch", nodes: [{ name: "A", type: "llm", params: { prompt: "p" }, blanks: ["outputSchema"] }], edges: [] };
+  const { callModel } = scripted([assistant([call("submit_step", wrongType)]), assistant([call("submit_step", wrongSlot, "c2")]), assistant([call("submit_step", good, "c3")])]);
+  const out = await runStep(context(), { callModel, systemPrompt: "P" });
+  assert.equal(out.rounds, 3);
+  assert.match(JSON.parse(out.messages[3].content).rejected.join(";"), /不在节点表里/);
+  assert.match(JSON.parse(out.messages[5].content).rejected.join(";"), /没有 temperature 这一格/);
+  assert.equal(out.result.nodes[0].type, "llm");
 });
 
 test("说话不交:抛错带着它说的话,整段对话挂在错误上", async () => {
@@ -110,7 +122,8 @@ test("说话不交:抛错带着它说的话,整段对话挂在错误上", async 
 });
 
 test("来回到上限没交,这一步作废", async () => {
-  const replies = Array.from({ length: 3 }, (_, i) => assistant([call("search_nodes", { query: "again" }, `c${i}`)]));
+  const bad = { kind: "patch", nodes: [{ name: "A", type: "没有这种", params: {}, blanks: [] }], edges: [] };
+  const replies = Array.from({ length: 3 }, (_, i) => assistant([call("submit_step", bad, `c${i}`)]));
   const { callModel } = scripted(replies);
   await assert.rejects(runStep(context(), { callModel, systemPrompt: "P", maxRounds: 2 }), /来回 2 次没交/);
 });
@@ -128,7 +141,7 @@ test("接口抛错,错误上也挂着对话记录和事件", async () => {
 
 test("插口:onEvent 拿到事件和上下文;给了目录,每一步自己的实录存进去", async () => {
   const dir = mkdtempSync(join(tmpdir(), "executor-"));
-  const submission = { kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: [] }], edges: [] };
+  const submission = { kind: "patch", nodes: [{ name: "A", type: "code", params: { code: "// a" }, blanks: [] }], edges: [] };
   const { callModel } = scripted([assistant([call("submit_step", submission)])]);
   const seen = [];
   const executor = createExecutor({ callModel, systemPrompt: "P", save: dir, onEvent: (event, ctx) => seen.push([ctx.step.ref, event.kind]) });

@@ -1,18 +1,20 @@
 /* 执行者本体:一步的来回。
-   桌上的五样贴上标签发给模型,带三个工具;模型要搜就搜、要查详情就查,当场答它,答案接在对话后面;
-   它一交,交的东西先过状态机那道闸门(同一道,不另造),过了就还给状态机,没过就把原因退给它再来。
+   桌上的五样贴上标签发给模型,整张节点表常驻在提示词里,只带一个工具(交);
+   它一交,交的东西先过状态机那道闸门(同一道,不另造:信封 + 对得上节点表),过了就还给状态机,没过就把原因退给它再来。
    来回有上限;说话不交也算没交。 */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { searchNodes, describeNode, catalogTools } from "./n8n-catalog.mjs";
+import { renderNodeTable } from "./node-catalog.mjs";
 import { submitStepTool } from "./submit-step-tool.mjs";
 import { checkResult } from "../state-machine/workflow-session.mjs";
 import { callerFromEnv as modelCallerFromEnv } from "../model/openai-compatible.mjs";
 
-export const executorTools = [...catalogTools, submitStepTool];
+export const executorTools = [submitStepTool];
 
+/* 提示词文件里 {{node_table}} 那一行换成整张节点表:表改了提示词跟着改,不抄第二份 */
 export function loadSystemPrompt() {
-  return readFileSync(new URL("../../prompts/executor.en.md", import.meta.url), "utf8");
+  const text = readFileSync(new URL("../../prompts/executor.en.md", import.meta.url), "utf8");
+  return text.replace("{{node_table}}", renderNodeTable());
 }
 
 export function callerFromEnv(env = process.env) {
@@ -46,21 +48,14 @@ export function toPatch(submission, ref) {
   return { kind: submission.kind, nodes, edges: submission.edges };
 }
 
-function answerTool(name, args) {
-  try {
-    if (name === "search_nodes") return searchNodes(String(args.query ?? ""));
-    if (name === "describe_node") return describeNode(args.type, { resource: args.resource, operation: args.operation });
-    return { error: `unknown tool ${name}` };
-  } catch (error) {
-    return { error: error.message };
-  }
-}
+/* 只有一个工具。叫了别的名字,当答案退给它,来回继续 */
+const answerTool = (name) => ({ error: `unknown tool ${name}; the only tool is submit_step, and the node table is in the system prompt` });
 
 const toolReply = (call, content) => ({ role: "tool", tool_call_id: call.id, content: JSON.stringify(content) });
 
 /* 一步。返回 { result(状态机认的), submission(模型交的原样), rounds, messages(整段对话), events(每个动作) }。
    没交成抛错,错误上挂着 messages 和 events,实录照样能存。 */
-export async function runStep(context, { callModel, systemPrompt, maxRounds = 12, signal, onEvent = () => {} }) {
+export async function runStep(context, { callModel, systemPrompt, maxRounds = 30, signal, onEvent = () => {} }) {
   const ref = context.step.ref;
   const messages = [
     { role: "system", content: systemPrompt },
@@ -104,7 +99,7 @@ export async function runStep(context, { callModel, systemPrompt, maxRounds = 12
         note({ round, kind: "submitted", submission: args });
         return { result, submission: args, rounds: round, messages, events };
       }
-      const answer = answerTool(name, args);
+      const answer = answerTool(name);
       messages.push(toolReply(call, answer));
       note({ round, kind: "tool", tool: name, args, answer });
     }
@@ -116,7 +111,7 @@ export async function runStep(context, { callModel, systemPrompt, maxRounds = 12
    onEvent(事件, 上下文) 让外面看得见它一路在干什么,上下文带着是哪一步——一波里可能两步同时在做。
    save 给了目录,每一步自己的对话记录、事件、交的原样都存进去:实录是执行者自己层的东西,
    它自己存,状态机不经手;出错也存,错照样抛。 */
-export function createExecutor({ callModel, systemPrompt = loadSystemPrompt(), maxRounds = 12, onEvent, save } = {}) {
+export function createExecutor({ callModel, systemPrompt = loadSystemPrompt(), maxRounds = 30, onEvent, save } = {}) {
   let count = 0;
   return async function executor(context, { signal, onEvent: onEventForThisCall = onEvent } = {}) {
     const ref = context.step.ref;

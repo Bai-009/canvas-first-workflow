@@ -12,7 +12,7 @@ import { describe } from "./describe-event.mjs";
    斜杠开头的是按钮:/start 开始走步,/note s1 文字 批注,/canvas 看画布,/help。
    执行者是插口:EXECUTOR_MODULE=路径 插一个进来(默认导出一个 async 函数);没插的时候 /start 会明说。
    真执行者是 src/executor/executor.mjs;fixtures/doubles/fixed-executor.mjs 是测试用的固定答复。
-   走步时执行者搜了什么、查了什么、交了什么一行行印出来,前面带步号。
+   走步时执行者交了什么、被退了什么一行行印出来,前面带步号。
    --save <目录> 把每一轮的原始输出、完整对话记录、每次走步的记录和画布存下来,fixtures/observed/ 里的实录就这么来;
    执行者每一步自己的对话记录存在 <目录>/executor/ 下(EXECUTOR_SAVE 没另设的话)。
    --lang en 用英文提示词。 */
