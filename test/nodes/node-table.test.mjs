@@ -39,6 +39,14 @@ test("OCR:卡类型 OCR;只有 Engine 一格,凭证是平台的事;File 进 Text
   assert.equal(node.output, "Text");
 });
 
+test("解析文档:卡类型 Parser;没有格子;File 进 Text 出", () => {
+  const node = findNodeDefinition("parseDocument");
+  assert.equal(node.kind, "Parser");
+  assert.deepEqual(node.slots, []);
+  assert.equal(node.input, "File");
+  assert.equal(node.output, "Text");
+});
+
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {
   const base = { type: "x", kind: "X", summary: "s", slots: [], input: "a", output: "b" };
   const slot = (extra) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });
