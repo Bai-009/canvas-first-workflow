@@ -11,12 +11,13 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
   let scale = 1, tx = 0, ty = 0, userMoved = false, box = { w: 1, h: 1 };
   let last = { placed: [], canvas: { nodes: [], edges: [] } };
 
-  /* 等着的时候画布不是一张白纸:正在做哪一步就写在画布上,
-     线从已经落定的那几张卡伸过来,下一张卡就从这儿长出去。 */
-  const pendingEl = document.createElement("div");
-  pendingEl.className = "pending";
-  pendingEl.hidden = true;
-  world.appendChild(pendingEl);
+  /* 等着的时候,进度长在链路自己的轨道上:左边是已经建好的真卡片,
+     头上那个点是下一张卡出现的地方,右边几个淡点是还没走到的几步。
+     一行字在点底下写当下这一步。除此之外画布上不加别的东西。 */
+  const labelEl = document.createElement("div");
+  labelEl.className = "track-label";
+  labelEl.hidden = true;
+  world.appendChild(labelEl);
   let pending = null;
 
   const apply = () => (world.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`);
@@ -96,8 +97,12 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
       ? { w: Math.max(...placed.map((p) => p.x)) + TILE, h: Math.max(...placed.map((p) => p.y)) + TILE }
       : { w: 1, h: 1 };
     if (pending) {
-      const spot = pendingSpot();
-      box = { w: Math.max(box.w, spot.x + pendingEl.offsetWidth), h: Math.max(box.h, spot.y + 60) };
+      const at = head();
+      const ahead = Math.max(0, (pending.remaining ?? 1) - 1);
+      box = {
+        w: Math.max(box.w, at.x + Math.max(1, ahead) * PITCH + 40),
+        h: Math.max(box.h, at.y + 80),
+      };
     }
     wires.setAttribute("width", box.w);
     wires.setAttribute("height", box.h);
@@ -106,35 +111,55 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
 
   /* 下一张卡会落在哪一列,标记就站在哪儿:已经有卡就接在最右边那一列后面,
      一张都还没有就站在原点,镜头会把它放到正中。 */
-  function pendingSpot() {
+  const PITCH = TILE + 112;
+
+  /* 下一张卡会落在哪一格,头就在哪儿。已经有卡就接在最右一列后面,
+     一张都还没有就在原点——镜头会把它摆到正中。 */
+  function head() {
     const { placed } = last;
-    if (!placed.length) return { x: 0, y: 0 };
-    const col = Math.max(...placed.map((p) => p.x)) + TILE + 112;
-    const tail = placed.filter((p) => p.x + TILE + 112 > col - 1);
-    const y = tail.reduce((sum, p) => sum + p.y, 0) / (tail.length || 1);
-    return { x: col, y: y + TILE / 2 - 22 };
+    if (!placed.length) return { x: 0, y: TILE / 2 };
+    const x = Math.max(...placed.map((p) => p.x)) + PITCH;
+    const tail = placed.filter((p) => p.x + PITCH >= x);
+    return { x, y: tail.reduce((sum, p) => sum + p.y, 0) / (tail.length || 1) + TILE / 2 };
   }
 
+  const svg = (name, attrs) => {
+    const el = document.createElementNS(SVG, name);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  };
+
   function drawPending() {
-    pendingEl.hidden = !pending;
+    labelEl.hidden = !pending;
     if (!pending) return;
-    pendingEl.innerHTML = `<span class="pending-dot"></span><span>${pending}</span>`;
-    const spot = pendingSpot();
-    pendingEl.style.left = `${spot.x}px`;
-    pendingEl.style.top = `${spot.y}px`;
-    /* 从没有下家的那几张卡伸一条虚线过来。 */
-    const { placed, canvas } = last;
-    const busy = new Set(canvas.edges.map((e) => e.from));
-    for (const p of placed) {
+    const at = head();
+    const ahead = Math.max(0, (pending.remaining ?? 1) - 1);
+    const end = at.x + Math.max(1, ahead) * PITCH;
+
+    /* 已经落定的那几张卡先把线接到头上来。 */
+    const busy = new Set(last.canvas.edges.map((e) => e.from));
+    for (const p of last.placed) {
       if (busy.has(p.node.name)) continue;
-      const path = document.createElementNS(SVG, "path");
-      path.setAttribute("class", "wire waiting");
       const x0 = p.x + TILE, y0 = p.y + TILE / 2;
-      const x1 = spot.x - 10, y1 = spot.y + 22;
-      const dx = Math.max(40, (x1 - x0) / 2);
-      path.setAttribute("d", `M ${x0} ${y0} C ${x0 + dx} ${y0}, ${x1 - dx} ${y1}, ${x1} ${y1}`);
-      wires.appendChild(path);
+      const dx = Math.max(40, (at.x - 14 - x0) / 2);
+      wires.appendChild(svg("path", {
+        class: "wire waiting",
+        d: `M ${x0} ${y0} C ${x0 + dx} ${y0}, ${at.x - 14 - dx} ${at.y}, ${at.x - 14} ${at.y}`,
+      }));
     }
+    /* 还没走到的那几步:一条淡线,一步一个点。 */
+    if (ahead) {
+      wires.appendChild(svg("line", { class: "track", x1: at.x + 14, y1: at.y, x2: end, y2: at.y }));
+      for (let i = 1; i <= ahead; i++) {
+        wires.appendChild(svg("circle", { class: "track-dot", cx: at.x + i * PITCH, cy: at.y, r: 3 }));
+      }
+    }
+    wires.appendChild(svg("circle", { class: pending.broken ? "track-break" : "track-head", cx: at.x, cy: at.y, r: 7 }));
+
+    labelEl.textContent = pending.title;
+    labelEl.style.left = `${at.x}px`;
+    labelEl.style.top = `${at.y + 26}px`;
+    labelEl.style.transform = `translate(-50%,0) scale(${1 / scale})`;
   }
 
   viewport.addEventListener("wheel", (e) => {
@@ -179,9 +204,9 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     draw,
     fit,
     refit: () => { userMoved = false; fit(); },
-    /* 正在做哪一步。传 null 就是做完了,标记收掉。 */
-    waiting(text) {
-      pending = text;
+    /* 正在做哪一步、后面还剩几步。传 null 就是做完了,轨道收掉。 */
+    waiting(info) {
+      pending = info;
       draw(last.canvas);
     },
   };

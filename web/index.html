@@ -33,17 +33,18 @@
   .port-label{font-family:var(--font);font-size:11px;font-weight:500;fill:var(--ink-3)}
   .port-label rect{fill:var(--canvas)}
 
-  /* 正在做哪一步:站在下一张卡会落的那一格上,卡就从这儿长出去。 */
-  .pending{position:absolute;display:flex;align-items:center;gap:9px;height:44px;padding:0 18px;
-    border-radius:14px;background:var(--paper);color:var(--ink);font-size:13px;font-weight:500;
-    white-space:nowrap;box-shadow:0 14px 30px -16px rgba(20,26,38,.28),0 0 0 1px rgba(20,26,38,.05);
-    transition:left 460ms var(--spring),top 460ms var(--spring)}
-  .pending[hidden]{display:none}
-  .pending-dot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:var(--accent);
-    animation:pendingPulse 1.15s ease-in-out infinite}
-  @keyframes pendingPulse{0%,100%{opacity:.3;transform:scale(.85)}50%{opacity:1;transform:scale(1)}}
-  .wire.waiting{stroke:#c3c9d3;stroke-dasharray:5 6;animation:wireFlow 900ms linear infinite}
-  @keyframes wireFlow{to{stroke-dashoffset:-22}}
+  /* 进度长在链路自己的轨道上:头上那个点是下一张卡出现的地方,
+     右边一条淡线带着几个点,是还没走到的几步。除此之外画布上不加东西。 */
+  .track{stroke:#d7dbe2;stroke-width:2;stroke-linecap:round}
+  .track-dot{fill:#d7dbe2}
+  .track-head{fill:var(--accent);animation:headPulse 1.6s ease-in-out infinite}
+  @keyframes headPulse{0%,100%{opacity:.34;r:5}50%{opacity:1;r:7}}
+  .wire.waiting{stroke:#d7dbe2;stroke-dasharray:5 7;animation:wireFlow 1.1s linear infinite}
+  @keyframes wireFlow{to{stroke-dashoffset:-24}}
+  .track-break{fill:none;stroke:#c0c6d0;stroke-width:2}
+  .track-label{position:absolute;transform-origin:50% 0;white-space:nowrap;
+    font-size:13px;line-height:20px;color:var(--ink-2);pointer-events:none}
+  .track-label[hidden]{display:none}
 
   .node{position:absolute;width:var(--tile);height:var(--tile)}
   .card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
@@ -192,8 +193,6 @@
   .bar button{font:inherit;font-size:13.5px;font-weight:550;padding:9px 16px;border:0;border-radius:12px;
     background:var(--ink);color:#fff;cursor:pointer}
   .bar button:disabled{background:#c6cad1;cursor:default}
-  .status{position:absolute;left:50%;bottom:82px;transform:translateX(-50%);z-index:50;
-    font-size:12px;line-height:18px;color:var(--ink-3);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -222,7 +221,6 @@
     </div>
   </div>
 
-  <p class="status" id="status"></p>
   <div class="bar">
     <form id="form">
       <input id="input" autocomplete="off" placeholder="描述你要做的数据处理" />
