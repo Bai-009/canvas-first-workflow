@@ -22,6 +22,8 @@ export function createPlanCard({ card, stage, onStart }) {
   const fresh = $(".plan-new");
   let mini = false;
   let moving = false;
+  /* 边写边看的时候,记着每一块已经露了几条,只补新的那几条。 */
+  let shown = { says: 0, understanding: 0, steps: 0, asks: 0 };
 
   const place = () => {
     if (mini) {
@@ -55,6 +57,7 @@ export function createPlanCard({ card, stage, onStart }) {
     if (task) $(".plan-text").textContent = task;
     const secs = [];
     for (const sec of card.querySelectorAll(".plan-sec")) sec.hidden = true;
+    shown = { says: 0, understanding: 0, steps: 0, asks: 0 };
     if (speech) {
       $(".plan-says").innerHTML = rich(speech);
       secs.push($(".sec-says"));
@@ -85,6 +88,8 @@ export function createPlanCard({ card, stage, onStart }) {
       card.classList.add("open");
       $(".plan-text").textContent = text;
       for (const sec of card.querySelectorAll(".plan-sec")) sec.hidden = true;
+      for (const sel of [".plan-says", ".plan-table tbody", ".plan-route", ".plan-asks"]) $(sel).innerHTML = "";
+      shown = { says: 0, understanding: 0, steps: 0, asks: 0 };
       go.hidden = true;
       close.hidden = true;
       fresh.hidden = true;
@@ -94,7 +99,11 @@ export function createPlanCard({ card, stage, onStart }) {
 
     /* 交回来了:说明、理解、路线、待确认,一条一条落。 */
     async show(state) {
-      await drop(fill(state));
+      const streamed = shown.says + shown.understanding + shown.steps + shown.asks > 0;
+      const secs = fill(state);
+      /* 已经一条条看着长出来了,最后收尾就不再重演一遍。 */
+      if (streamed) for (const sec of secs) sec.hidden = false;
+      else await drop(secs);
       /* 这里必须自己取出来:页面上有个 id 是 plan 的元素,浏览器会把它变成同名全局变量,
          少写一行 const 就会读到那个 div,状态和「开始生成」全哑掉。 */
       const { plan } = state;
@@ -106,6 +115,35 @@ export function createPlanCard({ card, stage, onStart }) {
         go.classList.add("drop");
       }
       if (!mini) place();
+    },
+
+    /* 模型还在写的时候:一条一条补上去,已经露过的不重画。
+       写好的先站住,后面的接着长——这才是人读东西的样子。 */
+    draft({ speech, plan, reason }) {
+      if (mini) return;
+      /* 想的过程是模型的内心独白,不是产品说的话,不往界面上放。 */
+      if (speech && speech.length !== shown.says) {
+        $(".plan-says").innerHTML = rich(speech);
+        $(".sec-says").hidden = false;
+        shown.says = speech.length;
+      }
+      if (!plan) return place();
+      const grow = (sel, rows, key, render) => {
+        if (rows.length <= shown[key]) return;
+        const box = $(sel);
+        const before = box.children.length;
+        rows.slice(shown[key]).forEach((row, i) => box.insertAdjacentHTML("beforeend", render(row, shown[key] + i)));
+        for (const el of [...box.children].slice(before)) el.classList?.add("drop");
+        shown[key] = rows.length;
+        box.closest(".plan-sec").hidden = false;
+      };
+      grow(".plan-table tbody", plan.understanding, "understanding",
+        (u) => `<tr><td>${esc(u.quote)}</td><td>${esc(u.reading)}</td></tr>`);
+      grow(".plan-route", plan.steps, "steps",
+        (s, i) => `${i ? "<i>→</i>" : ""}<span>${esc(s.title)}</span>`);
+      grow(".plan-asks", plan.openQuestions, "asks",
+        (q) => `<div class="plan-ask"><span class="q">?</span><div><b>${esc(q.question)}</b><span>${esc(q.reason ?? "")}</span></div></div>`);
+      place();
     },
 
     /* 刷新页面回来的那一下不重演:已经搭过了就直接是右上角那张。 */

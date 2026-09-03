@@ -82,6 +82,7 @@ const feed = still ? {} : new EventSource("/api/events");
 feed.onmessage = (e) => {
   const event = JSON.parse(e.data);
   if (event.type === "reset") return location.reload();
+  if (event.type === "draft") return card.draft(event);
   if (event.type === "thinking") { busy = event.who; refreshSend(); }
   /* 这一波要做哪几步,写到画布上——等着的人得知道当下在做什么。 */
   if (event.type === "wave") view.waiting(waitingOn(event.refs));

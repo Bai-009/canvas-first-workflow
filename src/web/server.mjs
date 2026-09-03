@@ -83,7 +83,10 @@ export async function createWebServer() {
       if (!text?.trim()) return json(res, { error: "说了空话" }, 400);
       if (!task) task = text.trim();
       feed.send({ type: "thinking", who: "plan" });
-      const turn = await session.say(text.trim());
+      /* 边写边看:模型还在写的时候,把手上这半份推给页面。 */
+      const turn = await session.say(text.trim(), {
+        onDraft: (draft) => feed.send({ type: "draft", task, ...draft }),
+      });
       speech = turn.speech ?? "";
       feed.send({ type: "plan", task, plan: turn.plan, diff: turn.diff, revision: turn.revision, speech });
       return json(res, { ok: true });
