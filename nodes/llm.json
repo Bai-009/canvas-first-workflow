@@ -3,10 +3,27 @@
   "kind": "LLM",
   "summary": "每条数据过一次模型:把 Prompt 和这条数据交给模型,按 Output Schema 出一条记录。抽字段、分类、摘要、改写都用它",
   "slots": [
-    { "key": "model", "label": "Model", "kind": "pick", "options": ["DeepSeek V4 Pro"], "default": "DeepSeek V4 Pro" },
-    { "key": "outputSchema", "label": "Output Schema", "kind": "upload", "empty": "上传 JSON Schema" },
-    { "key": "prompt", "label": "Prompt", "kind": "body" }
+    {
+      "key": "model",
+      "label": "Model",
+      "kind": "pick",
+      "options": [
+        "DeepSeek V4 Pro"
+      ],
+      "default": "DeepSeek V4 Pro"
+    },
+    {
+      "key": "outputSchema",
+      "label": "Output Schema",
+      "kind": "upload",
+      "empty": "上传 JSON Schema"
+    },
+    {
+      "key": "prompt",
+      "label": "Prompt",
+      "kind": "body"
+    }
   ],
-  "input": "每条一段文本",
-  "output": "每条一条记录,结构按 Output Schema"
+  "input": "Text",
+  "output": "JSON · Output Schema"
 }

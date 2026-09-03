@@ -18,8 +18,17 @@ test("LLM:卡类型 LLM;三格 Model 挑一个、Output Schema 上传、Prompt �
   assert.deepEqual(llm.slots.map((s) => s.label), ["Model", "Output Schema", "Prompt"]);
   assert.deepEqual(llm.slots.map((s) => s.kind), ["pick", "upload", "body"]);
   assert.equal(llm.slots[0].default, "DeepSeek V4 Pro");
-  assert.ok(llm.input && llm.output);
+  assert.equal(llm.input, "Text");
+  assert.equal(llm.output, "JSON · Output Schema");
   assert.equal(findNodeDefinition("没有这种"), null);
+});
+
+test("读文件:卡类型 File;两格 Folder 接数据源、Pattern 真打字;是起点,没有 input", () => {
+  const node = findNodeDefinition("readFile");
+  assert.equal(node.kind, "File");
+  assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Folder", "source"], ["Pattern", "text"]]);
+  assert.equal(node.input, undefined);
+  assert.equal(node.output, "File");
 });
 
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {

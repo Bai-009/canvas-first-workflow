@@ -30,12 +30,12 @@
     "input": {
       "type": "string",
       "minLength": 1,
-      "description": "进来什么:每条是什么形态,卡的 Input 行印它。例:每条一段文本"
+      "description": "进来什么:类型词,卡的 Input 行印它(Text、File、JSON)。不写=不进数据,是链的起点,卡上印 —"
     },
     "output": {
       "type": "string",
       "minLength": 1,
-      "description": "出去什么:每条是什么形态,卡的 Output 行印它,下一个节点从这儿接。例:每条一条记录,结构按 Output Schema"
+      "description": "出去什么:类型词,卡的 Output 行印它,下一个节点从这儿接。例:JSON · Output Schema"
     }
   },
   "required": [
@@ -43,7 +43,6 @@
     "kind",
     "summary",
     "slots",
-    "input",
     "output"
   ],
   "additionalProperties": false,
