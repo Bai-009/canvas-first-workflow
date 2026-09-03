@@ -38,6 +38,7 @@ Refer to the current item's fields as {{ input.field }} in a prompt or a conditi
 
 - `name` is the node's identity on the canvas and the label the user sees. When rebuilding a step, reuse the existing names so that edges from downstream steps stay attached; a renamed node loses them, and every downstream step has to be rebuilt.
 - Declare the edges that enter your nodes: from upstream nodes, and between your own nodes. Edges leaving your nodes toward later steps belong to those steps.
+- Several nodes with no edge between them arrive on the canvas as loose cards standing side by side. The next step has one place to attach and no way to tell which card that is, so a submission whose nodes do not connect is handed back to you. Branches count as connected when they hang off the same upstream node.
 - A node with several outputs (condition: true, false) needs `output` on every edge leaving it. Edges leaving a single-output node take no `output`.
 - `note` is one sentence to the user, in the language the user wrote in: the one judgement the card does not show — why this node, why this value, or why a slot is blank. The card already shows the slot values; a note that repeats them tells the user nothing.
 - Text outside the tool call is not shown to the user.

@@ -199,6 +199,24 @@ export function checkResult(result, ref, canvas) {
     else if (!mine.has(edge.from) && !mine.has(edge.to)) reasons.push(`${label} 两头都不是 ${ref} 的节点`);
   }
   if (reasons.length) return reasons;
+
+  /* 一步交回好几个节点,这几个节点得连成一片——彼此相连,或者都挂在同一个上游节点上。
+     连不成的话交回的不是一段流程,是几张并排的卡:下一步只有一个落点,接哪张都不对。
+     只交回一个节点的不查:它的进线可能是上游那一步的,出线由下游那一步声明。 */
+  if (nodes.length > 1) {
+    const near = new Map();
+    const link = (a, b) => { if (!near.has(a)) near.set(a, new Set()); near.get(a).add(b); };
+    for (const edge of edges) { link(edge.from, edge.to); link(edge.to, edge.from); }
+    const reached = new Set([nodes[0].name]);
+    const stack = [nodes[0].name];
+    while (stack.length) {
+      for (const next of near.get(stack.pop()) ?? []) if (!reached.has(next)) { reached.add(next); stack.push(next); }
+    }
+    const cut = nodes.map((node) => node.name).filter((name) => !reached.has(name));
+    if (cut.length) reasons.push(`这一步交回 ${nodes.length} 个节点,${cut.join("、")} 没跟其它几个连在一起,下一步只有一个落点`);
+  }
+  if (reasons.length) return reasons;
+
   return checkAgainstNodeTable(nodes, edges, canvas.nodes);
 }
 

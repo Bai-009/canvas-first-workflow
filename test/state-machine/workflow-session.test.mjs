@@ -274,6 +274,35 @@ test("执行者只能改自己这一步的节点;查不过就停在这一步,画
   assert.equal(session.turn, "user");
 });
 
+test("一步交回好几个节点却不连在一起:停在这一步,画布不动", async () => {
+  const { executor } = byStep({
+    ...chain,
+    s1: () => patch([node("s1", "读取 PDF"), node("s1", "提取文字层"), node("s1", "有文字层？")]),
+  });
+  const session = await sessionWithPlan(executor);
+  const run = await session.start();
+  assert.equal(run.endedBy, "rejected");
+  assert.equal(run.steps.at(-1).ref, "s1");
+  assert.match(run.steps.at(-1).reasons[0], /提取文字层、有文字层？ 没跟其它几个连在一起/);
+  assert.deepEqual(session.canvas.nodes, []);
+});
+
+test("几个节点都挂在同一个上游节点上也算连在一起:分支放行", async () => {
+  const { executor } = byStep({
+    ...chain,
+    s2: () => patch(
+      [node("s2", "走电子版"), node("s2", "走扫描件")],
+      [{ from: "n1", to: "走电子版" }, { from: "n1", to: "走扫描件" }],
+    ),
+    s3: (context) => patch([node("s3", "n3", { type: "llm", params: { prompt: "抽字段" }, blanks: ["outputSchema"] })],
+      [{ from: "走电子版", to: "n3" }, { from: "走扫描件", to: "n3" }]),
+  });
+  const session = await sessionWithPlan(executor);
+  const run = await session.start();
+  assert.equal(run.endedBy, "finished");
+  assert.deepEqual(session.canvas.nodes.filter((n) => n.step === "s2").map((n) => n.name), ["走电子版", "走扫描件"]);
+});
+
 test("执行者出错:记下来,停在这一步,换回用户", async () => {
   const { executor } = byStep({ ...chain, s3: () => { throw new Error("平台连不上"); } });
   const session = await sessionWithPlan(executor);
