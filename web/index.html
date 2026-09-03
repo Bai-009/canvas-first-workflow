@@ -185,9 +185,10 @@
     color:#fff;font:inherit;font-size:12.5px;font-weight:500;cursor:pointer;transition:filter 140ms ease}
   .plan-go:hover{filter:brightness(1.06)}
   .plan-go[hidden],.plan-close[hidden]{display:none}
-  .plan-close{margin-left:auto;flex:0 0 auto;border:0;background:none;color:var(--ink-3);font:inherit;
-    font-size:12px;cursor:pointer}
-  .plan-close:hover{color:var(--ink)}
+  .plan-close,.plan-new{margin-left:auto;flex:0 0 auto;border:0;background:none;color:var(--ink-3);
+    font:inherit;font-size:12px;cursor:pointer}
+  .plan-close:hover,.plan-new:hover{color:var(--ink)}
+  .plan-new[hidden]{display:none}
 
   .bar{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);z-index:50;
     width:min(680px,calc(100vw - 48px))}
@@ -224,6 +225,7 @@
       <span class="plan-say"></span>
       <button class="plan-go" hidden>开始生成</button>
       <button class="plan-close" hidden>收起</button>
+      <button class="plan-new" hidden>新建</button>
     </div>
   </div>
 

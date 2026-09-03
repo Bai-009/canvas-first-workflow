@@ -68,6 +68,8 @@ card.onGo(async () => {
   view.fit();
 });
 card.onClose(async () => { await card.back(); view.fit(); });
+/* 新建:这一条清掉,画布空出来,重新说一句。 */
+card.onNew(() => post("/api/reset"));
 $("plan").addEventListener("click", async () => {
   if (!card.isMini) return;
   await card.toCenter();
@@ -79,6 +81,7 @@ const still = new URLSearchParams(location.search).has("still");
 const feed = still ? {} : new EventSource("/api/events");
 feed.onmessage = (e) => {
   const event = JSON.parse(e.data);
+  if (event.type === "reset") return location.reload();
   if (event.type === "thinking") { busy = event.who; refreshSend(); }
   /* 这一波要做哪几步,写到画布上——等着的人得知道当下在做什么。 */
   if (event.type === "wave") view.waiting(waitingOn(event.refs));

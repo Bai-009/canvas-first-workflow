@@ -59,14 +59,17 @@ export async function createWebServer() {
   const table = nodeTable();
   const feed = createFeed();
   const executor = await loadExecutor();
-  const session = createWorkflowSession({
+  const newSession = () => createWorkflowSession({
     callModel: callerFromEnv(),
     executor,
     systemPrompt: loadSystemPrompt(process.env.PLAN_PROMPT_LANG || "zh"),
   });
+  let session = newSession();
   let task = "";
   let speech = "";
   let wave = null;
+  /* 新开一条:上一条正在跑的先叫停,它后面再交回来的东西不算数。 */
+  let gen = 0;
 
   const routes = {
     "GET /api/node-table": (_req, res) => json(res, table),
@@ -85,18 +88,34 @@ export async function createWebServer() {
       feed.send({ type: "plan", task, plan: turn.plan, diff: turn.diff, revision: turn.revision, speech });
       return json(res, { ok: true });
     },
+    /* 新开一条:上一条正在跑的先叫停,它后面再交回来的东西不算数。 */
+    "POST /api/reset": (_req, res) => {
+      session.stop();
+      gen += 1;
+      session = newSession();
+      task = "";
+      speech = "";
+      wave = null;
+      feed.send({ type: "reset" });
+      return json(res, { ok: true });
+    },
     "POST /api/start": async (_req, res) => {
-      if (!session.hasExecutor) return json(res, { error: "执行者的位置空着:启动时给 EXECUTOR_MODULE" }, 400);
+      if (!session.hasExecutor) return json(res, { error: "执行者未接入:启动时设置 EXECUTOR_MODULE" }, 400);
       json(res, { ok: true });
+      const mine = gen;
+      const alive = () => mine === gen;
       feed.send({ type: "thinking", who: "executor" });
       try {
-        const run = await session.start({
-          onWave: (refs) => { wave = refs; feed.send({ type: "wave", refs }); },
-          onStep: ({ step, canvas }) => feed.send({ type: "step", step, canvas }),
+        const running = session;
+        const run = await running.start({
+          onWave: (refs) => { if (!alive()) return; wave = refs; feed.send({ type: "wave", refs }); },
+          onStep: ({ step, canvas }) => alive() && feed.send({ type: "step", step, canvas }),
         });
+        if (!alive()) return;
         wave = null;
-        feed.send({ type: "run", run, canvas: session.canvas });
+        feed.send({ type: "run", run, canvas: running.canvas });
       } catch (error) {
+        if (!alive()) return;
         wave = null;
         feed.send({ type: "error", message: error.message });
       }
