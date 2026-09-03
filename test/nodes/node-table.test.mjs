@@ -47,6 +47,14 @@ test("解析文档:卡类型 Parser;没有格子;File 进 Text 出", () => {
   assert.equal(node.output, "Text");
 });
 
+test("切块:卡类型 Splitter;两格都是填个数,带默认值;Text 进,一块一条出", () => {
+  const node = findNodeDefinition("splitText");
+  assert.equal(node.kind, "Splitter");
+  assert.deepEqual(node.slots.map((s) => [s.label, s.kind, s.default]), [["Chunk Size", "number", 500], ["Overlap", "number", 50]]);
+  assert.equal(node.input, "Text");
+  assert.equal(node.output, "Text · 一块一条");
+});
+
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {
   const base = { type: "x", kind: "X", summary: "s", slots: [], input: "a", output: "b" };
   const slot = (extra) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });

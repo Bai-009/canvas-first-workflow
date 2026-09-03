@@ -1,0 +1,11 @@
+{
+  "type": "splitText",
+  "kind": "Splitter",
+  "summary": "把一段长文本切成定长的块,相邻块留一点重叠,一块出一条。向量化之前用它",
+  "slots": [
+    { "key": "chunkSize", "label": "Chunk Size", "kind": "number", "default": 500 },
+    { "key": "overlap", "label": "Overlap", "kind": "number", "default": 50 }
+  ],
+  "input": "Text",
+  "output": "Text · 一块一条"
+}
