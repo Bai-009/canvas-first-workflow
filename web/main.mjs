@@ -1,123 +1,100 @@
-import { fullCard, miniCard } from "./card.mjs";
-import { layout, wire, wireLabelAt, TILE } from "./layout.mjs";
+import { createCanvasView } from "./canvas.mjs";
 
-const world = document.getElementById("world");
-const wires = document.getElementById("wires");
-const viewport = document.getElementById("viewport");
+const $ = (id) => document.getElementById(id);
+const table = await fetch("/api/node-table").then((r) => r.json());
+const view = createCanvasView({
+  table, world: $("world"), wires: $("wires"), viewport: $("viewport"),
+  insets: () => ({
+    right: $("plan").hidden ? 0 : innerWidth - $("plan").getBoundingClientRect().left + 18,
+    bottom: innerHeight - $("status").getBoundingClientRect().top + 18,
+  }),
+});
 
-const [table, canvas] = await Promise.all([
-  fetch("/api/node-table").then((r) => r.json()),
-  fetch(`/api/canvas${location.search}`).then((r) => r.json()),
-]);
-const byType = new Map(table.map((d) => [d.type, d]));
+const post = (path, data) =>
+  fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data ?? {}) })
+    .then((r) => r.json());
 
-document.getElementById("task").textContent = canvas.task ?? "";
-document.getElementById("sub").textContent =
-  `画布 v${canvas.version} · ${canvas.nodes.length} 个节点 · ${canvas.edges.length} 条线`;
+let plan = null;
+let busy = null;
 
-const placed = layout(canvas.nodes, canvas.edges);
-const at = new Map(placed.map((p) => [p.node.name, p]));
+function say(line) { $("status").textContent = line; }
 
-for (const p of placed) {
-  const def = byType.get(p.node.type);
-  if (!def) continue;
-  const el = document.createElement("div");
-  el.className = "node";
-  el.style.cssText = `left:${p.x}px;top:${p.y}px;--c:${def.color}`;
-  el.innerHTML = `<div class="card">${miniCard(def, p.node)}${fullCard(def, p.node, canvas.edges)}</div>`;
-  el.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const open = el.classList.contains("open");
-    document.querySelectorAll(".node.open").forEach((n) => n.classList.remove("open"));
-    if (!open) el.classList.add("open");
-  });
-  world.appendChild(el);
+function renderPlan(p, revision) {
+  plan = p;
+  if (!p) return;
+  const open = p.openQuestions.length;
+  $("plan").hidden = false;
+  $("plan-head").textContent = `方案 v${revision} · ${p.steps.length} 步 · ${open ? `${open} 项待确认` : "待确认已清"}`;
+  $("plan-goal").textContent = p.goal;
+  $("plan-steps").innerHTML = p.steps
+    .map((s) => `<li><b>${s.ref}</b>${s.title}</li>`).join("");
+  $("plan-asks").innerHTML = open
+    ? `<div class="asks-title">待确认</div>${p.openQuestions.map((q) => `<li>${q.question}</li>`).join("")}`
+    : "";
+  $("start").disabled = false;
 }
-const wanted = new URL(location.href).searchParams.get("open");
-if (wanted) document.querySelectorAll(".node").forEach((n) => {
-  if (n.querySelector(".mini-name")?.textContent === wanted) n.classList.add("open");
-});
 
-document.addEventListener("click", () => {
-  document.querySelectorAll(".node.open").forEach((n) => n.classList.remove("open"));
-});
+function renderRun(run) {
+  const bad = run.steps.find((s) => s.outcome === "rejected" || s.outcome === "failed");
+  if (bad) return say(bad.reasons ? `没收,停在 ${bad.ref}:${bad.reasons.join(";")}` : `出错,停在 ${bad.ref}:${bad.error}`);
+  if (run.endedBy !== "finished") return say("停了,轮到你");
+  say(run.problems.length ? `跑完了。整张画布查了一遍,有问题:${run.problems.join(";")}` : "跑完了,线都接上了。轮到你。");
+}
 
-/* 线画在卡底下,出口名(True / False)贴在线上。 */
-const svgns = "http://www.w3.org/2000/svg";
-for (const e of canvas.edges) {
-  const from = at.get(e.from);
-  const to = at.get(e.to);
-  if (!from || !to) continue;
-  const w = wire(from, to);
-  const path = document.createElementNS(svgns, "path");
-  path.setAttribute("class", "wire");
-  path.setAttribute("d", w.d);
-  wires.appendChild(path);
-  const head = document.createElementNS(svgns, "path");
-  head.setAttribute("class", "arrow");
-  head.setAttribute("d", `M ${w.x1 - 9} ${w.y1 - 5} L ${w.x1} ${w.y1} L ${w.x1 - 9} ${w.y1 + 5} Z`);
-  wires.appendChild(head);
-  if (e.output) {
-    const at_ = wireLabelAt(w);
-    const text = document.createElementNS(svgns, "text");
-    text.setAttribute("class", "port-label");
-    text.setAttribute("x", at_.x);
-    text.setAttribute("y", at_.y - 8);
-    text.setAttribute("text-anchor", "middle");
-    text.textContent = e.output === "true" ? "True" : "False";
-    wires.appendChild(text);
+/* ?still 只看现在这一眼,不挂长连接——截图工具等不到一个不断线的页面。 */
+const still = new URLSearchParams(location.search).has("still");
+const feed = still ? { } : new EventSource("/api/events");
+feed.onmessage = (e) => {
+  const event = JSON.parse(e.data);
+  if (event.type === "thinking") {
+    busy = event.who;
+    say(event.who === "plan" ? "设计者在想…" : "执行者在搭…");
+    $("start").disabled = true;
   }
-}
-
-/* 镜头:一开始把整张图放进窗口,之后滚轮缩放、拖动平移。 */
-const box = {
-  w: Math.max(...placed.map((p) => p.x)) + TILE,
-  h: Math.max(...placed.map((p) => p.y)) + TILE,
+  if (event.type === "plan") {
+    busy = null;
+    $("task").textContent = event.task;
+    if (event.speech) $("speech").textContent = event.speech;
+    renderPlan(event.plan, event.revision);
+    say("方案在这儿。要改就再说一句,要搭就按开始。");
+  }
+  if (event.type === "step") {
+    view.draw(event.canvas);
+    const s = event.step;
+    say(s.outcome === "done" ? `${s.ref} 做完 → ${s.nodes.join("、")}` : `${s.ref} ${s.outcome}`);
+  }
+  if (event.type === "run") {
+    busy = null;
+    view.draw(event.canvas);
+    renderRun(event.run);
+    $("start").disabled = false;
+  }
+  if (event.type === "error") { busy = null; say(event.message); $("start").disabled = false; }
 };
-wires.setAttribute("width", box.w);
-wires.setAttribute("height", box.h);
-const pad = 90;
-let scale = Math.min(1, (innerWidth - pad * 2) / box.w, (innerHeight - pad * 2) / box.h);
-let tx = (innerWidth - box.w * scale) / 2;
-let ty = (innerHeight - box.h * scale) / 2;
-const apply = () => (world.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`);
-const focus = wanted && at.get(wanted);
-if (focus) {
-  tx = innerWidth / 2 - (focus.x + TILE / 2) * scale;
-  ty = innerHeight / 2 - (focus.y + TILE / 2) * scale;
-}
-apply();
 
-viewport.addEventListener("wheel", (e) => {
+$("form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const k = Math.exp(-e.deltaY / 420);
-  const next = Math.min(1.6, Math.max(0.2, scale * k));
-  tx = e.clientX - (e.clientX - tx) * (next / scale);
-  ty = e.clientY - (e.clientY - ty) * (next / scale);
-  scale = next;
-  apply();
-}, { passive: false });
+  const text = $("input").value.trim();
+  if (!text || busy) return;
+  $("input").value = "";
+  const r = await post("/api/say", { text });
+  if (r.error) say(r.error);
+});
 
-/* 拖动:按下先不抢指针,挪过 4 像素才算拖,否则那一下是点在卡片上。 */
-let drag = null;
-viewport.addEventListener("pointerdown", (e) => {
-  if (e.target.closest(".node")) return;
-  drag = { x: e.clientX - tx, y: e.clientY - ty, from: [e.clientX, e.clientY], moved: false };
+$("start").addEventListener("click", async () => {
+  if (busy) return;
+  const r = await post("/api/start");
+  if (r.error) say(r.error);
 });
-viewport.addEventListener("pointermove", (e) => {
-  if (!drag) return;
-  if (!drag.moved) {
-    if (Math.hypot(e.clientX - drag.from[0], e.clientY - drag.from[1]) < 4) return;
-    drag.moved = true;
-    viewport.classList.add("grabbing");
-    viewport.setPointerCapture(e.pointerId);
-  }
-  tx = e.clientX - drag.x;
-  ty = e.clientY - drag.y;
-  apply();
-});
-viewport.addEventListener("pointerup", (e) => {
-  if (drag?.moved) viewport.releasePointerCapture(e.pointerId);
-  drag = null;
-  viewport.classList.remove("grabbing");
-});
+
+const state = await fetch("/api/state").then((r) => r.json());
+$("task").textContent = state.task ?? "";
+if (state.plan) renderPlan(state.plan, state.revision);
+if (state.canvas.nodes.length) view.draw(state.canvas);
+/* ?open=名字 直接把某张卡展开,给截图用。 */
+const wanted = new URLSearchParams(location.search).get("open");
+if (wanted) for (const el of document.querySelectorAll(".node")) {
+  if (el.querySelector(".mini-name")?.textContent === wanted) el.classList.add("open");
+}
+say(state.hasExecutor ? "说一句你想让它做什么。" : "执行者的位置空着:启动时给 EXECUTOR_MODULE。");
+addEventListener("resize", () => view.fit());

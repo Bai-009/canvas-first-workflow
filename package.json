@@ -10,7 +10,7 @@
     "plan:chat": "node --env-file-if-exists=.env src/cli/plan-chat.mjs",
     "validate:fixture": "node src/plan/validate-plan-proposal.mjs fixtures/contract-processing.plan.json",
     "executor:step": "node --env-file-if-exists=.env src/cli/executor-step.mjs",
-    "web": "node src/web/server.mjs"
+    "web": "node --env-file-if-exists=.env src/web/server.mjs"
   },
   "engines": {
     "node": ">=22.9"

@@ -17,6 +17,13 @@ function fieldValue(slot, node) {
   }
   const filled = node.params?.[slot.key] ?? slot.default;
   if (filled === undefined || filled === "") return null;
+  /* 填进来的不一定是一句话:Output Schema 这种格,AI 起草的是一份结构。
+     卡上印它的字段清单——用户关心的是抽哪几样,不是那份 JSON 长什么样。 */
+  if (filled !== null && typeof filled === "object") {
+    const fields = Object.keys(filled.properties ?? filled);
+    if (!fields.length) return null;
+    return `<span class="txt">${esc(fields.join("、"))}</span>`;
+  }
   const cls = slot.kind === "number" || slot.kind === "text" ? "val" : "txt";
   return `<span class="${cls}">${esc(filled)}</span>`;
 }

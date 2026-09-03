@@ -63,7 +63,7 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
        同一波里的步拿到的是这一波开始前的画布 —— 它们本来就互不依赖,看不见对方是对的。
        收回的改动按波内先后一条一条查、一条一条进画布,顺序是定的。
        每次开始都从头走;没变的步执行者会说已经有了。 */
-    async start() {
+    async start({ onStep } = {}) {
       requireUserTurn("开始");
       const current = plan.currentPlan;
       if (!current) throw new Error("还没有方案,先在主输入框说一句");
@@ -72,6 +72,13 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
       controller = new AbortController();
       const { signal } = controller;
       const run = { revision: plan.revision, steps: [], endedBy: null, problems: [] };
+      /* 一步一个信号往外发,画布那头照着长。发不出去是画布的事,不能把这一趟带塌。 */
+      const record = (entry) => {
+        run.steps.push(entry);
+        try {
+          onStep?.(structuredClone({ step: entry, canvas }));
+        } catch {}
+      };
       try {
         waves: for (const wave of stepWaves(current)) {
           const settled = await Promise.all(
@@ -87,32 +94,32 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
           for (const { ref, result, error } of settled) {
             if (error) {
               if (signal.aborted || error?.name === "AbortError") {
-                run.steps.push({ ref, outcome: "stopped", canvasVersion: canvas.version });
+                record({ ref, outcome: "stopped", canvasVersion: canvas.version });
                 run.endedBy = "stopped";
               } else {
-                run.steps.push({ ref, outcome: "failed", canvasVersion: canvas.version, error: error.message });
+                record({ ref, outcome: "failed", canvasVersion: canvas.version, error: error.message });
                 run.endedBy = "error";
               }
               break waves;
             }
             /* 执行者不理会停止信号、停了以后还交回东西的,一样不收:停了画布就停在上次提交 */
             if (signal.aborted) {
-              run.steps.push({ ref, outcome: "stopped", canvasVersion: canvas.version });
+              record({ ref, outcome: "stopped", canvasVersion: canvas.version });
               run.endedBy = "stopped";
               break waves;
             }
             const reasons = checkResult(result, ref, canvas);
             if (reasons.length) {
-              run.steps.push({ ref, outcome: "rejected", canvasVersion: canvas.version, reasons });
+              record({ ref, outcome: "rejected", canvasVersion: canvas.version, reasons });
               run.endedBy = "rejected";
               break waves;
             }
             if (result.kind === "covered") {
-              run.steps.push({ ref, outcome: "covered", canvasVersion: canvas.version });
+              record({ ref, outcome: "covered", canvasVersion: canvas.version });
               continue;
             }
             commit(canvas, ref, result);
-            run.steps.push({
+            record({
               ref,
               outcome: "done",
               canvasVersion: canvas.version,
