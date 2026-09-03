@@ -82,7 +82,7 @@
             "minLength": 1
           },
           "minItems": 1,
-          "description": "kind 是 pick 时必须给:能挑的值"
+          "description": "kind 是 pick 时必须给:能挑的值,用卡上印的叫法(模型印产品名 DeepSeek V4 Pro,不印接口别名 deepseek-chat);对应的接口标识归里子的配置"
         },
         "default": {
           "description": "平台给的默认值。有默认值、不填也能跑的格不算空位"

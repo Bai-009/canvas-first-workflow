@@ -17,7 +17,7 @@ test("LLM:卡类型 LLM;三格 Model 挑一个、Output Schema 上传、Prompt �
   assert.equal(llm.kind, "LLM");
   assert.deepEqual(llm.slots.map((s) => s.label), ["Model", "Output Schema", "Prompt"]);
   assert.deepEqual(llm.slots.map((s) => s.kind), ["pick", "upload", "body"]);
-  assert.equal(llm.slots[0].default, "deepseek-chat");
+  assert.equal(llm.slots[0].default, "DeepSeek V4 Pro");
   assert.ok(llm.input && llm.output);
   assert.equal(findNodeDefinition("没有这种"), null);
 });
