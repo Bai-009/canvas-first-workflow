@@ -54,7 +54,11 @@ export function createPlanCard({ card, stage, onStart }) {
 
   /* 卡上的内容照方案填,返回这一轮要落下来的几块。 */
   function fill({ task, speech, plan }) {
-    if (task) $(".plan-text").textContent = task;
+    /* 需求写的是方案里的 goal,不是用户敲进来的第一句。第一句可能是「你好」,
+       真正的需求是聊出来的——goal 就是模型把这一轮聊下来的东西收成的一句话。
+       方案还没出来之前,先摆着用户自己的话。 */
+    const want = plan?.goal || task;
+    if (want) $(".plan-text").textContent = want;
     const secs = [];
     for (const sec of card.querySelectorAll(".plan-sec")) sec.hidden = true;
     shown = { says: 0, understanding: 0, steps: 0, asks: 0 };
