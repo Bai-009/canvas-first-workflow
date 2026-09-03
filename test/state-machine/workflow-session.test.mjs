@@ -303,6 +303,35 @@ test("几个节点都挂在同一个上游节点上也算连在一起:分支放�
   assert.deepEqual(session.canvas.nodes.filter((n) => n.step === "s2").map((n) => n.name), ["走电子版", "走扫描件"]);
 });
 
+test("接在上一步后面却不接线:停在这一步,画布不动", async () => {
+  /* s3 只交回一个节点,连不连得上不看它自己那几个节点,看它有没有接到 s2 上。 */
+  const { executor } = byStep({
+    ...chain,
+    s3: () => patch([node("s3", "n3", { type: "llm", params: { prompt: "抽字段" }, blanks: ["outputSchema"] })]),
+  });
+  const session = await sessionWithPlan(executor);
+  const run = await session.start();
+  assert.equal(run.endedBy, "rejected");
+  assert.equal(run.steps.at(-1).ref, "s3");
+  assert.match(run.steps.at(-1).reasons[0], /s3 接在 s2 后面,却没有一条线从那几步的节点接进来/);
+  assert.equal(session.canvas.nodes.length, 2);
+});
+
+test("链路的头不查上游:重走 s1 交回一个孤零零的节点是对的", async () => {
+  let version = 0;
+  const { executor } = byStep({
+    ...chain,
+    s1: () => { version += 1; return patch([node("s1", `n1-v${version}`)]); },
+    s2: (context) => patch([node("s2", "n2")],
+      [{ from: context.canvas.nodes.find((n) => n.step === "s1").name, to: "n2" }]),
+    s3: (context) => (context.canvas.nodes.some((n) => n.name === "n3") ? covered : chain.s3()),
+    s4: (context) => (context.canvas.nodes.some((n) => n.name === "n4") ? covered : chain.s4()),
+  });
+  const session = await sessionWithPlan(executor);
+  assert.equal((await session.start()).endedBy, "finished");
+  assert.equal((await session.start()).endedBy, "finished");
+});
+
 test("执行者出错:记下来,停在这一步,换回用户", async () => {
   const { executor } = byStep({ ...chain, s3: () => { throw new Error("平台连不上"); } });
   const session = await sessionWithPlan(executor);

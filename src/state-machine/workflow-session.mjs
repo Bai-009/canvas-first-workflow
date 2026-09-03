@@ -110,7 +110,8 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
               run.endedBy = "stopped";
               break waves;
             }
-            const reasons = checkResult(result, ref, canvas);
+            const after = current.steps.find((step) => step.ref === ref)?.dependsOn ?? [];
+            const reasons = checkResult(result, ref, canvas, after);
             if (reasons.length) {
               record({ ref, outcome: "rejected", canvasVersion: canvas.version, reasons });
               run.endedBy = "rejected";
@@ -156,7 +157,7 @@ const isPlainObject = (value) =>
 
 /* 画布闸门:第一道是信封(形状对不对、名字撞不撞、线接没接上),第二道是对得上节点表(src/nodes/check-nodes.mjs)。
    两道在同一个函数里,执行者交回时和状态机提交前走的是同一道。 */
-export function checkResult(result, ref, canvas) {
+export function checkResult(result, ref, canvas, dependsOn = []) {
   if (!isPlainObject(result)) return ["交回的不是一个对象"];
   if (result.kind === "covered") return [];
   if (result.kind !== "patch") return [`交回的 kind 是 ${JSON.stringify(result.kind)},只认 patch 和 covered`];
@@ -214,6 +215,18 @@ export function checkResult(result, ref, canvas) {
     }
     const cut = nodes.map((node) => node.name).filter((name) => !reached.has(name));
     if (cut.length) reasons.push(`这一步交回 ${nodes.length} 个节点,${cut.join("、")} 没跟其它几个连在一起,下一步只有一个落点`);
+  }
+  /* 这一步接在谁后面,方案里写着。接在别人后面就得真的接上去——
+     一条从上游节点进来的线。没有这条线,这一段和前面是两座孤岛,
+     画布连不成一条链,跑起来后面这半截拿不到任何输入。
+     方案里 dependsOn 为空的那一步(链路的头)不查:它本来就没有上游。
+     上游那几步一个节点都没出的时候也不查:接不到不存在的东西上。 */
+  const upstream = new Set(dependsOn);
+  if (upstream.size) {
+    const above = new Set(canvas.nodes.filter((node) => upstream.has(node.step)).map((node) => node.name));
+    if (above.size && !edges.some((edge) => above.has(edge.from) && mine.has(edge.to))) {
+      reasons.push(`${ref} 接在 ${[...upstream].join("、")} 后面,却没有一条线从那几步的节点接进来`);
+    }
   }
   if (reasons.length) return reasons;
 
