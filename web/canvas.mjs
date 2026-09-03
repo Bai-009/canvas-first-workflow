@@ -38,6 +38,10 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
   /* box 是整幅东西的范围:已经落地的卡,加上那截还没走到的轨道。
      SVG 照它画,镜头也照它摆——人看的是整幅画,不是其中某一个点。 */
   let scale = 1, tx = 0, ty = 0, userMoved = false, box = { w: 1, h: 1 };
+  /* 摆过一次镜头没有。第一次不能有过渡:画布空着的时候根本没摆过镜头,
+     世界的 transform 是空的,一上过渡就成了「从左上角 1:1 的位置飘过来」——
+     而那个位置从来没有存在过。 */
+  let framed = false;
   let last = { placed: [], canvas: { nodes: [], edges: [] } };
   /* 已经露过面的卡和已经走完的线。排队的那几张还挂在 queue 上,画布上是空位。 */
   const shown = new Set();
@@ -117,7 +121,8 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     /* 放不下就右端对齐:刚长出来的那几张在眼前,往左拖能看回去。 */
     tx = wide > w ? pad + w - wide : pad + (w - wide) / 2;
     ty = tall > h ? pad : pad + (h - tall) / 2;
-    apply();
+    apply(framed);
+    framed = box.w > 1;
   }
 
   const visible = () => last.placed.filter((p) => shown.has(p.node.name));

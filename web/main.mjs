@@ -188,9 +188,10 @@ if (state.turn === "executor" && state.wave) {
   /* 刷新回来也得知道停在哪儿、为什么:这几样原来只走 SSE,刷一下就没了。 */
   broke = stopAt(state.run);
   card.restore(state, broke ? `停在 ${titleOf(broke.ref)}` : `已生成 ${state.canvas.nodes.length} 个节点`);
-  view.draw(state.canvas, { instant: true });
+  /* 断口先挂上再画:先画再挂的话镜头要摆两次,第二次是有过渡的,
+     刷新回来会看见画面自己晃一下。 */
   showBreak();
-  view.fit();
+  view.draw(state.canvas, { instant: true });
 } else if (state.task) {
   card.ask(state.task);
   await card.show(state);
