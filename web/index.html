@@ -35,10 +35,11 @@
   .port{fill:#aeb5c0}
   /* 线自己走一遍再接上卡片:箭头等线走到了才出现。
      出发点那个圆点是上游卡片的出口,线没走它也在。 */
-  .edge .tip,.edge .port-label{transition:opacity 240ms ease}
-  .edge.held .tip,.edge.held .port-label{opacity:0}
-  .port-label{font-family:var(--font);font-size:11px;font-weight:500;fill:var(--ink-3)}
-  .port-label rect{fill:var(--canvas)}
+  .edge .tip,.edge .wire-label{transition:opacity 240ms ease}
+  .edge.held .tip,.edge.held .wire-label{opacity:0}
+  /* 线上那行字压在线上,底下垫一圈画布色,字不跟线搅在一起。 */
+  .wire-label{font-family:var(--font);font-size:11px;font-weight:500;fill:var(--ink-3);
+    paint-order:stroke;stroke:var(--canvas);stroke-width:4px;stroke-linejoin:round}
 
   /* 进度长在链路自己的轨道上:头上那个点是下一张卡出现的地方,
      右边一条淡线带着几个点,是还没走到的几步。除此之外画布上不加东西。 */

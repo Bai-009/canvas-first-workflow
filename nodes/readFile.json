@@ -7,5 +7,5 @@
     { "key": "folder", "label": "Folder", "kind": "source", "empty": "选目录" },
     { "key": "pattern", "label": "Pattern", "kind": "text", "default": "*" }
   ],
-  "output": "File"
+  "output": { "adds": "File", "per": "文件" }
 }

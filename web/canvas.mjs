@@ -1,6 +1,7 @@
 import { fullCard, miniCard } from "./card.mjs";
 import { panel } from "./picker.mjs";
 import { layout, wire, wireLabelAt, wave, TILE, PITCH } from "./layout.mjs";
+import { edgeKey, flows, label } from "./flow.mjs";
 
 const SVG = "http://www.w3.org/2000/svg";
 const svg = (name, attrs) => {
@@ -165,7 +166,9 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     }
     const { placed } = layout(canvas.nodes, canvas.edges);
     const at = new Map(placed.map((p) => [p.node.name, p]));
-    last = { placed, canvas };
+    /* 线上流的是什么,整张一起推:一根线上的东西取决于它上游整条路。 */
+    const f = flows(table, canvas);
+    last = { placed, canvas, flows: f };
 
     for (const [name, el] of nodes) if (!at.has(name)) { el.remove(); nodes.delete(name); shown.delete(name); }
 
@@ -195,7 +198,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
       el.style.left = `${p.x}px`;
       el.style.top = `${p.y}px`;
       const card = el.firstChild;
-      card.innerHTML = `${miniCard(def, p.node)}${fullCard(def, p.node, canvas.edges)}`;
+      card.innerHTML = `${miniCard(def, p.node)}${fullCard(def, p.node, canvas.edges, f)}`;
       /* 换了内容的那张卡如果正开着,高度得跟着内容重新量。 */
       if (opened === p.node.name) remeasure(el);
     }
@@ -203,7 +206,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     for (const [k, e] of edges) if (!canvas.edges.some((x) => key(x) === k)) { e.g.remove(); edges.delete(k); }
     for (const e of canvas.edges) {
       const from = at.get(e.from), to = at.get(e.to);
-      if (from && to) paint(e, wire(from, to));
+      if (from && to) paint(e, wire(from, to), f.edges.get(key(e)));
     }
 
     track();
@@ -214,11 +217,13 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   }
 
   /* ── 线 ───────────────────────────────────────────────
-     一条线的三样:出发点上一个小圆点、一段贝塞尔、末端一个描边的箭头。
-     箭头停在卡片外一点五像素,不顶着卡沿。 */
-  const key = (e) => `${e.from}>${e.to}>${e.output ?? ""}`;
+     一条线的四样:出发点上一个小圆点、一段贝塞尔、末端一个描边的箭头,
+     和线刚离开上游那一段上的一行字——流的是什么(「Text · 按文件」);分岔的线前面
+     再加出口名(「True · Text · 按文件」)。箭头停在卡片外一点五像素,不顶着卡沿。 */
+  const key = edgeKey;
+  const wording = (e, flow) => [e.output && (e.output === "true" ? "True" : "False"), label(flow)].filter(Boolean).join(" · ");
 
-  function paint(e, w) {
+  function paint(e, w, flow) {
     const k = key(e);
     let it = edges.get(k);
     if (!it) {
@@ -226,13 +231,8 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
       const port = svg("circle", { class: "port", r: 3.2 });
       const path = svg("path", { class: "wire" });
       const tip = svg("path", { class: "tip" });
-      g.append(port, path, tip);
-      let text = null;
-      if (e.output) {
-        text = svg("text", { class: "port-label", "text-anchor": "middle" });
-        text.textContent = e.output === "true" ? "True" : "False";
-        g.appendChild(text);
-      }
+      const text = svg("text", { class: "wire-label", "text-anchor": "middle" });
+      g.append(port, path, tip, text);
       gWires.appendChild(g);
       it = { g, port, path, tip, text };
       edges.set(k, it);
@@ -241,11 +241,10 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     it.port.setAttribute("cx", w.x0);
     it.port.setAttribute("cy", w.y0);
     it.tip.setAttribute("d", `M${w.x1 - 9},${w.y1 - 6} L${w.x1 - 1.5},${w.y1} L${w.x1 - 9},${w.y1 + 6}`);
-    if (it.text) {
-      const spot = wireLabelAt(w);
-      it.text.setAttribute("x", spot.x);
-      it.text.setAttribute("y", spot.y - 8);
-    }
+    it.text.textContent = wording(e, flow);
+    const spot = wireLabelAt(w);
+    it.text.setAttribute("x", spot.x);
+    it.text.setAttribute("y", spot.y - 8);
     /* 还没轮到的线是收着的:整条按自己的长度藏进虚线的空档里。 */
     const len = it.path.getTotalLength();
     it.path.style.strokeDasharray = len;
@@ -443,7 +442,10 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     node.blanks = (node.blanks ?? []).filter((b) => b !== key);
     shutPicker();
     const def = byType.get(node.type);
-    el.firstChild.innerHTML = `${miniCard(def, node)}${fullCard(def, node, last.canvas.edges)}`;
+    /* 定的那一格可能改了这个节点往下送什么(写代码的 Output Type):线上的字跟着重印。 */
+    last.flows = flows(table, last.canvas);
+    el.firstChild.innerHTML = `${miniCard(def, node)}${fullCard(def, node, last.canvas.edges, last.flows)}`;
+    for (const e of last.canvas.edges) edges.get(key(e))?.text.replaceChildren(wording(e, last.flows.edges.get(key(e))));
     if (opened === node.name) remeasure(el);
     onFill?.({ node: node.name, key, value });
   }

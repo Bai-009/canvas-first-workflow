@@ -7,6 +7,6 @@
     { "key": "chunkSize", "label": "Chunk Size", "kind": "number", "default": 500 },
     { "key": "overlap", "label": "Overlap", "kind": "number", "default": 50 }
   ],
-  "input": "Text",
-  "output": "Text · 一块一条"
+  "input": { "needs": "Text" },
+  "output": { "adds": "Text", "per": "块" }
 }

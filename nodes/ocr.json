@@ -6,6 +6,6 @@
   "slots": [
     { "key": "engine", "label": "Engine", "kind": "pick", "options": ["Mistral OCR"], "default": "Mistral OCR" }
   ],
-  "input": "File",
-  "output": "Text"
+  "input": { "needs": "File" },
+  "output": { "adds": "Text", "per": "same" }
 }

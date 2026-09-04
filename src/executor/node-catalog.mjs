@@ -15,6 +15,15 @@ const howToFill = {
   conditions: () => 'condition: a boolean expression over input, e.g. input.text != ""; write it in full',
 };
 
+/* 进出照契约印:要什么、加什么、按什么算一条。数据往下走前面的都带着,所以「加」不是「全部」。 */
+const io = (node) => {
+  const needs = node.input ? (node.input.needs ?? "anything") : "nothing (chain start)";
+  const adds = node.output.adds === null ? "adds nothing, passes data through" :
+    node.output.adds.startsWith("slot:") ? `adds whatever its ${node.output.adds.slice(5)} slot says` : `adds ${node.output.adds}`;
+  const per = node.output.per === "same" ? "same unit as input" : `one item per ${node.output.per}`;
+  return `in: needs ${needs} → out: ${adds}; ${per}`;
+};
+
 /* 摆的顺序按链走:起点、认内容、加工、过模型、落地、分岔、兜底。表里新加的类型排最后 */
 const chainOrder = ["schedule", "readFile", "parseDocument", "ocr", "splitText", "embedText", "writeVectorStore", "llm", "writeDatabase", "condition", "code"];
 const rank = (type) => (chainOrder.includes(type) ? chainOrder.indexOf(type) : chainOrder.length);
@@ -27,7 +36,7 @@ export function renderNodeTable(table = nodeTable()) {
         ? node.slots.map((s) => `  - ${s.key} (${s.label}): ${howToFill[s.kind](s)}`).join("\n")
         : "  slots: none";
       const ports = node.ports ? `\n  outputs: ${node.ports.join(", ")}` : "";
-      return `- ${node.type} (${node.kind}) — ${node.summary}\n  in: ${node.input ?? "—"} → out: ${node.output}${ports}\n${slots}`;
+      return `- ${node.type} (${node.kind}) — ${node.summary}\n  ${io(node)}${ports}\n${slots}`;
     })
     .join("\n");
 }
