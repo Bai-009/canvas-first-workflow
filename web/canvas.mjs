@@ -28,6 +28,10 @@ const FOCUS_LEAD = 300;
    于是它可以一直往右伸,伸出画面之外——末端不是被切断,是淡掉。 */
 const STEP_GAP = 176;
 const TRACK_TAIL = 620;
+/* 头是个会呼吸的点,半径在 HEAD_R 和 HEAD_MAX 之间来回(headPulse)。线接到最小的那个
+   半径上:大的时候线被压在点底下一点,小的时候正好碰上,任何一帧都不会露出缝。 */
+const HEAD_R = 5;
+const HEAD_MAX = 7;
 
 /* 画布这一头只做一件事:把画布数据摆到屏幕上,新长出来的卡带一下动静。
    它不认得任何一种具体节点——那些全在节点表里。 */
@@ -334,13 +338,13 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
       if (busy.has(p.node.name)) continue;
       gTrack.appendChild(svg("line", {
         class: "wire waiting",
-        x1: p.x + TILE, y1: p.y + TILE / 2, x2: at.x - 14, y2: at.y,
+        x1: p.x + TILE, y1: p.y + TILE / 2, x2: at.x - HEAD_R, y2: at.y,
       }));
     }
     /* 还没走到的那几步:一条往右伸出去的线,一步一个点。线比点走得远得多,
        而且是淡出去的——链路到这儿并没有结束,只是还没长出来。 */
     if (ahead) {
-      const from = at.x + 16, to = at.x + ahead * STEP_GAP + TRACK_TAIL;
+      const from = at.x + HEAD_R, to = at.x + ahead * STEP_GAP + TRACK_TAIL;
       fade.setAttribute("x1", from);
       fade.setAttribute("x2", to);
       fade.setAttribute("y1", at.y);
@@ -364,7 +368,7 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
       stopEl.querySelector(".stop-why").hidden = !pending.note;
       return;
     }
-    gTrack.appendChild(svg("circle", { class: "track-head", cx: at.x, cy: at.y, r: 7 }));
+    gTrack.appendChild(svg("circle", { class: "track-head", cx: at.x, cy: at.y, r: HEAD_MAX }));
     labelEl.textContent = pending.title;
     labelEl.style.left = `${at.x}px`;
     labelEl.style.top = `${at.y + 26}px`;
