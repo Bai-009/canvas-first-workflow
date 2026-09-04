@@ -10,10 +10,15 @@ const esc = (s) =>
 const BLOCK = new Set(["body", "conditions"]);
 
 /* 一格印成什么:留空了就是一个可点的空位,填了就把填的印出来,
-   没填也没留空就是节点表里的默认值。三种都印不出来的格,不占一行。 */
+   没填也没留空就是节点表里的默认值。三种都印不出来的格,不占一行。
+
+   三种都是可点的:空位是「这一格还没定」,填好的是「这一格定成了这样」,
+   两种都是同一件事的两个状态,只让空的点得开,戏就做了一半。
+   点开之后长什么样归 picker.mjs 管——这里只负责说清「这是哪一格」。 */
 function fieldValue(slot, node) {
+  const key = ` data-key="${esc(slot.key)}"`;
   if (node.blanks?.includes(slot.key)) {
-    return `<span class="slot">${PLUS}${esc(slot.empty ?? `选${slot.label}`)}</span>`;
+    return `<button type="button" class="slot"${key}>${PLUS}${esc(slot.empty ?? `选${slot.label}`)}</button>`;
   }
   const filled = node.params?.[slot.key] ?? slot.default;
   if (filled === undefined || filled === "") return null;
@@ -22,10 +27,10 @@ function fieldValue(slot, node) {
   if (filled !== null && typeof filled === "object") {
     const fields = Object.keys(filled.properties ?? filled);
     if (!fields.length) return null;
-    return `<span class="txt">${esc(fields.join("、"))}</span>`;
+    return `<button type="button" class="set txt"${key}>${esc(fields.join("、"))}</button>`;
   }
   const cls = slot.kind === "number" || slot.kind === "text" ? "val" : "txt";
-  return `<span class="${cls}">${esc(filled)}</span>`;
+  return `<button type="button" class="set ${cls}"${key}>${esc(filled)}</button>`;
 }
 
 /* 进:上游节点的名字 + 节点表说的进什么类型;没有上游就是起点,印一横。
@@ -55,7 +60,8 @@ export function fullCard(def, node, edges) {
   for (const slot of def.slots) {
     if (BLOCK.has(slot.kind) && !node.blanks?.includes(slot.key)) {
       const body = node.params?.[slot.key];
-      if (body) blocks.push(`<div class="sec">${esc(slot.label)}</div><div class="prompt">${esc(body)}</div>`);
+      if (body) blocks.push(`<div class="sec">${esc(slot.label)}</div>`
+        + `<button type="button" class="prompt" data-key="${esc(slot.key)}">${esc(body)}</button>`);
       continue;
     }
     const value = fieldValue(slot, node);

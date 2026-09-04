@@ -1,4 +1,5 @@
 import { fullCard, miniCard } from "./card.mjs";
+import { panel } from "./picker.mjs";
 import { layout, wire, wireLabelAt, wave, TILE, PITCH } from "./layout.mjs";
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -27,15 +28,16 @@ const FOCUS_LEAD = 300;
    这条轨道不进镜头的取景框(见 resize):它有多长都不该把已经建好的那几张卡挤小。
    于是它可以一直往右伸,伸出画面之外——末端不是被切断,是淡掉。 */
 const STEP_GAP = 176;
-const TRACK_TAIL = 620;
 /* 头是个会呼吸的点,半径在 HEAD_R 和 HEAD_MAX 之间来回(headPulse)。线接到最小的那个
    半径上:大的时候线被压在点底下一点,小的时候正好碰上,任何一帧都不会露出缝。 */
 const HEAD_R = 5;
 const HEAD_MAX = 7;
+const TRACK_TAIL = 620;
 
 /* 画布这一头只做一件事:把画布数据摆到屏幕上,新长出来的卡带一下动静。
    它不认得任何一种具体节点——那些全在节点表里。 */
-export function createCanvasView({ table, world, wires, viewport, insets = () => ({ right: 0, bottom: 0 }) }) {
+export function createCanvasView({ table, world, wires, viewport, stage, picker,
+  onFill, insets = () => ({ right: 0, bottom: 0 }) }) {
   const byType = new Map(table.map((d) => [d.type, d]));
   const nodes = new Map();
   const edges = new Map();
@@ -177,7 +179,14 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
         el = document.createElement("div");
         el.className = ready ? "node" : "node born";
         el.appendChild(document.createElement("div")).className = "card";
-        el.addEventListener("click", (e) => { e.stopPropagation(); toggle(p.node.name); });
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          /* 卡上那一格是入口,不是卡身的一部分:点它是「定这一格」,
+             不该顺手把卡收回去。 */
+          const cell = e.target.closest("[data-key]");
+          if (cell && el.classList.contains("open")) return openPicker(el, p.node, cell);
+          toggle(p.node.name);
+        });
         world.appendChild(el);
         nodes.set(p.node.name, el);
         if (!ready) queue.push(p.node.name);
@@ -188,7 +197,7 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
       const card = el.firstChild;
       card.innerHTML = `${miniCard(def, p.node)}${fullCard(def, p.node, canvas.edges)}`;
       /* 换了内容的那张卡如果正开着,高度得跟着内容重新量。 */
-      if (opened === p.node.name) box0(el, measure(el));
+      if (opened === p.node.name) remeasure(el);
     }
 
     for (const [k, e] of edges) if (!canvas.edges.some((x) => key(x) === k)) { e.g.remove(); edges.delete(k); }
@@ -375,6 +384,89 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     labelEl.style.transform = `translate(-50%,0) scale(${1 / scale})`;
   }
 
+  /* ── 那一格怎么定 ─────────────────────────────────────
+     空位不是填空题,是入口。点它,画布往后退,选择器上台——跟需求框飞回中央
+     是同一个动作,所以用的是同一套后退。
+
+     V6 的规矩:上台的东西要从它来的地方长出来。把变形原点挪到你点的那一格上,
+     面板就是从那个洞里撑开的,不是凭空淡进来的。 */
+  let filling = null;
+
+  function openPicker(el, node, cell) {
+    const def = byType.get(node.type);
+    const slot = def?.slots.find((s) => s.key === cell.dataset.key);
+    if (!slot || !picker) return;
+    filling = { el, node, key: slot.key };
+    const box = picker.querySelector(".panel");
+    box.innerHTML = panel(def, slot, node);
+    picker.hidden = false;
+    /* 落在这张卡的中轴上,不是屏幕的中轴。
+       卡的位置不去量:点开一张卡的时候镜头正把它送往取景框正中(见 aim),
+       这会儿还在滑,量到的是半路上的那一帧,钉下去就是歪的。
+       取景框正中是个定数,直接用它——镜头到位之后卡就在那儿。
+       出不去屏幕:四边各留 20。 */
+    const M = 20;
+    const { pad, w: roomW, h: roomH } = room();
+    const w = box.offsetWidth, h = box.offsetHeight;
+    const grip = (v, hi) => Math.min(Math.max(v, M), Math.max(M, hi));
+    box.style.left = `${grip(pad + roomW / 2 - w / 2, innerWidth - w - M)}px`;
+    box.style.top = `${grip(pad + roomH / 2 - h / 2, innerHeight - h - M)}px`;
+    /* 原点要在面板自己的坐标里量,所以得等它落好位置之后再量。 */
+    const c = cell.getBoundingClientRect(), p = box.getBoundingClientRect();
+    box.style.transformOrigin = `${c.left + c.width / 2 - p.left}px ${c.top + c.height / 2 - p.top}px`;
+    picker.classList.add("on");
+    stage?.classList.add("swap", "recede");
+    box.focus();
+  }
+
+  function shutPicker() {
+    if (!filling) return;
+    filling = null;
+    picker.classList.remove("on");
+    stage?.classList.remove("recede");
+    /* 等整段走完再收摊。早一步摘掉 swap,画布最后那一段就没了过渡——
+       它会把剩下的路一帧跳完,看着就是「退到快好了忽然一顿」。
+       620 是画布自己那条过渡的时长,多给 40ms 的余量。 */
+    setTimeout(() => {
+      if (filling) return;
+      picker.hidden = true;
+      stage?.classList.remove("swap");
+    }, 660);
+  }
+
+  /* 定了:这一格从「待定」变成一个值,卡当场重画,小卡上的「待定 N 项」跟着少一项。 */
+  function fill(value) {
+    if (!filling) return;
+    if (value === "") return shutPicker();
+    const { el, node, key } = filling;
+    node.params = { ...node.params, [key]: value };
+    node.blanks = (node.blanks ?? []).filter((b) => b !== key);
+    shutPicker();
+    const def = byType.get(node.type);
+    el.firstChild.innerHTML = `${miniCard(def, node)}${fullCard(def, node, last.canvas.edges)}`;
+    if (opened === node.name) remeasure(el);
+    onFill?.({ node: node.name, key, value });
+  }
+
+  if (picker) {
+    picker.addEventListener("click", (e) => {
+      if (e.target === picker) return shutPicker();
+      if (e.target.closest(".panel-close")) return shutPicker();
+      const act = e.target.closest("[data-do]")?.dataset.do;
+      if (act === "ok") return fill(picker.querySelector(".panel-field")?.value.trim() ?? "");
+      /* 传文件和新建连接这两条,POC 到不了真的那一步:传文件当场落一个值,
+         新建连接只能关掉——装成建好了才是骗人。 */
+      if (act === "upload") return fill("刚上传的文件");
+      if (act === "new") return shutPicker();
+      const row = e.target.closest(".src-row[data-v]");
+      if (row) return fill(row.dataset.v);
+    });
+    picker.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.matches("input.panel-field")) fill(e.target.value.trim());
+    });
+    addEventListener("keydown", (e) => { if (e.key === "Escape") shutPicker(); });
+  }
+
   /* ── 点开一张卡 ───────────────────────────────────────
      展开是「聚焦」的结果:镜头先带过去,别的卡退到背景里,这一张才撑开。
      卡片钉住上沿往下长,所以镜头瞄的是「上沿 + 展开高度的一半」。 */
@@ -397,6 +489,11 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     el.firstChild.style.height = `${h}px`;
     el.firstChild.style.transform = `translate(-50%, calc(-50% + ${((h - TILE) / 2).toFixed(1)}px))`;
   };
+
+  /* 内容换了的那张卡如果正开着:重新量、重新定高,然后还得把 open 加回去——
+     measure 量完是要摘掉 open 的(它得先撑开才量得出高度,量完不能留着),
+     所以谁调 measure 谁负责把它加回来。 */
+  const remeasure = (el) => { box0(el, measure(el)); el.classList.add("open"); };
 
   function aim(p, h) {
     const { pad, w, h: room_h } = room();
@@ -477,7 +574,14 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     drag = null;
     viewport.classList.remove("grabbing");
   });
-  viewport.addEventListener("click", (e) => { if (!e.target.closest(".node")) shut(true); });
+  /* 盖在画布上的东西,点它外面的任何一处就收回去。这条挂在 document 上,不挂在
+     viewport 上——挂 viewport 只管得着画布那一块,点顶栏、点输入框都收不掉,
+     同样是「外面」,结果却不一样。
+     谁在上头谁先收:选择器盖在展开的卡上,点画布的那一下只收选择器。 */
+  addEventListener("click", (e) => {
+    if (filling || e.target.closest(".picker")) return;
+    if (!e.target.closest(".node")) shut(true);
+  });
   addEventListener("keydown", (e) => { if (e.key === "Escape") shut(true); });
 
   return {

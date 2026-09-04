@@ -127,15 +127,24 @@
   .field{display:flex;align-items:center;gap:14px;min-height:40px;font-size:13.5px}
   .field + .field{border-top:1px solid #eceef1}
   .lbl{flex:0 0 118px;color:var(--ink-3);font-size:12.5px;font-weight:500;letter-spacing:.01em}
-  .slot{display:inline-flex;align-items:center;gap:6px;font:inherit;border:0;border-radius:7px;padding:3px 10px;
+  /* 空位是入口,填好的值也是入口——两种都是「这一格怎么定的」。
+     只让空的点得开,等于戏做了一半。 */
+  .slot,.set{font:inherit;cursor:pointer;text-align:left;border:0;padding:3px 10px;border-radius:7px;
+    transition:background 140ms ease,box-shadow 140ms ease}
+  .slot{display:inline-flex;align-items:center;gap:6px;
     background:color-mix(in srgb,var(--c) 11%,transparent);color:color-mix(in srgb,var(--c) 88%,#2b3038)}
+  .slot:hover{background:color-mix(in srgb,var(--c) 18%,transparent)}
   .slot svg{width:13px;height:13px;flex:0 0 auto}
+  .set{background:none;margin:-3px -10px}
+  .set:hover{background:rgba(20,26,38,.05);box-shadow:0 0 0 1px rgba(20,26,38,.06)}
   .val{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
   .txt{color:var(--ink)}
   .sec{margin:14px 0 6px;font-size:12.5px;color:var(--ink-3);font-weight:500;letter-spacing:.01em}
-  .prompt{margin:0;padding:12px 15px;border-radius:12px;background:var(--surface);
+  .prompt{display:block;width:100%;text-align:left;border:0;margin:0;padding:12px 15px;border-radius:12px;
+    background:var(--surface);cursor:pointer;
     font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--ink-2);white-space:pre-wrap;
-    max-height:220px;overflow:auto}
+    max-height:220px;overflow:auto;transition:box-shadow 140ms ease}
+  .prompt:hover{box-shadow:0 0 0 1px rgba(20,26,38,.09)}
   .io{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);display:grid;
     grid-template-columns:auto 1fr;gap:3px 12px;font-size:11.5px;line-height:17px;color:var(--ink-3)}
   .io b{font-weight:500;color:var(--ink-3);letter-spacing:.02em}
@@ -211,6 +220,8 @@
      裁的是里面那层字,不是气泡本身:气泡有内边距,裁在气泡上会从底下漏出半行。 */
   .plan-turn.me{align-self:flex-end;max-width:84%;padding:6px 12px;border-radius:13px;
     background:var(--surface);color:var(--ink);font-size:12.5px;line-height:19px}
+  .plan-turn.me > span{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;
+    overflow:hidden}
   .plan-says{font-size:12.5px;line-height:19px;color:var(--ink-2)}
   .plan-says p{margin:0 0 9px}
   .plan-says p:last-child{margin-bottom:0}
@@ -220,8 +231,6 @@
   .plan-says ul.says li::before{content:"";position:absolute;left:2px;top:9px;width:4px;height:4px;
     border-radius:50%;background:var(--ink-3)}
 
-  .plan-turn.me > span{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;
-    overflow:hidden}
   /* 原文和解读并排,一行一件事,才对照得起来。 */
   .plan-table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
   .plan-table th{padding:0 0 6px;text-align:left;font-weight:500;color:var(--ink-3);font-size:11px;
@@ -260,6 +269,74 @@
   .plan-close{margin-left:auto;flex:0 0 auto;border:0;background:none;color:var(--ink-3);
     font:inherit;font-size:12px;cursor:pointer}
   .plan-close:hover{color:var(--ink)}
+
+  /* 选择器:点那一格,画布往后退,它上台。跟需求框飞回中央是同一个动作,
+     所以用的是同一套后退(stage.recede)。圆角按尺寸来:面板 26 / 行 16 / 内 10。 */
+  .picker{position:fixed;inset:0;pointer-events:none;z-index:70}
+  /* 上着的时候整块都收指针:点面板外面的任何一处都是「不选了」,
+     不收的话那一下会穿过去落在画布上,把背后那张卡关掉,面板自己还杵着。 */
+  .picker.on{pointer-events:auto}
+  .picker[hidden]{display:none}
+  /* 面板落在哪儿由 JS 定:它是这张卡的东西,就该落在这张卡的中轴上。
+     居中在屏幕上是不对的——卡片被镜头摆在「屏幕减掉右边需求框」的中间,
+     两个中心本来就错开;面板从卡上那一格长出来,却落在跟卡无关的地方,
+     「我从那儿来」和「我属于这儿」就对不上。 */
+  .panel{position:fixed;width:min(452px,calc(100vw - 40px));max-height:calc(100vh - 40px);
+    overflow-y:auto;background:var(--paper);
+    border-radius:26px;padding:20px 18px 16px;scrollbar-width:thin;scrollbar-color:rgba(20,26,38,.16) transparent;
+    box-shadow:0 40px 80px -24px rgba(20,26,38,.32),0 12px 24px -8px rgba(20,26,38,.10),
+      0 0 0 1px rgba(20,26,38,.06);
+    opacity:0;transform:scale(.46);pointer-events:none;transform-origin:50% 50%;
+    /* 退场单独写一条,不拿上台那条倒着放。上台用 spring(会冲过头再落回来,
+       站住的那一下有劲);倒着放,冲过头发生在最后,退到一半又弹回来一点,
+       像没退干净。退用 ease-out,一路减速,不回头。
+
+       时长跟着画布走:620ms 是画布退到后面又走回前面的时间(stage.swap)。
+       面板缩回那一格和画布走回前面是同一个动作的两半,不同速就不是一次交换,
+       是两件事各走各的。透明度 420ms 先走完——那时形已经走了九成八,
+       剩下那点尾巴本来就看不出动静。 */
+    transition:opacity 420ms ease,transform 620ms var(--ease-out)}
+  .picker.on .panel{opacity:1;transform:scale(1);pointer-events:auto;
+    transition:opacity 220ms ease,transform 520ms var(--spring)}
+  .panel:focus{outline:none}
+  .panel-top{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;padding:0 3px}
+  .panel-top h4{margin:0;font-size:14px;font-weight:550}
+  .panel-top .why{flex:1;min-width:0;color:var(--ink-3);font-size:11.5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .panel-close{flex:0 0 auto;border:0;background:none;color:var(--ink-3);font:inherit;font-size:12px;
+    cursor:pointer;padding:0}
+  .panel-close:hover{color:var(--ink)}
+  .panel-sub{margin:0 0 13px;padding:0 3px;color:var(--ink-2);font-size:12.5px;line-height:1.55}
+  .panel-lbl{margin:13px 3px 7px;color:var(--ink-3);font-size:11px;font-weight:500;letter-spacing:.04em}
+  .panel-lbl:first-of-type{margin-top:0}
+  .src-row{display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:11px 14px;border:0;
+    border-radius:16px;background:var(--surface);font:inherit;cursor:pointer;margin-bottom:7px;
+    transition:background 160ms ease,box-shadow 160ms ease}
+  .src-row:hover{background:#edeef1;box-shadow:0 0 0 1px rgba(20,26,38,.07)}
+  .src-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .src-ico{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;border-radius:10px;
+    background:#fff;color:var(--ink-2);box-shadow:0 0 0 1px rgba(20,26,38,.06)}
+  .src-ico svg{width:15px;height:15px}
+  .src-main{flex:1;min-width:0;display:flex;flex-direction:column}
+  .src-main b{font-size:13px;font-weight:550;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .src-main i{font-style:normal;font-size:11.5px;color:var(--ink-3)}
+  .src-meta{flex:0 0 auto;font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .src-actions{display:flex;gap:7px;margin-top:10px}
+  .src-actions .src-row{flex:1;margin-bottom:0;justify-content:center}
+  .src-row.drop{background:none;box-shadow:inset 0 0 0 1.5px #d7dbe1;
+    transition:box-shadow 160ms ease,background 160ms ease}
+  .src-row.drop .src-main{flex:0 0 auto}
+  .src-row.drop .src-ico{box-shadow:0 0 0 1px rgba(20,26,38,.08)}
+  .src-row.drop:hover{background:none;box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 55%,#d7dbe1)}
+  .panel-field{width:100%;padding:11px 14px;border:0;border-radius:16px;background:var(--surface);
+    font:inherit;font-size:13px;color:var(--ink);outline:none;resize:none;
+    box-shadow:inset 0 0 0 1px transparent;transition:box-shadow 140ms ease}
+  .panel-field:focus{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--accent) 55%,#d7dbe1)}
+  textarea.panel-field{font-family:var(--mono);font-size:12.5px;line-height:1.7;
+    scrollbar-width:thin;scrollbar-color:rgba(20,26,38,.16) transparent}
+  /* 编出来的东西必须自己说自己是编的,而且说在面上,不是藏在注释里。 */
+  .panel-note{margin:14px 3px 0;padding-top:11px;border-top:1px solid var(--line);
+    color:var(--ink-3);font-size:11px;line-height:1.6}
 
   .bar{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);z-index:50;
     width:min(680px,calc(100vw - 48px))}
@@ -328,6 +405,8 @@
       <button class="plan-close" hidden>收起</button>
     </div>
   </div>
+
+  <div class="picker" id="picker" hidden><div class="panel" role="dialog" tabindex="-1"></div></div>
 
   <div class="bar">
     <form id="form">

@@ -6,6 +6,7 @@ const table = await fetch("/api/node-table").then((r) => r.json());
 
 const view = createCanvasView({
   table, world: $("world"), wires: $("wires"), viewport: $("viewport"),
+  stage: $("stage"), picker: $("picker"),
   /* 右上角的需求框占掉一条,卡片不能钻到它下面。 */
   insets: () => ({
     right: card.isMini ? 360 : 0,
@@ -131,6 +132,16 @@ view.onBreak({ rerun, talk: () => $("input").focus() });
 $("plan").addEventListener("click", async () => {
   if (!card.isMini) return;
   await card.toCenter();
+  view.fit();
+});
+/* 同一条规矩:方案卡摊在中央的时候,点它外面就收回右上角。
+   两处不算「外面」——收得回去才收(「收起」亮着才有右上角那个位置可回,
+   不然人就被丢在一张空画布上),以及输入框:那儿写着「回答上面待确认的问题」,
+   一点输入框就把「上面」收走,说不通。 */
+addEventListener("click", async (e) => {
+  if (card.isMini || e.target.closest(".plan") || e.target.closest(".picker")) return;
+  if (e.target.closest(".bar") || $("plan").querySelector(".plan-close").hidden) return;
+  await card.back();
   view.fit();
 });
 
