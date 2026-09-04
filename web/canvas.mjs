@@ -112,17 +112,37 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
      79 像素、字看得清,而整条链一屏进得来。看全比看大要紧。 */
   const MIN_SCALE = 0.45;
 
-  /* 摆镜头只有一种做法:把整幅东西放到正中。跑着的时候和跑完了的区别只有
-     缩放的上限——跑着的时候不许放太大,卡片得保持看得清。
-     原来跑着的时候瞄的是「头」那一个点:头落在正中,已经建好的那几张就全挤在
-     左边,右边空一大片。有一张卡展开着的时候镜头归它,别的再动也不许抢。 */
+  /* 跑着的时候,头站在画面横向的这个位置:左边是已经建好的,右边留一截给轨道。
+     早先试过让头落在正中,右边空一大片——那是因为当时轨道还没画出来。 */
+  const AHEAD = 0.64;
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+  /* 镜头两种状态,分得很开。
+
+     跑着的时候不缩:卡片保持看得清的大小,镜头跟着下一格的落点走,越长越往右
+     推,左边建好的拖回去还能看。整幅还塞得下的时候照样摆正中——不然一两张卡
+     的时候会被推到边上。
+
+     跑完了(pending 清掉)退回全景:框住整幅,缩放上限放开到 1,一路滑过去。
+     有一张卡展开着的时候镜头归它,别的再动也不许抢。 */
   function fit() {
     if (opened) return;
     const { pad, w, h } = room();
-    const cap = pending && !pending.broken ? RUN_SCALE : 1;
-    scale = Math.max(MIN_SCALE, Math.min(cap, w / box.w, h / box.h));
+
+    if (pending && !pending.broken) {
+      scale = RUN_SCALE;
+      const at = head();
+      const wide = box.w * scale, tall = box.h * scale;
+      tx = wide > w ? Math.min(pad, pad + w * AHEAD - at.x * scale) : pad + (w - wide) / 2;
+      ty = tall > h ? clamp(pad + h / 2 - at.y * scale, pad + h - tall, pad) : pad + (h - tall) / 2;
+      apply(framed);
+      framed = box.w > 1;
+      return;
+    }
+
+    scale = Math.max(MIN_SCALE, Math.min(1, w / box.w, h / box.h));
     const wide = box.w * scale, tall = box.h * scale;
-    /* 放不下就右端对齐:刚长出来的那几张在眼前,往左拖能看回去。 */
+    /* 全景也放不下就右端对齐:最后那几张在眼前,往左拖能看回去。 */
     tx = wide > w ? pad + w - wide : pad + (w - wide) / 2;
     ty = tall > h ? pad : pad + (h - tall) / 2;
     apply(framed);
