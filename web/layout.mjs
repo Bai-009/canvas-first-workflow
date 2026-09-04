@@ -164,6 +164,24 @@ export function layout(nodes, edges) {
   /* 卡片一让,线就变;线一变,该让的地方也变。来回几遍就停住了。 */
   for (let i = 0; i < 12; i++) row = pack(row);
 
+  /* 两端拉平。中间怎么起伏是好看,两端不在一条线上是「这张图整个是斜的」——
+     那不是风格,是看着不稳。歪来自两处:行本身爬上去了(分支被长线的走廊顶开),
+     和 wave 在头尾两列取值不同。所以拉的是最终高度,不是只调 wave。
+
+     做法是整体剪一刀:每一列按它离起点多远,匀一点回来,第一列不动、最后一列
+     补满。列内谁上谁下一点没变,所以不会摆出新的叠卡;列与列之间隔着 300,
+     本来就碰不到。剩下的只有线扫过卡片的高度变了——那正是下面收尾那一遍的活。
+
+     头尾这两列不会被别的线跨过去:一根线只占它两头之间的列,第一列左边没有
+     上游,最后一列右边没有下游。所以拉平之后没人再动得了它们。 */
+  const flat = members.length - 1;
+  if (flat > 0) {
+    const yAt = (id) => row.get(id) * LANE + wave(colOf(id));
+    const avg = (ids) => ids.reduce((sum, id) => sum + yAt(id), 0) / ids.length;
+    const tilt = avg(members[flat]) - avg(members[0]);
+    if (tilt) for (const id of row.keys()) row.set(id, row.get(id) - (tilt * colOf(id)) / flat / LANE);
+  }
+
   /* 收尾。前面几遍算占位,看的是线在那一列正中间有多高;可线是斜着过去的,
      压到卡片的往往是卡的左沿或右沿。这一遍改用真正画出来的那根线:它扫过
      这张卡的整个宽度时占住哪一段,那一段里有卡就把卡挪开。只挪被压的那张。 */

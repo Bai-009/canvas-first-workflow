@@ -94,6 +94,32 @@ test("跳列的线不从中间那一列的卡片上压过去", () => {
   }
 });
 
+/* 一张图不管长成什么样,进来的地方和出去的地方都在一条水平线上。
+   中间怎么起伏不管——起伏是好看,两端不平是「整张图是斜的」。 */
+test("头一列和末一列落在同一条水平线上", () => {
+  const N = (name) => ({ name });
+  const E = (from, to) => ({ from, to });
+  const 图 = {
+    "一条直链": [["a", "b", "c", "d", "e"].map(N),
+      [E("a", "b"), E("b", "c"), E("c", "d"), E("d", "e")]],
+    "分岔再汇合": [["读", "岔", "A", "B", "合"].map(N),
+      [E("读", "岔"), E("岔", "A"), E("岔", "B"), E("A", "合"), E("B", "合")]],
+    "跨了三列的跳线": [["a", "b", "c", "d", "e"].map(N),
+      [E("a", "b"), E("b", "c"), E("c", "d"), E("d", "e"), E("a", "d")]],
+    "两个起点两个终点": [["a1", "a2", "m", "z1", "z2"].map(N),
+      [E("a1", "m"), E("a2", "m"), E("m", "z1"), E("m", "z2")]],
+    "谁也不连谁": [["a", "b", "c"].map(N), []],
+  };
+  for (const [名, [nodes, edges]] of Object.entries(图)) {
+    const placed = layout(nodes, edges).placed;
+    const 末列 = Math.max(...placed.map((p) => p.x));
+    const 高 = (x) => { const 这列 = placed.filter((p) => p.x === x).map((p) => p.y);
+      return 这列.reduce((s, y) => s + y, 0) / 这列.length; };
+    assert.ok(Math.abs(高(末列) - 高(0)) < 0.5,
+      `${名}:头 ${Math.round(高(0))},末 ${Math.round(高(末列))}`);
+  }
+});
+
 test("分岔两路各占一列,汇合的卡排在两路都走完之后", () => {
   const nodes = ["读", "岔", "A", "B", "合"].map((name) => ({ name }));
   const edges = [
