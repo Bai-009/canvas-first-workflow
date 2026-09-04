@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fullCard, miniCard } from "../../web/card.mjs";
-import { layout } from "../../web/layout.mjs";
+import { layout, wire, TILE } from "../../web/layout.mjs";
 import { findNodeDefinition } from "../../src/nodes/node-table.mjs";
 
 /* 卡是照节点表画的:格叫什么、留空印什么、进出是什么类型,全从表里来。
@@ -72,18 +72,26 @@ test("卡上的名字全是转义过的,画布上的字进不了标签", () => {
   assert.match(html, /a &lt; b/);
 });
 
-test("跳列的线在中间那一列占一个位置,不从卡片背后穿过去", () => {
+test("跳列的线不从中间那一列的卡片上压过去", () => {
   const nodes = ["岔", "OCR", "抽取"].map((name) => ({ name }));
   const edges = [
     { from: "岔", to: "OCR", output: "false" },
     { from: "岔", to: "抽取", output: "true" },
     { from: "OCR", to: "抽取" },
   ];
-  const { placed, route } = layout(nodes, edges);
-  const at = new Map(placed.map((p) => [p.node.name, p]));
-  const bend = route.get("岔>抽取>true");
-  assert.equal(bend?.length, 1, "跨过一列就有一个拐点");
-  assert.ok(Math.abs(bend[0].y - (at.get("OCR").y + 88)) > 100, "拐点不和那一列的卡片重叠");
+  const at = new Map(layout(nodes, edges).placed.map((p) => [p.node.name, p]));
+  const w = wire(at.get("岔"), at.get("抽取"));
+  const ocr = at.get("OCR");
+  /* 沿着真正画出来的那根线走一遍,看它有没有落进 OCR 那张卡里。 */
+  const cub = (a, b, c, d, t) => { const u = 1 - t; return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d; };
+  const s = (w.x1 - w.x0) * 0.52;
+  for (let i = 0; i <= 200; i++) {
+    const t = i / 200;
+    const x = cub(w.x0, w.x0 + s, w.x1 - s, w.x1, t);
+    const y = cub(w.y0, w.y0, w.y1, w.y1, t);
+    assert.ok(!(x > ocr.x && x < ocr.x + TILE && y > ocr.y && y < ocr.y + TILE),
+      `线在 (${Math.round(x)}, ${Math.round(y)}) 压到了 OCR`);
+  }
 });
 
 test("分岔两路各占一列,汇合的卡排在两路都走完之后", () => {

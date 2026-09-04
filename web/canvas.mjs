@@ -105,8 +105,12 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
 
   /* 画布本来就比窗口大。整条链塞不下的时候不再往小里缩——缩到看不清字,
      等于把画布变成一张缩略图。缩到底就停,右端对齐:刚长出来的那几张在眼前,
-     往左拖能看回去。 */
-  const MIN_SCALE = 0.62;
+     往左拖能看回去。
+
+     0.62 是列距 436 那会儿的数:那时十来个节点铺出去四千多像素宽,再缩就
+     只剩缩略图了。列距收到 300 之后同样一条链只有两千八,0.45 上卡片还有
+     79 像素、字看得清,而整条链一屏进得来。看全比看大要紧。 */
+  const MIN_SCALE = 0.45;
 
   /* 摆镜头只有一种做法:把整幅东西放到正中。跑着的时候和跑完了的区别只有
      缩放的上限——跑着的时候不许放太大,卡片得保持看得清。
@@ -133,7 +137,7 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
       for (const n of canvas.nodes) shown.add(n.name);
       for (const e of canvas.edges) drawn.add(key(e));
     }
-    const { placed, route } = layout(canvas.nodes, canvas.edges);
+    const { placed } = layout(canvas.nodes, canvas.edges);
     const at = new Map(placed.map((p) => [p.node.name, p]));
     last = { placed, canvas };
 
@@ -166,7 +170,7 @@ export function createCanvasView({ table, world, wires, viewport, insets = () =>
     for (const [k, e] of edges) if (!canvas.edges.some((x) => key(x) === k)) { e.g.remove(); edges.delete(k); }
     for (const e of canvas.edges) {
       const from = at.get(e.from), to = at.get(e.to);
-      if (from && to) paint(e, wire(from, to, route.get(key(e)) ?? []));
+      if (from && to) paint(e, wire(from, to));
     }
 
     track();
