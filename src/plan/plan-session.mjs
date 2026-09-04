@@ -27,7 +27,7 @@ export function createPlanSession({ callModel, systemPrompt = loadSystemPrompt("
       return controller !== null;
     },
 
-    async say(text, { language } = {}) {
+    async say(text, { language, onDraft } = {}) {
       if (controller) throw new Error("上一轮还在跑,先停掉它再说下一句");
       const userMessage = { role: "user", content: text };
       controller = new AbortController();
@@ -38,6 +38,7 @@ export function createPlanSession({ callModel, systemPrompt = loadSystemPrompt("
           messages: [...transcript, userMessage],
           systemPrompt: language ? loadSystemPrompt(language) : systemPrompt,
           signal: controller.signal,
+          onDraft,
         });
       } catch (error) {
         /* 停掉的、或者几次都没过闸的:这轮当没发生,只留用户那句 */

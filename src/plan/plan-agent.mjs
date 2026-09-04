@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { proposePlanTool } from "./propose-plan-tool.mjs";
+import { parsePartial, draftPlan } from "./partial-plan.mjs";
 import { validatePlanProposal } from "./validate-plan-proposal.mjs";
 import { callerFromEnv as modelCallerFromEnv } from "../model/openai-compatible.mjs";
 
@@ -23,10 +24,38 @@ const defaultSystemPrompt = loadSystemPrompt("zh");
 
 const MAX_GATE_RETRIES = 3;
 
+/* 模型偶尔不走工具,把整份方案当正文写出来——一段 <invoke name="propose_plan">。
+   这种一轮里方案没交上来,而正文又是一坨给机器看的东西:直接当成一次没交,
+   让它重来。留着就是把 XML 摆到用户脸上,而且这一轮白跑。 */
+const FAKE_CALL = /<(?:invoke|function_calls|tool_call)\b[^>]*>|<invoke\b/i;
+const spokenOnly = (text) => (text ?? "").split(FAKE_CALL)[0].trim();
+
+/* 边写边看:模型一个字一个字往外吐的时候,把手上这半份交出去。
+   说的话原样累加;方案是半截 JSON,退到最近能收口的地方读一遍。
+   一秒最多刷十次——再密人眼也读不过来,只会闪。 */
+function draftReporter(spoken, onDraft) {
+  let text = "";
+  let args = "";
+  let last = 0;
+  return (delta) => {
+    if (delta.kind === "text") text += delta.text;
+    else if (delta.kind === "args") args += delta.text;
+    const now = Date.now();
+    if (now - last < 100) return;
+    last = now;
+    onDraft({
+      speech: [...spoken, text].filter(Boolean).join("\n\n"),
+      plan: args ? draftPlan(parsePartial(args)) : null,
+      /* 它在想,还是在写。想的内容不交出去:那是内心独白,而且是断的。 */
+      phase: text || args ? "writing" : "thinking",
+    });
+  };
+}
+
 /* 一轮设计:模型先说话,可能再提交一份方案。
    方案过闸门;没过就把错误原样发回去让它重交完整一份,重试有上限。
    模型不调工具就是只说话——信息不够先澄清,这个行为本身就是合法产出。 */
-export async function runPlanAgent({ callModel, messages, systemPrompt = defaultSystemPrompt, signal }) {
+export async function runPlanAgent({ callModel, messages, systemPrompt = defaultSystemPrompt, signal, onDraft }) {
   const transcript = [{ role: "system", content: systemPrompt }, ...messages];
   let lastErrors = [];
   /* 说给人听的话要攒着:闸门打回之后模型重交时通常不再说话,
@@ -34,10 +63,21 @@ export async function runPlanAgent({ callModel, messages, systemPrompt = default
   const spoken = [];
 
   for (let attempt = 0; attempt <= MAX_GATE_RETRIES; attempt++) {
-    const reply = await callModel(transcript, { signal });
-    if (reply.content) spoken.push(reply.content);
-    const speech = spoken.join("\n\n");
+    const reply = await callModel(transcript, { signal, onDelta: onDraft && draftReporter(spoken, onDraft) });
+    const faked = !reply.tool_calls?.length && FAKE_CALL.test(reply.content ?? "");
+    if (reply.content) spoken.push(faked ? spokenOnly(reply.content) : reply.content);
+    const speech = spoken.filter(Boolean).join("\n\n");
     const calls = reply.tool_calls ?? [];
+
+    /* 方案写在正文里 = 没交。跟没过校验一样,让它重来一次。 */
+    if (faked) {
+      lastErrors = ["方案写在正文里,没有走 propose_plan"];
+      transcript.push(
+        { role: "assistant", content: spokenOnly(reply.content) },
+        { role: "user", content: "上一条里的方案写在正文里,没有经过 propose_plan,所以没有被收到。请调用 propose_plan 重新交一次完整的方案。" },
+      );
+      continue;
+    }
 
     if (calls.length === 0) {
       return { speech, plan: null, transcript: [...transcript, reply] };
@@ -89,7 +129,11 @@ export async function runPlanAgent({ callModel, messages, systemPrompt = default
 
 /* 设计者的调用器:通用插座加上它唯一的工具 propose_plan。 */
 export function callerFromEnv(env = process.env) {
-  return modelCallerFromEnv(env, { tools: [{ type: "function", function: proposePlanTool }] });
+  /* 推理是它的智力,不关。想调强度用 MODEL_REASONING(low / high / max)。 */
+  return modelCallerFromEnv(env, {
+    tools: [{ type: "function", function: proposePlanTool }],
+    reasoning: env.MODEL_REASONING,
+  });
 }
 
 async function runCli() {

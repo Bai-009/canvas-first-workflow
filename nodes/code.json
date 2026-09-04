@@ -1,0 +1,12 @@
+{
+  "type": "code",
+  "kind": "Code",
+  "color": "#374151",
+  "summary": "没有现成节点的时候用它:改字段、筛选、汇总、算东西。代码直接写在里面,信息够就写完整;只在用户那边的值单独开一格,代码里引用它",
+  "slots": [
+    { "key": "language", "label": "Language", "kind": "pick", "options": ["JavaScript", "Python"], "default": "JavaScript" },
+    { "key": "code", "label": "Code", "kind": "body" }
+  ],
+  "input": "Any",
+  "output": "Any"
+}

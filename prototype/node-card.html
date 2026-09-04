@@ -1,0 +1,575 @@
+<title>节点卡片的空位</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600&display=swap">
+<style>
+  /* 颜色、圆角、阴影、字号、弹簧曲线全部沿用 prototype/index.html (V6)。
+     新增两件事：正文从等宽 kv 换成人话句子；句子里没定的那一格是个入口，
+     点开走 V6 那套「台前调度」——画布后退，选择器上台。 */
+  :root {
+    --paper: #fff;
+    --canvas: #eef0f3;
+    --surface: #f4f5f7;
+    --line: #e4e6ea;
+    --ink: #1a1d22;
+    --ink-2: #545b65;
+    --ink-3: #8f96a0;
+    --accent: #2f6fed;
+    --font: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    --tile: 176px;
+    --open-w: 540px;
+    --spring: cubic-bezier(.22, 1.28, .32, 1);
+    --ease-out: cubic-bezier(.16, 1, .3, 1);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font-family: var(--font); font-size: 15px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  }
+
+  .page { max-width: 1000px; margin: 0 auto; padding: 40px 28px 72px; }
+
+  .head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 7px; }
+  .head h1 { margin: 0; font-size: 17px; font-weight: 550; letter-spacing: -.01em; }
+  .head .src { color: var(--ink-3); font-size: 12.5px; }
+  .head .src b { font-weight: 500; color: var(--ink-2); }
+  .lede { margin: 0 0 24px; max-width: 62ch; color: var(--ink-2); font-size: 13.5px; line-height: 1.7; }
+  .lede b { color: var(--ink); font-weight: 550; }
+
+  /* ── 台子：V6 的点阵画布 ───────────────────────────── */
+  .stage {
+    position: relative; height: 480px; border-radius: 20px; overflow: hidden;
+    background: var(--canvas)
+      radial-gradient(circle at 1px 1px, rgba(26,29,34,.055) 1px, transparent 0) 0 0 / 24px 24px;
+    box-shadow: inset 0 0 0 1px rgba(20,26,38,.055);
+  }
+  /* 后退的是深度不是平面：工作流一个像素都没挪。 */
+  .world {
+    position: absolute; left: 50%; top: 50%; width: 800px; height: 300px;
+    transform: translate(-50%, -50%) scale(var(--k, 1)); transform-origin: 50% 50%;
+    transition: transform 620ms var(--ease-out), opacity 520ms ease, filter 520ms ease;
+  }
+  .world.recede {
+    transform: translate(-50%, -50%) scale(calc(var(--k, 1) * .955));
+    opacity: .3; filter: blur(2px); pointer-events: none;
+  }
+
+  .wires { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+  .wire {
+    fill: none; stroke: #aeb5c0; stroke-width: 2.6; stroke-linecap: round;
+    stroke-dasharray: 120; stroke-dashoffset: 120;
+    transition: stroke-dashoffset 460ms cubic-bezier(.55,.06,.2,1);
+  }
+  .wire.on { stroke-dashoffset: 0; }
+  .socket { fill: var(--c, #aeb5c0); opacity: 0; transition: opacity 240ms ease 260ms; }
+  .socket.on { opacity: 1; }
+
+  .node { position: absolute; top: 50%; }
+
+  /* ── 卡片 ─────────────────────────────────────────── */
+  .card {
+    position: absolute; left: 0; top: 50%;
+    width: var(--tile); height: var(--tile); border-radius: 24px; background: var(--paper);
+    overflow: hidden;
+    opacity: 0; transform: translate(-30px, -50%) scale(.62);
+    transition:
+      width 620ms var(--spring), height 620ms var(--spring),
+      transform 420ms var(--spring), opacity 300ms ease, box-shadow 320ms var(--ease-out);
+    box-shadow: 0 2px 4px rgba(20,26,38,.05), 0 8px 20px -8px rgba(20,26,38,.16), 0 0 0 1px rgba(20,26,38,.05);
+  }
+  .card.shown { opacity: 1; transform: translate(0, -50%) scale(1); }
+  .card.shown:not(.open) { cursor: pointer; }
+  .card.shown:not(.open):hover {
+    box-shadow: 0 2px 4px rgba(20,26,38,.05), 0 12px 28px -8px rgba(20,26,38,.22), 0 0 0 1px rgba(20,26,38,.07);
+  }
+  .card.open {
+    width: var(--open-w); border-radius: 22px; z-index: 30;
+    transition: width 620ms var(--spring), height 620ms var(--spring),
+                transform 620ms var(--spring), box-shadow 320ms var(--ease-out), opacity 300ms ease;
+    box-shadow:
+      0 40px 80px -24px rgba(20,26,38,.32),
+      0 12px 24px -8px rgba(20,26,38,.10),
+      0 0 0 1px rgba(20,26,38,.06),
+      0 0 0 4px color-mix(in srgb, var(--c) 12%, transparent);
+  }
+
+  .mini { padding: 17px 17px 16px; display: flex; flex-direction: column; height: var(--tile);
+          transition: opacity 220ms ease 300ms; }
+  .card.open .mini { opacity: 0; height: 0; padding: 0; overflow: hidden; transition: opacity 140ms ease; }
+  .mini-top { display: flex; align-items: center; gap: 9px; }
+  .icon { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center;
+          border-radius: 9px; background: color-mix(in srgb, var(--c) 13%, #fff); color: var(--c); }
+  .icon svg { width: 17px; height: 17px; display: block; }
+  .mini-kind { flex: 1; min-width: 0; color: var(--c); font-size: 11.5px; font-weight: 500; line-height: 15px;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mark { flex: 0 0 auto; width: 15px; height: 15px; position: relative; color: var(--ink-3);
+          font-size: 12.5px; line-height: 16px; text-align: center; }
+  .mini-fill { flex: 1; }
+  .mini-name { margin: 0; font-size: 14.5px; font-weight: 550; line-height: 20px; color: var(--ink);
+               display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .mark .dot-c { position: absolute; top: 4px; left: 4px; width: 7px; height: 7px;
+                 border-radius: 50%; background: var(--c); }
+  .mini-evi.pending { color: var(--c); }
+  .mini-evi { margin: 4px 0 0; height: 16px; font-size: 11.5px; line-height: 16px; color: var(--ink-3);
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .full { padding: 18px; opacity: 0; transition: opacity 260ms ease 60ms; }
+  .card.open .full { opacity: 1; }
+  .full-top { display: flex; align-items: center; gap: 11px; margin-bottom: 12px; }
+  .full-name { margin: 0; flex: 1; font-size: 15px; font-weight: 550; line-height: 22px; }
+  .full-kind { flex: 0 0 auto; color: var(--c); font-size: 11.5px; font-weight: 500; }
+
+  .note { margin: 0 0 12px; min-height: 19px; font-size: 13px; line-height: 19px; color: var(--ink-2); }
+
+  .body { padding: 13px 15px; border-radius: 12px; background: var(--surface);
+          font-size: 13.5px; line-height: 28px; color: var(--ink-2); }
+  .body .ln { min-height: 28px; }
+  .val { color: var(--ink); font-weight: 550; }
+
+  /* ── 句子里那一格 ─────────────────────────────────────
+     没定的时候它是个入口（点了出选择器），定了之后它就是个值。
+     同一格，两个状态，不是两样东西。 */
+  .slot {
+    display: inline-flex; align-items: center; gap: 6px; vertical-align: baseline;
+    font: inherit; border: 0; border-radius: 7px; padding: 2px 10px; cursor: pointer;
+    background: color-mix(in srgb, var(--c) 11%, transparent);
+    color: color-mix(in srgb, var(--c) 88%, #2b3038);
+    transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  }
+  .slot svg { width: 13px; height: 13px; flex: 0 0 auto; }
+  .slot:hover { background: color-mix(in srgb, var(--c) 18%, transparent); }
+  .slot:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
+  .slot.filled {
+    background: none; padding: 2px 2px; color: var(--ink); font-weight: 550;
+    box-shadow: inset 0 -1px 0 0 var(--line);
+  }
+  .slot.filled:hover { box-shadow: inset 0 -1px 0 0 #c2c7cf; }
+  .slot.pop { animation: pop 420ms var(--spring); }
+  @keyframes pop { from { transform: scale(.72); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  .foot { display: flex; align-items: center; gap: 7px; margin-top: 11px;
+          color: var(--ink-3); font-size: 11.5px; line-height: 16px;
+          opacity: 0; transition: opacity 300ms ease; }
+  .foot.on { opacity: 1; }
+  .foot .dot { width: 5px; height: 5px; border-radius: 50%; background: #c9ced6; flex: 0 0 auto; }
+
+  /* ── 选择器：画布后退，它上台 ─────────────────────── */
+  .picker { position: absolute; inset: 0; display: grid; place-items: center;
+            padding: 20px; pointer-events: none; z-index: 60; }
+  .panel {
+    width: min(452px, 100%); max-height: 100%; overflow: hidden; background: var(--paper);
+    border-radius: 26px; padding: 20px 18px 16px;
+    box-shadow:
+      0 40px 80px -24px rgba(20,26,38,.32),
+      0 12px 24px -8px rgba(20,26,38,.10),
+      0 0 0 1px rgba(20,26,38,.06);
+    opacity: 0; transform: scale(.46); pointer-events: none;
+    transform-origin: 50% 50%;
+    transition: opacity 220ms ease, transform 520ms var(--spring);
+  }
+  .picker.on .panel { opacity: 1; transform: scale(1); pointer-events: auto; }
+  .panel:focus { outline: none; }
+  .panel-top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; padding: 0 3px; }
+  .panel-top h4 { margin: 0; font-size: 14px; font-weight: 550; }
+  .panel-top .why { flex: 1; color: var(--ink-3); font-size: 11.5px; }
+  .panel-close { border: 0; background: none; color: var(--ink-3); font: inherit; font-size: 12px; cursor: pointer; padding: 0; }
+  .panel-close:hover { color: var(--ink); }
+  .panel-sub { margin: 0 0 13px; padding: 0 3px; color: var(--ink-2); font-size: 12.5px; line-height: 1.55; }
+  .panel-lbl { margin: 13px 3px 7px; color: var(--ink-3); font-size: 11px; font-weight: 500; letter-spacing: .04em; }
+  .panel-lbl:first-of-type { margin-top: 0; }
+
+  .src-row {
+    display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+    padding: 11px 14px; border: 0; border-radius: 16px; background: var(--surface);
+    font: inherit; cursor: pointer; margin-bottom: 7px;
+    transition: background 160ms ease, box-shadow 160ms ease;
+  }
+  .src-row:hover { background: #edeef1; box-shadow: 0 0 0 1px rgba(20,26,38,.07); }
+  .src-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .src-ico { width: 30px; height: 30px; flex: 0 0 auto; display: grid; place-items: center;
+             border-radius: 10px; background: #fff; color: var(--ink-2); box-shadow: 0 0 0 1px rgba(20,26,38,.06); }
+  .src-ico svg { width: 15px; height: 15px; }
+  .src-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .src-main b { font-size: 13px; font-weight: 550; color: var(--ink); }
+  .src-main i { font-style: normal; font-size: 11.5px; color: var(--ink-3); }
+  .src-meta { flex: 0 0 auto; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+
+  .src-actions { display: flex; gap: 7px; margin-top: 10px; }
+  .src-actions .src-row { flex: 1; margin-bottom: 0; }
+  .src-row.drop {
+    background: none; box-shadow: inset 0 0 0 1.5px #d7dbe1;
+    transition: box-shadow 160ms ease, background 160ms ease;
+  }
+  .src-row.drop .src-ico { box-shadow: 0 0 0 1px rgba(20,26,38,.08); }
+  .src-row.drop:hover { background: none; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, #d7dbe1); }
+  .panel-note { margin: 14px 3px 0; padding-top: 11px; border-top: 1px solid var(--line);
+                color: var(--ink-3); font-size: 11px; line-height: 1.6; }
+
+  /* ── 控制条 ───────────────────────────────────────── */
+  .ctl { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+         margin: 14px 2px 0; color: var(--ink-3); font-size: 12px; }
+  .ctl button { font: inherit; color: var(--ink-3); background: none; border: 0; padding: 0; cursor: pointer; }
+  .ctl button:hover { color: var(--ink); }
+  .ctl button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+  .sep { width: 1px; height: 12px; background: #d3d7dd; }
+  .hint-line { color: var(--ink-3); }
+  .hint-line b { color: var(--ink-2); font-weight: 500; }
+
+  /* ── 下面的说明 ───────────────────────────────────── */
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 26px; margin-top: 46px; }
+  .block h2 { margin: 0 0 11px; font-size: 12px; font-weight: 550; letter-spacing: .06em;
+              text-transform: uppercase; color: var(--ink-3); }
+  .block p { margin: 0 0 11px; color: var(--ink-2); font-size: 13.5px; line-height: 1.75; max-width: 48ch; }
+  .block p b { color: var(--ink); font-weight: 550; }
+  .kinds { display: flex; flex-direction: column; gap: 9px; }
+  .kind { display: flex; gap: 11px; align-items: baseline; font-size: 13.5px; line-height: 1.6; }
+  .kind b { flex: 0 0 92px; color: var(--ink); font-weight: 550; }
+  .kind span { color: var(--ink-2); }
+  .minis { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 2px; }
+  .mini-demo { width: var(--tile); }
+  .mini-demo .card { position: relative; left: auto; top: auto; transform: none;
+                     opacity: 1; transition: none; cursor: default; }
+  .mini-demo .cap { margin: 9px 0 0; color: var(--ink-3); font-size: 11.5px; line-height: 1.5; }
+  .swatch { display: inline-block; padding: 1px 6px; border-radius: 5px; background: var(--surface);
+            font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+  }
+</style>
+
+<div class="page">
+  <div class="head">
+    <h1>节点卡片的空位</h1>
+    <span class="src">卡片数据来自 <b>fixtures/observed/run10-执行者-s1/submission.json</b>，没改一个字</span>
+  </div>
+  <p class="lede">
+    模型知道这一步要读一个目录，但不知道读哪个。句子里就空着那一格。
+    <b>这一格不是让人打字的</b>——数据从哪来是选出来的：已连接的数据源、上传文件，或新建连接。
+    点那一格，画布往后退，选择器上台。
+  </p>
+
+  <div class="stage" id="stage">
+    <div class="world" id="world">
+      <svg class="wires" viewBox="0 0 800 300">
+        <path class="wire" id="wire" d="M 176 150 L 258 150" />
+        <circle class="socket" id="sock" cx="260" cy="150" r="4.5" style="--c:#2f6fed" />
+      </svg>
+
+      <div class="node" style="left:0">
+        <div class="card" id="c1" style="--c:#db2777">
+          <div class="mini">
+            <div class="mini-top">
+              <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 1.8"/></svg></span>
+              <span class="mini-kind">触发</span>
+              <span class="mark">✓</span>
+            </div>
+            <div class="mini-fill"></div>
+            <p class="mini-name">每天定时触发</p>
+            <p class="mini-evi">每天 0:00</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="node" style="left:260px">
+        <div class="card" id="c2" style="--c:#2f6fed">
+          <div class="mini">
+            <div class="mini-top">
+              <span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg></span>
+              <span class="mini-kind">数据源</span>
+              <span class="mark" id="c2mark"></span>
+            </div>
+            <div class="mini-fill"></div>
+            <p class="mini-name">读取昨天落库的合同 PDF</p>
+            <p class="mini-evi" id="c2evi"></p>
+          </div>
+
+          <div class="full">
+            <div class="full-top">
+              <h3 class="full-name">读取昨天落库的合同 PDF</h3>
+              <span class="full-kind">数据源</span>
+            </div>
+            <p class="note" id="note"></p>
+            <div class="body"><div class="ln" id="ln1"></div></div>
+            <div class="foot" id="foot">
+              <span class="dot"></span>
+              <span>上游 · 每天定时触发</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="picker" id="picker">
+      <div class="panel" role="dialog" aria-label="选择数据源" tabindex="-1">
+        <div class="panel-top">
+          <h4>数据从哪来</h4>
+          <span class="why">读取昨天落库的合同 PDF</span>
+          <button class="panel-close" id="pclose" type="button">取消</button>
+        </div>
+        <p class="panel-sub">这一步需要一个存放合同 PDF 的位置。</p>
+
+        <p class="panel-lbl">已连接</p>
+        <button class="src-row" type="button" data-v="s3://contracts-lake/" data-n="1,271 份 PDF">
+          <span class="src-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg></span>
+          <span class="src-main"><b>contracts-lake</b><i>对象存储 · cn-shanghai</i></span>
+          <span class="src-meta">1,271 份 PDF</span>
+        </button>
+        <button class="src-row" type="button" data-v="/data/contracts" data-n="86 份 PDF">
+          <span class="src-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+          <span class="src-main"><b>/data/contracts</b><i>本机目录</i></span>
+          <span class="src-meta">86 份 PDF</span>
+        </button>
+        <button class="src-row" type="button" data-v="contracts.attachments" data-n="按行读">
+          <span class="src-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9 9.5v10"/></svg></span>
+          <span class="src-main"><b>contracts.attachments</b><i>Postgres · 附件表</i></span>
+          <span class="src-meta">按行读</span>
+        </button>
+
+        <div class="src-actions">
+          <button class="src-row drop" id="drop" type="button">
+            <span class="src-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4.5M8 8l4-3.5L16 8"/><path d="M4.5 15v3a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5v-3"/></svg></span>
+            <span class="src-main"><b>上传文件</b></span>
+          </button>
+          <button class="src-row drop" id="newconn" type="button">
+            <span class="src-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.5v13M5.5 12h13"/></svg></span>
+            <span class="src-main"><b>新建连接</b></span>
+          </button>
+        </div>
+
+        <p class="panel-note">三条数据源是虚构的，POC 不做真实接入。卡上的旁白也是手写的：run10 跑在 note 这一格加进契约之前。节点、参数、空位来自真实的 run10。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="ctl">
+    <button id="replay" type="button">↺ 重放</button>
+    <span class="sep"></span>
+    <span class="hint-line" id="hint">句子流完，点<b>那一格蓝色的</b></span>
+  </div>
+
+  <div class="cols">
+    <div class="block">
+      <h2>空位不止一种</h2>
+      <p>「等你填」是我上一版的说法，错了。一个没定的参数要怎么补上，得看它是什么东西：</p>
+      <div class="kinds">
+        <div class="kind"><b>接数据源</b><span>弹选择器：已接上的、本地上传、新接一个。<span class="swatch">fileSelector</span> 是这种。</span></div>
+        <div class="kind"><b>接连接</b><span>挑一个存好的凭据。Postgres 节点带 <span class="swatch">credentials: postgres</span>。</span></div>
+        <div class="kind"><b>挑一个</b><span>选项本来就有限，直接给菜单。n8n 的 <span class="swatch">options</span> 类型。</span></div>
+        <div class="kind"><b>真要打字</b><span>只剩少数——一段正则、一句 SQL。</span></div>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2>这事只能我们的表说了算</h2>
+      <p>查了工具定义：<span class="swatch">fileSelector</span> 在 n8n 里的类型就是 <span class="swatch">string</span>，一个字符串——它说不出自己是个数据源。</p>
+      <p>Postgres 那边说得出一半：<span class="swatch">table</span> 是 <span class="swatch">resourceLocator</span>（可选的），还挂着 <span class="swatch">credentials</span>。</p>
+      <p><b>所以「这一格是选还是填」要写在我们自己那七八张表里。</b>节点是我们定的，模型只有挑的份——定义的空间就在这儿。</p>
+    </div>
+
+    <div class="block">
+      <h2>收起之后</h2>
+      <p>画布上多数时候看到的是小卡。右上角那一格报状态，底下一行报证据。</p>
+      <div class="minis">
+        <div class="mini-demo">
+          <div class="card" style="--c:#2f6fed">
+            <div class="mini">
+              <div class="mini-top"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg></span><span class="mini-kind">数据源</span><span class="mark"><span class="dot-c"></span></span></div>
+              <div class="mini-fill"></div>
+              <p class="mini-name">读取昨天落库的合同 PDF</p>
+              <p class="mini-evi pending">待定 1 项</p>
+            </div>
+          </div>
+          <p class="cap">还没定：色点</p>
+        </div>
+        <div class="mini-demo">
+          <div class="card" style="--c:#2f6fed">
+            <div class="mini">
+              <div class="mini-top"><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/></svg></span><span class="mini-kind">数据源</span><span class="mark">✓</span></div>
+              <div class="mini-fill"></div>
+              <p class="mini-name">读取昨天落库的合同 PDF</p>
+              <p class="mini-evi">1,271 份 PDF</p>
+            </div>
+          </div>
+          <p class="cap">定了：✓ 加扫到多少</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2>还没定的</h2>
+      <p><b>旁白这一格已经加进契约了</b>（节点上的 <span class="swatch">note</span>），不强制。写不写、写得好不好，代码判不了——写成废话，卡上就是废话，一眼看得见。</p>
+      <p><b>选完之后画布还该动什么。</b>现在是句子读通、卡片收回去、扫到多少落在小卡上。下游几张卡要不要跟着刷新，是另一件事。</p>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    var stage  = document.getElementById('stage');
+    var world  = document.getElementById('world');
+    var picker = document.getElementById('picker');
+    var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    var NOTE = '平台没有按落库时间筛选的节点，这一步只圈定目录范围。';
+    // 三种料：死字 / 模型填的值 / 还没定的那一格
+    var LINE = [
+      { t: 'text', s: '读取 ' },
+      { t: 'slot' },
+      { t: 'text', s: ' 里所有 ' },
+      { t: 'val',  s: '.pdf' },
+      { t: 'text', s: ' 文件' }
+    ];
+
+    var CPS = 46;                                   // 字宽/秒，全角算 2
+    var wide = function (ch) { return /[⺀-￿]/.test(ch) ? 2 : 1; };
+    var timers = [];
+    var sleep = function (ms) {
+      return new Promise(function (r) { timers.push(setTimeout(r, reduce ? 1 : ms)); });
+    };
+
+    var PLUG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5h16M4 8.5v7a4 4 0 0 0 4 4h8a4 4 0 0 0 4-4v-7M8.5 8.5v-4M15.5 8.5v-4"/></svg>';
+
+    async function typeInto(el, text) {
+      for (var i = 0; i < text.length; i++) {
+        el.textContent = text.slice(0, i + 1);
+        await sleep(1000 * wide(text[i]) / CPS);
+      }
+    }
+
+    /* 高度不能硬跳：先把 auto 量出来，再从 176 springs 过去。 */
+    function openTo(card) {
+      var keep = card.style.transition;
+      card.style.transition = 'none';
+      card.style.height = 'auto';
+      var h = card.offsetHeight;
+      card.style.height = '176px';
+      void card.offsetHeight;
+      card.style.transition = keep;
+      card.style.height = h + 'px';
+    }
+
+    var slotEl = null;
+
+    /* V6 的规矩:上台的东西要从它来的地方长出来。把变形原点挪到你点的那一格上,
+       面板就是从那个洞里撑开的,不是凭空淡进来的。 */
+    function openPicker() {
+      var panel = picker.querySelector('.panel');
+      var s = slotEl.getBoundingClientRect();
+      var p = panel.getBoundingClientRect();
+      panel.style.transformOrigin =
+        (s.left + s.width / 2 - p.left) + 'px ' + (s.top + s.height / 2 - p.top) + 'px';
+      picker.classList.add('on');
+      world.classList.add('recede');
+      panel.focus();
+    }
+    function closePicker() {
+      picker.classList.remove('on');
+      world.classList.remove('recede');
+    }
+    async function fill(value, count) {
+      closePicker();
+      slotEl.classList.remove('pop');
+      void slotEl.offsetWidth;
+      slotEl.className = 'slot filled pop';
+      slotEl.textContent = value;
+      var c2 = document.getElementById('c2');
+      openTo(c2);                                   // 句子变长了，框跟着长
+      document.getElementById('hint').innerHTML = '句子读通了';
+      await sleep(1100);
+      document.getElementById('c2mark').textContent = '✓';
+      var done = document.getElementById('c2evi');
+      done.className = 'mini-evi';
+      done.textContent = count;
+      c2.classList.remove('open');                  // 收回去
+      c2.style.height = '';
+      document.getElementById('hint').innerHTML = '已收起，扫到多少落在小卡上。<b>点卡片可再展开</b>';
+    }
+
+    async function run() {
+      timers.forEach(clearTimeout); timers = [];
+      closePicker();
+      var c1 = document.getElementById('c1'), c2 = document.getElementById('c2');
+      var wire = document.getElementById('wire'), sock = document.getElementById('sock');
+      var note = document.getElementById('note'), ln = document.getElementById('ln1');
+      var foot = document.getElementById('foot');
+
+      c1.className = 'card'; c2.className = 'card'; c2.style.height = '';
+      wire.classList.remove('on'); sock.classList.remove('on');
+      note.textContent = ''; ln.innerHTML = ''; foot.classList.remove('on');
+      document.getElementById('c2mark').innerHTML = '';
+      var reset = document.getElementById('c2evi');
+      reset.className = 'mini-evi';
+      reset.textContent = '';
+      document.getElementById('hint').innerHTML = '句子流完，点<b>那一格蓝色的</b>';
+
+      await sleep(260);
+      c1.classList.add('shown');
+      await sleep(700);
+      wire.classList.add('on');                     // 线先到
+      await sleep(420);
+      c2.classList.add('shown');                    // 卡从线的尽头长出来
+      await sleep(720);
+      c2.classList.add('open'); openTo(c2);         // 弹开
+      sock.classList.add('on');
+      await sleep(560);
+
+      await typeInto(note, NOTE);                   // 旁白先出
+      await sleep(280);
+
+      for (var i = 0; i < LINE.length; i++) {       // 正文一段一段流出来
+        var seg = LINE[i];
+        if (seg.t === 'slot') {
+          slotEl = document.createElement('button');
+          slotEl.type = 'button';
+          slotEl.className = 'slot pop';
+          slotEl.innerHTML = PLUG + '<span>选数据源</span>';
+          slotEl.addEventListener('click', openPicker);
+          ln.appendChild(slotEl);
+          await sleep(460);
+        } else {
+          var s = document.createElement('span');
+          if (seg.t === 'val') s.className = 'val';
+          ln.appendChild(s);
+          await typeInto(s, seg.s);
+        }
+      }
+      await sleep(300);
+      foot.classList.add('on');                     // 上游最后落
+      await sleep(260);
+      document.getElementById('c2mark').innerHTML = '<span class="dot-c"></span>';
+      var evi = document.getElementById('c2evi');
+      evi.className = 'mini-evi pending';
+      evi.textContent = '待定 1 项';                 // 状态,不是对用户说的话
+    }
+
+    document.getElementById('c2').addEventListener('click', function () {
+      if (this.classList.contains('open')) return;
+      this.classList.add('open');
+      openTo(this);
+    });
+
+    picker.addEventListener('click', function (e) {
+      if (e.target === picker) return closePicker();
+      var row = e.target.closest('.src-row');
+      if (row) return fill(row.dataset.v, row.dataset.n);
+      if (e.target.closest('#drop')) return fill('刚上传的文件', '3 份 PDF');
+      if (e.target.closest('#newconn')) return closePicker();
+      if (e.target.closest('#pclose')) return closePicker();
+    });
+    addEventListener('keydown', function (e) { if (e.key === 'Escape') closePicker(); });
+
+    function fit() {
+      world.style.setProperty('--k', Math.min(1, (stage.clientWidth - 40) / 800));
+    }
+    fit();
+    addEventListener('resize', fit);
+
+    document.getElementById('replay').addEventListener('click', run);
+    run();
+  })();
+</script>

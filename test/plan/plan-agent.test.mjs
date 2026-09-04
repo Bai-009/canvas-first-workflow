@@ -43,6 +43,28 @@ test("模型只说话不提交,循环原样收下,不算失败", async () => {
   assert.equal(fake.calls.length, 1);
 });
 
+/* 真模型实录:Kimi K3 有时候不走工具,把整份方案当正文写出来,
+   开头是一段 <invoke name="propose_plan">。那一轮方案没交上来,
+   而正文是给机器看的一坨——不能当成「它只想说句话」原样收下。 */
+test("方案写在正文里没走工具:当成没交,让它重来,XML 不进给人看的那段话", async () => {
+  const inText = {
+    role: "assistant",
+    content: '按整份 PDF 探测有无文字层。\n\n<invoke name="propose_plan">{"readiness":"partial"}</invoke>',
+  };
+  const fake = fakeModel([inText, replyWithPlan(goodPlan, "")]);
+  const result = await runPlanAgent({
+    callModel: fake.callModel,
+    messages: [{ role: "user", content: "把合同 PDF 转成向量" }],
+  });
+  assert.deepEqual(result.plan, goodPlan);
+  assert.equal(fake.calls.length, 2);
+  assert.equal(result.speech, "按整份 PDF 探测有无文字层。");
+  assert.doesNotMatch(result.speech, /invoke/);
+  /* calls 存的是同一个数组的引用,后面还会被追加,所以往回找最后一条 user。 */
+  const nudge = [...fake.calls[1]].reverse().find((m) => m.role === "user");
+  assert.match(nudge.content, /没有经过 propose_plan/);
+});
+
 test("坏方案被闸门打回,错误发回模型,重交好的就收下", async () => {
   const badPlan = { ...goodPlan, extra: "schema 里没有的字段" };
   const fake = fakeModel([replyWithPlan(badPlan), replyWithPlan(goodPlan, "改好了。")]);

@@ -12,6 +12,8 @@
 
 一条工作流在你眼前长出来，你随手就能改它。
 
+用户不看 Agent 的对话文字，只看画布，也能感受到自己的自然语言正在被系统持续理解，并逐步变成一条真实工作流。
+
 契约、Gate、状态机、乐观并发，所有这些都是为这件事服务的，不是它本身。
 
 ## 架构一句话
@@ -20,7 +22,7 @@
 
 ![架构总览：浏览器、工作流生成系统、外部三块；实线框做了，虚线框是设计稿](docs/assets/architecture.png)
 
-四个角色里，做出来并在真模型上验证过的是 Plan Agent 和它的 Gate；状态机也做出来了，测试守着，命令行里按得到。Execution Agent 还没有，状态机上给它留的是一个插口。
+四个角色都做出来了：Plan Agent 和它的 Gate 在真模型上验过；状态机测试守着；Execution Agent 插在状态机上，在真模型上走完过一整条链；画布接上了——在界面上打一句话，方案出来，按开始，卡一张张长出来。
 
 Plan Agent 这一段是这么切的：
 
@@ -42,16 +44,17 @@ Plan Agent 这一段是这么切的：
 | Plan 契约 `contracts/plan-proposal.schema.json` | 有 |
 | Plan Gate `src/plan/validate-plan-proposal.mjs` | 有，测试守着 |
 | Plan Agent 系统提示词 `prompts/plan-agent.md` | 有，中文原文加英文译本 |
-| 提交工具与调用循环 `src/plan/plan-agent.mjs` | 有。任何 OpenAI 兼容接口都能接，目前只在 DeepSeek 上跑过 |
+| 提交工具与调用循环 `src/plan/plan-agent.mjs` | 有。任何 OpenAI 兼容接口都能接，DeepSeek V4 和 Kimi K3 上都跑过。**一个已知的错位**：Kimi 这个接口原生是 Anthropic 形状的，我们走它的 OpenAI 兼容层，模型偶尔把工具调用当正文写出来，翻译层没东西可翻。两处都就地认出来让它重来了，根因和取舍记在 `docs/观察.md` |
 | Plan 阶段的多轮会话 `src/plan/plan-session.mjs` | 有。攒对话记录，方案只在过闸时换，回合制，能停 |
 | 真模型验证 | 有。deepseek-v4-pro 上跑过三个场景、三次修订轮，原始输出和完整对话记录在 `fixtures/observed/`，行为记录在 `docs/观察.md` |
 | 画布原型 `prototype/` | 有。Plan 阶段的内容是真实模型输出，执行阶段是手写的愿景演示 |
-| 状态机 `src/state-machine/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
-| 画布侧 Gate | 一半。机器能查的几条在状态机里（节点标的是哪一步、编号不撞、线接在存在的节点上、走完整张画布查形状）；节点类型对平台目录的检查要等执行者带着目录来 |
-| 平台目录与检索工具 `src/executor/n8n-catalog.mjs` | 有。从 n8n 官方镜像导出全部 559 种节点的参数说明（`fixtures/n8n/catalog.json`，脚本可重新导出）。给模型的不是整份目录，是三层披露：常驻十来行、搜索回候选、点名才给参数，分操作的节点先给操作菜单 |
-| Execution Agent 与它的输出契约 | 一半。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、三个工具的说明、交回形状的契约（`contracts/step-submission.schema.json`）、让模型来回查看交的循环（`src/executor/executor.mjs`）都有了，在真模型上单独跑过一步（`fixtures/observed/run10-执行者-s1/`）。还没接进状态机，怎么定的和还差什么见 `docs/执行者.md`。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点类型明写「固定答复(不是真节点)」，只为看状态机怎么动 |
+| 状态机 `src/state-machine/workflow-session.mjs` | 有。开始、停、批注、走步、画布、每次走步的记录；互不依赖的步同一波一起做；执行者是插口，`npm run plan:chat` 里 `/start` 按得到 |
+| 画布侧 Gate | 两道有了：信封（节点标的是哪一步、名字不撞、线接在存在的节点上、走完整张画布查形状）和对得上节点表（类型在表里、格子存在、要填的填了或留空、挑一个的值在能挑的里、多出口的线写了出口）。第三道「能渲染」画得出来了，还没当成闸门 |
+| 画布 `web/` + `src/web/server.mjs` | 有。`npm run web`：输入框说一句、按开始、卡照节点表画出来、走一步长一张。卡的名字、颜色、格子、进出全从节点表来，前端不认得任何一种具体节点。卡一张一张出场，线先走到位卡再落下；点开是镜头先过去、别的卡退到背景、这一张再撑开；还没走到的那几步是一条淡出去的轨道。跑停了，断口就是画布上的一张卡——哪一步、为什么、重走；这时候输入框接的是那一步的执行者，说的话挂成批注，发出去就从那一步重走。每一步的实录默认写 `.runs/` |
+| 我们自己的节点表 `nodes/` | 有，十一张收口：定时触发、读文件、解析文档、OCR、切块、向量化、写向量库、LLM、写数据库、条件分岔、写代码。契约 `contracts/node-definition.schema.json`，读表就校。执行者换到这张表上了：整张表常驻在提示词里，没有搜、没有查，只有交；闸门第二道按表查交回的格子 |
+| Execution Agent 与它的输出契约 | 有。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、一个工具（交）、交回形状的契约（`contracts/step-submission.schema.json`）、让模型交、被退、再交的循环（`src/executor/executor.mjs`）；插进状态机，在真模型上走完过一整条链（`fixtures/observed/run11-执行者走完整条链/`），批注后重走碰到目录里没有的能力时停在那一步（`run12-批注重走/`）。怎么定的和还差什么见 `docs/执行者.md`。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点名明写「固定答复」，类型是写代码，正文一行注释，只为看状态机怎么动 |
 
-所以现在这个仓库是：**设计者这一半做出来了，在真模型上验过；状态机做出来了，测试守着；执行者本身还没有，画布上那段生长在原型里是演的，在命令行里是固定答复走出来的。**
+所以现在这个仓库是：**设计者和执行者都做出来了，在真模型上走完过一整条链；状态机做出来了，测试守着；画布接上了——一句话进去，卡一张张长出来，中途停了能看见为什么、也能接着走。`prototype/` 那个演出版留着，它演的是节奏，不是数据。**
 
 ## 原型里哪些是真的
 
@@ -59,7 +62,7 @@ Plan Agent 这一段是这么切的：
 
 - 打字之后到「开始生成」之前，卡片上的每一个字都是真的。它们来自 deepseek-v4-pro 提交、Gate 放行的两份方案（`fixtures/observed/run4-*`），由 `src/prototype/build-demo-data.mjs` 生成成 `prototype/plan-data.js`。哪些问题被答掉、哪一步原地改，是拿两份方案的编号差异算出来的，不是手标的。
 - 「开始生成」之后长出来的六个节点，是手写的愿景演示。节点里的存储路径、字段清单、代码、定时时间都是编的。Execution Agent 还不存在，画布并没有读那份方案。
-- 现场出图只能在命令行。画布和命令行之间目前没有连线。
+- 现场出图有两处：`npm run web` 是真的，数据是当场跑出来的；`prototype/` 是演的，节奏做得细，数据是录下来的。
 
 ## 跑一下
 
@@ -87,13 +90,19 @@ npm run plan -- "每天定时把新增的合同 PDF 解析出关键字段，写�
 npm run plan:chat -- --save fixtures/observed/我的一次运行
 ```
 
-同一个命令行里有三个按钮：`/start` 按开始，状态机从 s1 起一步一步交给执行者；`/note s1 文字` 在 s1 上批注，下次 `/start` 执行者会看到；`/canvas` 看画布。执行者用 `EXECUTOR_MODULE=路径` 插进来（默认导出一个 async 函数）；没插的时候 `/start` 会明说做不了。想看状态机怎么动，插测试用的固定答复：
+同一个命令行里有三个按钮：`/start` 按开始，状态机按方案里的顺序一步一步交给执行者；`/note r1 文字` 在 r1 上批注（编号以方案里印的为准），下次 `/start` 执行者会看到；`/canvas` 看画布。执行者用 `EXECUTOR_MODULE=路径` 插进来（默认导出一个 async 函数）；没插的时候 `/start` 会明说做不了。插真的执行者：
+
+```bash
+EXECUTOR_MODULE=src/executor/executor.mjs npm run plan:chat -- --save fixtures/observed/我的一次运行
+```
+
+走步时它交了什么、被退了什么一行行印出来；每一步它自己的对话记录存在 `--save` 目录的 `executor/` 下。`fixtures/observed/run11-执行者走完整条链/` 是这么跑出来的。只想看状态机怎么动，插测试用的固定答复：
 
 ```bash
 EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs npm run plan:chat
 ```
 
-它交回的节点类型明写「固定答复(不是真节点)」，不是执行者。`fixtures/observed/run9-状态机走步-固定答复/` 是这么跑出来的一份记录：真模型出的方案，固定答复走的步。
+它交回的节点名明写「固定答复」，不是执行者。`fixtures/observed/run9-状态机走步-固定答复/` 是这么跑出来的一份记录：真模型出的方案，固定答复走的步。
 
 校验一份方案文件：
 
@@ -114,28 +123,31 @@ node src/prototype/build-demo-data.mjs
 1. [docs/取舍.md](docs/取舍.md)：每一条契约决定是被什么麻烦逼出来的，放弃了哪条路。
 2. [prompts/plan-agent.md](prompts/plan-agent.md) 和 [contracts/plan-proposal.schema.json](contracts/plan-proposal.schema.json)：设计者被要求做什么，交出来的东西长什么样。
 3. [docs/观察.md](docs/观察.md) 和 `fixtures/observed/`：真模型实际做了什么，哪些成立，哪些裁定不是问题。
-4. [docs/架构.md](docs/架构.md)：四个角色的完整设计，包括还没做的执行者和状态机。
+4. [docs/架构.md](docs/架构.md)：整条环的权威描述——五个角色、一步怎么来回、三道验证、分支循环并行、铁律、现在有什么没什么。
 5. [docs/执行者.md](docs/执行者.md)：执行者的提示词是怎么一条条推出来的，还没做的部分。
 5. `prototype/`：看一遍演示，再看 [prototype/修改本.md](prototype/修改本.md) 里每一处改动的为什么。
 
 ## 目录
 
 ```
-contracts/   契约。目前只有 PlanProposal
+contracts/   契约：PlanProposal、执行者交回一步的形状、节点定义
 prompts/     系统提示词：Plan Agent 中文原文与英文译本；执行者英文为主（中文副本待写）
+nodes/       我们自己的节点表，一个节点一个文件
 src/
   plan/          设计者这一半：Gate、提交工具定义、调用循环、方案差异、Plan 会话
   state-machine/ 状态机：从方案里读走步顺序与拼上下文、开始/停/批注/走步/画布/记录
-  executor/      执行者：平台目录的搜索与详情、交步的工具定义、一步的来回（还没接进状态机）
+  executor/      执行者：节点表怎么摆给模型看、交步的工具定义、一步的来回；默认导出就是插进状态机的插口
+  nodes/         读节点表，按契约校；闸门第二道，交回的节点对得上表
   model/         跟模型说话的插座，OpenAI 兼容，两半共用
-  cli/           多轮命令 plan:chat
+  cli/           多轮命令 plan:chat、单跑一步 executor:step、把执行者的动作印成人话
+  web/           画布这一头的服务：静态页、节点表、说一句、按开始、事件推给页面
   prototype/     给画布原型生成演示数据
 test/        按 src 的目录一一对应
-fixtures/    手写的设计样例；observed/ 里真模型的原始输出，一次运行一个文件夹；doubles/ 里测试用的固定答复执行者；n8n/ 里从官方镜像导出的节点目录
+fixtures/    手写的设计样例；observed/ 里真模型的原始输出，一次运行一个文件夹；doubles/ 里测试用的固定答复执行者
 docs/
   assets/      README 里的架构总览图，src/ 是它的网页源文件
   取舍.md      每一刀背后的麻烦与放弃的路
-  架构.md      四个角色、两段主链路、裁决点
+  架构.md      整条环的权威描述:角色、一步的来回、三道验证、铁律、现在有什么没什么
   状态机.md    回合制、账本、执行阶段的七条规则、代码做成了什么、待确认的洞
   执行者.md    提示词是怎么一条条推出来的、行家的写法、还没做的
   plan-契约.md PlanProposal 各字段为什么长这样
@@ -143,8 +155,9 @@ docs/
   词表.md      我们的说法和代码里、行业里说法的对照
   设计记录.md  建造过程的逐步记录，早期稿，以上面几份为准
   scenarios/   场景预演，早期稿
+web/         画布：卡照节点表画（card.mjs）、卡摆哪儿（layout.mjs）、镜头与长卡（canvas.mjs）
 prototype/   画布原型，修改本.md 记着每一处改动
-scripts/     render-figures.sh 出图；dump-n8n-nodes.sh 从 n8n 镜像导出节点说明，trim-n8n-nodes.mjs 精简成目录
+scripts/     render-figures.sh 出图
 AGENTS.md    人和 Agent 在这个仓库里怎么协作
 CLAUDE.md    Claude Code 每个会话先读的规矩，指向 AGENTS.md
 ```

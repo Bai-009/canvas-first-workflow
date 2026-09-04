@@ -1,0 +1,12 @@
+{
+  "type": "writeVectorStore",
+  "kind": "Vector Store",
+  "color": "#0891b2",
+  "summary": "把向量和原文写进用户的向量库。库是用户自己的:从已接入的连接里挑,再挑集合",
+  "slots": [
+    { "key": "connection", "label": "Connection", "kind": "credential", "empty": "选连接" },
+    { "key": "collection", "label": "Collection", "kind": "source", "empty": "选集合" }
+  ],
+  "input": "Vector",
+  "output": "Result"
+}

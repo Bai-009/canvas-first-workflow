@@ -1,5 +1,6 @@
+import { checkAgainstNodeTable } from "../nodes/check-nodes.mjs";
 import { createPlanSession } from "../plan/plan-session.mjs";
-import { stepOrder, assembleTable } from "./step-context.mjs";
+import { stepWaves, assembleTable } from "./step-context.mjs";
 
 /* 整条链的会话:Plan 那一半原样用 createPlanSession,这里往下长一段。
    手里多攥三样:画布、批注、跑过的记录。多三个动作:开始、批注、停。
@@ -7,7 +8,7 @@ import { stepOrder, assembleTable } from "./step-context.mjs";
 
    执行者是一个插口:async (context, { signal }) => 结果。context 就是拼好的上下文
    (整份方案、这一步、画布、这一步没答的问题、这一步的批注)。结果两种:
-     { kind: "patch", nodes: [{ id, step, type, params, blanks }], edges: [{ from, to }] }
+     { kind: "patch", nodes: [{ name, step, type, params, blanks, note }], edges: [{ from, to, output }] }
        —— 这一步的全部节点,整份重出;状态机换掉画布上这一步原有的节点
      { kind: "covered" } —— 画布上已经有了,不动
    结果好不好状态机不看;只查机器缺了转不动的那几条(见 checkResult),查不过就停在这一步。 */
@@ -44,7 +45,7 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
       return plan.say(text, options);
     },
 
-    /* 批注挂在步骤编号上,不挂在节点上:节点重建它还在。 */
+    /* 批注挂在步骤号上,不挂在节点上:节点重建它还在。 */
     annotate(step, text) {
       requireUserTurn("批注");
       const current = plan.currentPlan;
@@ -58,9 +59,11 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
       return structuredClone(annotations);
     },
 
-    /* 按开始:从 s1 起一步一步做。每一步拼一次上下文,喊一次执行者,收回的改动查过就进画布。
+    /* 按开始:按波次走。一波里的步互不依赖,同时交给执行者;一波走完才开下一波。
+       同一波里的步拿到的是这一波开始前的画布 —— 它们本来就互不依赖,看不见对方是对的。
+       收回的改动按波内先后一条一条查、一条一条进画布,顺序是定的。
        每次开始都从头走;没变的步执行者会说已经有了。 */
-    async start() {
+    async start({ onStep, onWave } = {}) {
       requireUserTurn("开始");
       const current = plan.currentPlan;
       if (!current) throw new Error("还没有方案,先在主输入框说一句");
@@ -69,45 +72,62 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
       controller = new AbortController();
       const { signal } = controller;
       const run = { revision: plan.revision, steps: [], endedBy: null, problems: [] };
+      /* 一步一个信号往外发,画布那头照着长。发不出去是画布的事,不能把这一趟带塌。 */
+      const record = (entry) => {
+        run.steps.push(entry);
+        try {
+          onStep?.(structuredClone({ step: entry, canvas }));
+        } catch {}
+      };
       try {
-        for (const ref of stepOrder(current)) {
-          const context = assembleTable(current, ref, { canvas, annotations });
-          let result;
-          try {
-            result = await executor(context, { signal });
-          } catch (error) {
-            if (signal.aborted || error?.name === "AbortError") {
-              run.steps.push({ ref, outcome: "stopped", canvasVersion: canvas.version });
-              run.endedBy = "stopped";
-            } else {
-              run.steps.push({ ref, outcome: "failed", canvasVersion: canvas.version, error: error.message });
-              run.endedBy = "error";
+        waves: for (const wave of stepWaves(current)) {
+          /* 开工前先喊一声这一波要做哪几步:画布上等着的人得知道当下在做什么。 */
+          try { onWave?.([...wave]); } catch {}
+          const settled = await Promise.all(
+            wave.map(async (ref) => {
+              const context = assembleTable(current, ref, { canvas, annotations });
+              try {
+                return { ref, result: await executor(context, { signal }) };
+              } catch (error) {
+                return { ref, error };
+              }
+            })
+          );
+          for (const { ref, result, error } of settled) {
+            if (error) {
+              if (signal.aborted || error?.name === "AbortError") {
+                record({ ref, outcome: "stopped", canvasVersion: canvas.version });
+                run.endedBy = "stopped";
+              } else {
+                record({ ref, outcome: "failed", canvasVersion: canvas.version, error: error.message });
+                run.endedBy = "error";
+              }
+              break waves;
             }
-            break;
+            /* 执行者不理会停止信号、停了以后还交回东西的,一样不收:停了画布就停在上次提交 */
+            if (signal.aborted) {
+              record({ ref, outcome: "stopped", canvasVersion: canvas.version });
+              run.endedBy = "stopped";
+              break waves;
+            }
+            const reasons = checkResult(result, current.steps.find((step) => step.ref === ref), canvas);
+            if (reasons.length) {
+              record({ ref, outcome: "rejected", canvasVersion: canvas.version, reasons });
+              run.endedBy = "rejected";
+              break waves;
+            }
+            if (result.kind === "covered") {
+              record({ ref, outcome: "covered", canvasVersion: canvas.version });
+              continue;
+            }
+            commit(canvas, ref, result);
+            record({
+              ref,
+              outcome: "done",
+              canvasVersion: canvas.version,
+              nodes: result.nodes.map((node) => node.name),
+            });
           }
-          /* 执行者不理会停止信号、停了以后还交回东西的,一样不收:停了画布就停在上次提交 */
-          if (signal.aborted) {
-            run.steps.push({ ref, outcome: "stopped", canvasVersion: canvas.version });
-            run.endedBy = "stopped";
-            break;
-          }
-          const reasons = checkResult(result, ref, canvas);
-          if (reasons.length) {
-            run.steps.push({ ref, outcome: "rejected", canvasVersion: canvas.version, reasons });
-            run.endedBy = "rejected";
-            break;
-          }
-          if (result.kind === "covered") {
-            run.steps.push({ ref, outcome: "covered", canvasVersion: canvas.version });
-            continue;
-          }
-          commit(canvas, ref, result);
-          run.steps.push({
-            ref,
-            outcome: "done",
-            canvasVersion: canvas.version,
-            nodes: result.nodes.map((node) => node.id),
-          });
         }
         if (!run.endedBy) {
           run.endedBy = "finished";
@@ -134,8 +154,13 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
 const isPlainObject = (value) =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/* 画布闸门里机器能查的那几条。节点类型在不在平台目录里、必填的格填没填,要等执行者那一段带着目录来。 */
-export function checkResult(result, ref, canvas) {
+/* 画布闸门:第一道是信封(形状对不对、名字撞不撞、线接没接上),第二道是对得上节点表(src/nodes/check-nodes.mjs)。
+   两道在同一个函数里,执行者交回时和状态机提交前走的是同一道。 */
+/* 闸门。收的是方案里那一步本身,不是它的编号:这一道要看「接在谁后面」,
+   而可选参数是会被忘的——执行者自己那一道就忘过,于是它查得比状态机松,
+   自己那关过了、到状态机才被退,而它已经没有机会改了。 */
+export function checkResult(result, step, canvas) {
+  const { ref, dependsOn = [] } = step;
   if (!isPlainObject(result)) return ["交回的不是一个对象"];
   if (result.kind === "covered") return [];
   if (result.kind !== "patch") return [`交回的 kind 是 ${JSON.stringify(result.kind)},只认 patch 和 covered`];
@@ -146,26 +171,26 @@ export function checkResult(result, ref, canvas) {
   if (!Array.isArray(edges)) return ["edges 不是数组"];
 
   const seen = new Set();
-  const others = new Map(canvas.nodes.filter((node) => node.step !== ref).map((node) => [node.id, node.step]));
+  const others = new Map(canvas.nodes.filter((node) => node.step !== ref).map((node) => [node.name, node.step]));
   nodes.forEach((node, index) => {
-    const label = node?.id ? `节点 ${node.id}` : `第 ${index + 1} 个节点`;
+    const label = node?.name ? `节点 ${node.name}` : `第 ${index + 1} 个节点`;
     if (!isPlainObject(node)) return reasons.push(`${label} 不是对象`);
-    if (typeof node.id !== "string" || !node.id) reasons.push(`${label} 缺 id`);
+    if (typeof node.name !== "string" || !node.name) reasons.push(`${label} 缺 name`);
     if (typeof node.type !== "string" || !node.type) reasons.push(`${label} 缺 type`);
     if (node.step !== ref) reasons.push(`${label} 标的是 ${JSON.stringify(node.step)},这一轮做的是 ${ref}`);
     if (!isPlainObject(node.params)) reasons.push(`${label} 的 params 不是对象`);
     if (!Array.isArray(node.blanks) || node.blanks.some((blank) => typeof blank !== "string")) {
       reasons.push(`${label} 的 blanks 不是字符串数组`);
     }
-    if (typeof node.id === "string" && node.id) {
-      if (seen.has(node.id)) reasons.push(`节点编号 ${node.id} 重复`);
-      seen.add(node.id);
-      if (others.has(node.id)) reasons.push(`节点编号 ${node.id} 已被 ${others.get(node.id)} 用了`);
+    if (typeof node.name === "string" && node.name) {
+      if (seen.has(node.name)) reasons.push(`节点名 ${node.name} 重复`);
+      seen.add(node.name);
+      if (others.has(node.name)) reasons.push(`节点名 ${node.name} 已被 ${others.get(node.name)} 用了`);
     }
   });
   if (reasons.length) return reasons;
 
-  const mine = new Set(nodes.map((node) => node.id));
+  const mine = new Set(nodes.map((node) => node.name));
   const all = new Set([...others.keys(), ...mine]);
   for (const edge of edges) {
     if (!isPlainObject(edge) || typeof edge.from !== "string" || typeof edge.to !== "string") {
@@ -177,27 +202,58 @@ export function checkResult(result, ref, canvas) {
     if (!all.has(edge.from) || !all.has(edge.to)) reasons.push(`${label} 接了不存在的节点`);
     else if (!mine.has(edge.from) && !mine.has(edge.to)) reasons.push(`${label} 两头都不是 ${ref} 的节点`);
   }
-  return reasons;
+  if (reasons.length) return reasons;
+
+  /* 一步交回好几个节点,这几个节点得连成一片——彼此相连,或者都挂在同一个上游节点上。
+     连不成的话交回的不是一段流程,是几张并排的卡:下一步只有一个落点,接哪张都不对。
+     只交回一个节点的不查:它的进线可能是上游那一步的,出线由下游那一步声明。 */
+  if (nodes.length > 1) {
+    const near = new Map();
+    const link = (a, b) => { if (!near.has(a)) near.set(a, new Set()); near.get(a).add(b); };
+    for (const edge of edges) { link(edge.from, edge.to); link(edge.to, edge.from); }
+    const reached = new Set([nodes[0].name]);
+    const stack = [nodes[0].name];
+    while (stack.length) {
+      for (const next of near.get(stack.pop()) ?? []) if (!reached.has(next)) { reached.add(next); stack.push(next); }
+    }
+    const cut = nodes.map((node) => node.name).filter((name) => !reached.has(name));
+    if (cut.length) reasons.push(`这一步交回 ${nodes.length} 个节点,${cut.join("、")} 没跟其它几个连在一起,下一步只有一个落点`);
+  }
+  /* 这一步接在谁后面,方案里写着。接在别人后面就得真的接上去——
+     一条从上游节点进来的线。没有这条线,这一段和前面是两座孤岛,
+     画布连不成一条链,跑起来后面这半截拿不到任何输入。
+     方案里 dependsOn 为空的那一步(链路的头)不查:它本来就没有上游。
+     上游那几步一个节点都没出的时候也不查:接不到不存在的东西上。 */
+  const upstream = new Set(dependsOn);
+  if (upstream.size) {
+    const above = new Set(canvas.nodes.filter((node) => upstream.has(node.step)).map((node) => node.name));
+    if (above.size && !edges.some((edge) => above.has(edge.from) && mine.has(edge.to))) {
+      reasons.push(`${ref} 接在 ${[...upstream].join("、")} 后面,却没有一条线从那几步的节点接进来`);
+    }
+  }
+  if (reasons.length) return reasons;
+
+  return checkAgainstNodeTable(nodes, edges, canvas.nodes);
 }
 
 /* 换掉这一步原有的节点。线的归属:进这一步的线由这一步自己在改动里声明,所以老的进线全部去掉、
-   换成改动里的;出这一步的线是下游声明的,只要这头的节点编号还在(原地改),就留着;
-   编号没了的,碰到它的线一起去掉,下游那一步重走时会看见自己没接上。版本加一。 */
+   换成改动里的;出这一步的线是下游声明的,只要这头的节点名还在(原地改),就留着;
+   名字没了的,碰到它的线一起去掉,下游那一步重走时会看见自己没接上。版本加一。 */
 function commit(canvas, ref, patch) {
-  const oldIds = new Set(canvas.nodes.filter((node) => node.step === ref).map((node) => node.id));
+  const oldIds = new Set(canvas.nodes.filter((node) => node.step === ref).map((node) => node.name));
   const nodes = [
-    ...canvas.nodes.filter((node) => !oldIds.has(node.id)),
+    ...canvas.nodes.filter((node) => !oldIds.has(node.name)),
     ...patch.nodes.map((node) => structuredClone(node)),
   ];
-  const live = new Set(nodes.map((node) => node.id));
+  const live = new Set(nodes.map((node) => node.name));
   const kept = canvas.edges.filter(
     (edge) => !oldIds.has(edge.to) && live.has(edge.from) && live.has(edge.to)
   );
-  const declared = (patch.edges ?? []).map((edge) => ({ from: edge.from, to: edge.to }));
+  const declared = patch.edges ?? [];
   const seen = new Set();
   canvas.nodes = nodes;
   canvas.edges = [...kept, ...declared].filter((edge) => {
-    const key = `${edge.from}→${edge.to}`;
+    const key = `${edge.from}→${edge.to}#${edge.output ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -209,8 +265,8 @@ function commit(canvas, ref, patch) {
    接在谁后面的有没有一条线真的从那一步接过来。查出来的只记在这一轮的记录里,先不自动发回。 */
 export function wholeCanvasProblems(plan, canvas) {
   const problems = [];
-  const ids = new Set(canvas.nodes.map((node) => node.id));
-  const nodesOf = (ref) => canvas.nodes.filter((node) => node.step === ref).map((node) => node.id);
+  const ids = new Set(canvas.nodes.map((node) => node.name));
+  const nodesOf = (ref) => canvas.nodes.filter((node) => node.step === ref).map((node) => node.name);
   for (const step of plan.steps) {
     const mine = nodesOf(step.ref);
     if (mine.length === 0) {

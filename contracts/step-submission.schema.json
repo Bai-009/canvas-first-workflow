@@ -6,7 +6,10 @@
   "properties": {
     "kind": {
       "type": "string",
-      "enum": ["patch", "covered"],
+      "enum": [
+        "patch",
+        "covered"
+      ],
       "description": "patch: the full set of nodes and edges for this step. covered: the step's existing nodes on the canvas still hold; omit nodes and edges."
     },
     "nodes": {
@@ -20,19 +23,30 @@
           },
           "type": {
             "type": "string",
-            "description": "Node type exactly as returned by describe_node, e.g. n8n-nodes-base.postgres"
+            "description": "One of the node types in the node table, e.g. llm"
           },
           "params": {
             "type": "object",
-            "description": "Parameters keyed by the names describe_node returned. Set the operation parameter when the node has one. Reference upstream data with n8n expressions, e.g. ={{ $json.fileName }}. A blank is left empty here and named in blanks."
+            "description": "Slot values keyed by the slot keys in the node's row of the table. A slot left for the user is omitted here and named in blanks."
           },
           "blanks": {
             "type": "array",
-            "items": { "type": "string" },
-            "description": "Parameters left for the user to fill, plus required credential names (e.g. \"postgres\"). Empty when nothing is left open."
+            "items": {
+              "type": "string"
+            },
+            "description": "Slot keys left for the user to fill: folders, tables, connections, schemas. Empty when nothing is left open."
+          },
+          "note": {
+            "type": "string",
+            "description": "One sentence to the user, in the language the user wrote in: the one judgement the card does not show (why this node, why this value, or why a slot is blank). The card already shows the slot values; a note that repeats them tells the user nothing."
           }
         },
-        "required": ["name", "type", "params", "blanks"],
+        "required": [
+          "name",
+          "type",
+          "params",
+          "blanks"
+        ],
         "additionalProperties": false
       }
     },
@@ -41,18 +55,29 @@
       "items": {
         "type": "object",
         "properties": {
-          "from": { "type": "string", "description": "Source node name" },
-          "to": { "type": "string", "description": "Target node name; at least one end is a node of this step" },
+          "from": {
+            "type": "string",
+            "description": "Source node name"
+          },
+          "to": {
+            "type": "string",
+            "description": "Target node name; at least one end is a node of this step"
+          },
           "output": {
             "type": "string",
-            "description": "Only when the source node has several outputs: If -> \"true\" or \"false\"; Loop Over Items -> \"done\" or \"loop\". Omit otherwise."
+            "description": "Only when the source node has several outputs (condition: \"true\" or \"false\"). Omit otherwise."
           }
         },
-        "required": ["from", "to"],
+        "required": [
+          "from",
+          "to"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["kind"],
+  "required": [
+    "kind"
+  ],
   "additionalProperties": false
 }

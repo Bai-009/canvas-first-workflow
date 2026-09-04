@@ -1,0 +1,14 @@
+{
+  "type": "writeDatabase",
+  "kind": "Database",
+  "color": "#334155",
+  "summary": "把每条记录写进用户的数据库表。库和表是用户自己的:从已接入的连接里挑,再挑表;字段默认按名字对上",
+  "slots": [
+    { "key": "connection", "label": "Connection", "kind": "credential", "empty": "选连接" },
+    { "key": "table", "label": "Table", "kind": "source", "empty": "选表" },
+    { "key": "mode", "label": "Mode", "kind": "pick", "options": ["Insert", "Upsert"], "default": "Insert" },
+    { "key": "mapping", "label": "Mapping", "kind": "pick", "options": ["按字段名", "手动"], "default": "按字段名" }
+  ],
+  "input": "JSON",
+  "output": "Result"
+}

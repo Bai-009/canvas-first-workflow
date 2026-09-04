@@ -1,0 +1,11 @@
+{
+  "type": "readFile",
+  "kind": "File",
+  "color": "#2563eb",
+  "summary": "从一个目录读文件,按 Pattern 挑(*.pdf、*.csv),每个文件出一条。链的起点常从这儿开始",
+  "slots": [
+    { "key": "folder", "label": "Folder", "kind": "source", "empty": "选目录" },
+    { "key": "pattern", "label": "Pattern", "kind": "text", "default": "*" }
+  ],
+  "output": "File"
+}

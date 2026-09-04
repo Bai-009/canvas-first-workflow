@@ -5,12 +5,16 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { callerFromEnv, loadSystemPrompt } from "../plan/plan-agent.mjs";
 import { createWorkflowSession } from "../state-machine/workflow-session.mjs";
+import { describe } from "./describe-event.mjs";
 
 /* 多轮命令:一行一轮。对话记录攒着,过了闸门的方案换成当前方案,
    正在跑的一轮可以 Ctrl-C 停掉(那轮作废,只留你那句)。
    斜杠开头的是按钮:/start 开始走步,/note s1 文字 批注,/canvas 看画布,/help。
    执行者是插口:EXECUTOR_MODULE=路径 插一个进来(默认导出一个 async 函数);没插的时候 /start 会明说。
-   --save <目录> 把每一轮的原始输出、完整对话记录、每次走步的记录和画布存下来,fixtures/observed/ 里的实录就这么来。
+   真执行者是 src/executor/executor.mjs;fixtures/doubles/fixed-executor.mjs 是测试用的固定答复。
+   走步时执行者交了什么、被退了什么一行行印出来,前面带步号。
+   --save <目录> 把每一轮的原始输出、完整对话记录、每次走步的记录和画布存下来,fixtures/observed/ 里的实录就这么来;
+   执行者每一步自己的对话记录存在 <目录>/executor/ 下(EXECUTOR_SAVE 没另设的话)。
    --lang en 用英文提示词。 */
 
 function parseArgs(argv) {
@@ -98,7 +102,8 @@ function renderCanvas(canvas) {
   const lines = [`画布 v${canvas.version} · ${canvas.nodes.length} 个节点 · ${canvas.edges.length} 条线`];
   for (const n of canvas.nodes) {
     const blanks = n.blanks.length ? ` · 留空:${n.blanks.join("、")}` : "";
-    lines.push(`  ${n.id}  [${n.step}] ${n.type}${blanks}`);
+    lines.push(`  ${n.name}  [${n.step}] ${n.type}${blanks}`);
+    if (n.note) lines.push(`      「${n.note}」`);
   }
   for (const e of canvas.edges) lines.push(`  ${e.from} → ${e.to}`);
   return lines.join("\n");
@@ -117,6 +122,8 @@ function saveRun(dir, session, run, index) {
   writeFileSync(join(dir, "canvas.json"), `${JSON.stringify(session.canvas, null, 2)}\n`);
   writeFileSync(join(dir, "annotations.json"), `${JSON.stringify(session.annotations, null, 2)}\n`);
 }
+
+const printEvent = (event, context) => console.log(`  [${context.step.ref} ${event.round}] ${describe(event)}`);
 
 async function loadExecutor(env = process.env) {
   if (!env.EXECUTOR_MODULE) return { executor: null, label: null };
@@ -149,7 +156,7 @@ async function* lines(rl) {
 const HELP = [
   "一行一轮,直接打字就是对 Plan Agent 说话。",
   "/start          按开始:从 s1 起一步一步交给执行者",
-  "/note s1 文字   在 s1 上批注,下次 /start 时执行者会看到",
+  "/note r1 文字   在 r1 上批注(编号以方案里印的为准),下次 /start 时执行者会看到",
   "/canvas         看画布现在的样子",
   "/help           这份说明",
   "正在跑的时候 Ctrl-C 停掉这一轮;没在跑的时候 Ctrl-C 退出。",
@@ -157,6 +164,7 @@ const HELP = [
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  if (args.save && !process.env.EXECUTOR_SAVE) process.env.EXECUTOR_SAVE = join(args.save, "executor");
   let callModel;
   let plug;
   try {
@@ -169,7 +177,7 @@ async function main() {
   }
   const session = createWorkflowSession({
     callModel,
-    executor: plug.executor,
+    executor: plug.executor && ((context, options) => plug.executor(context, { ...options, onEvent: printEvent })),
     systemPrompt: loadSystemPrompt(args.lang),
   });
   if (args.save) mkdirSync(args.save, { recursive: true });
@@ -195,7 +203,7 @@ async function main() {
   console.log(
     plug.label
       ? `执行者插的是:${plug.label}`
-      : "执行者的位置空着:/start 会明说做不了。要看状态机动,插一个进来:EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs(测试用的固定答复,不是真执行者)。"
+      : "执行者的位置空着:/start 会明说做不了。插真的:EXECUTOR_MODULE=src/executor/executor.mjs;只想看状态机怎么动:EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs(测试用的固定答复,不是真执行者)。"
   );
   let turnNumber = 0;
   let runNumber = 0;

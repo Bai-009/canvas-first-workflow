@@ -3,9 +3,10 @@
    以及每一步开工时摆在执行者桌上的五样。方案里其余的字(意图、形态、回读)状态机不解读,
    整份原样递给执行者。 */
 
-/* 走步顺序:一步的前序都走过了,它才能走。同时可走的按方案里的先后。
+/* 走步的波次:前序都走过了的,凑成一波,这一波里的步互不依赖,可以同时走。
+   一波走完才开下一波。同一波内按方案里的先后。
    接了一个不存在的编号、或者绕成了圈,方案闸门本该拦住;这里再守一道,免得走步死循环。 */
-export function stepOrder(plan) {
+export function stepWaves(plan) {
   const steps = plan.steps;
   const known = new Set(steps.map((step) => step.ref));
   for (const step of steps) {
@@ -14,20 +15,23 @@ export function stepOrder(plan) {
     }
   }
   const done = new Set();
-  const order = [];
-  while (order.length < steps.length) {
-    const next = steps.find(
+  const waves = [];
+  while (done.size < steps.length) {
+    const wave = steps.filter(
       (step) => !done.has(step.ref) && step.dependsOn.every((dep) => done.has(dep))
     );
-    if (!next) {
+    if (!wave.length) {
       const stuck = steps.filter((step) => !done.has(step.ref)).map((step) => step.ref);
       throw new Error(`这几步互相等着,走不下去:${stuck.join("、")}`);
     }
-    done.add(next.ref);
-    order.push(next.ref);
+    waves.push(wave.map((step) => step.ref));
+    for (const step of wave) done.add(step.ref);
   }
-  return order;
+  return waves;
 }
+
+/* 摊平的走步顺序。只有一条走法,波次是它的唯一来源。 */
+export const stepOrder = (plan) => stepWaves(plan).flat();
 
 /* 挂在某一步上的、还没答的问题。 */
 export function questionsFor(plan, stepRef) {
