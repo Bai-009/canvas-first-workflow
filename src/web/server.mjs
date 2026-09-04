@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { nodeTable } from "../nodes/node-table.mjs";
-import { createWorkflowSession } from "../state-machine/workflow-session.mjs";
+import { createWorkflowSession, breakOf } from "../state-machine/workflow-session.mjs";
 import { callerFromEnv, loadSystemPrompt } from "../plan/plan-agent.mjs";
 
 /* 画布这一头的服务。命令行有什么,这里就有什么:说一句、按开始、批注、看画布。
@@ -74,6 +74,15 @@ export async function createWebServer() {
   /* 新开一条:上一条正在跑的先叫停,它后面再交回来的东西不算数。 */
   let gen = 0;
 
+  /* 一轮对话,不管是人打的还是画布替人说的:先喊「在想」,边写边推,写完整份推出去。 */
+  const talk = async (run) => {
+    feed.send({ type: "thinking", who: "plan" });
+    const turn = await run({ onDraft: (draft) => feed.send({ type: "draft", task, chat, ...draft }) });
+    speech = turn.speech ?? "";
+    if (speech) chat = [...chat, { who: "agent", text: speech }];
+    feed.send({ type: "plan", task, chat, plan: turn.plan, diff: turn.diff, revision: turn.revision, speech });
+  };
+
   const routes = {
     "GET /api/node-table": (_req, res) => json(res, table),
     "GET /api/events": (_req, res) => feed.join(res),
@@ -89,15 +98,22 @@ export async function createWebServer() {
       if (!text?.trim()) return json(res, { error: "说了空话" }, 400);
       if (!task) task = text.trim();
       chat = [...chat, { who: "user", text: text.trim() }];
-      feed.send({ type: "thinking", who: "plan" });
       /* 边写边看:模型还在写的时候,把手上这半份推给页面。
          这一轮它的话还在写,所以草稿单独走 speech,不进 chat。 */
-      const turn = await session.say(text.trim(), {
-        onDraft: (draft) => feed.send({ type: "draft", task, chat, ...draft }),
-      });
-      speech = turn.speech ?? "";
-      if (speech) chat = [...chat, { who: "agent", text: speech }];
-      feed.send({ type: "plan", task, chat, plan: turn.plan, diff: turn.diff, revision: turn.revision, speech });
+      await talk((options) => session.say(text.trim(), options));
+      return json(res, { ok: true });
+    },
+    /* 断口交给设计者:话是状态机替人写的(停在哪儿、退了什么),先推给页面上墙,再走同一条对话的路。 */
+    "POST /api/escalate": async (_req, res) => {
+      if (!breakOf(session.runs.at(-1), session.currentPlan)) return json(res, { error: "没有停住的那一步" }, 400);
+      try {
+        await talk((options) => session.escalate({
+          ...options,
+          onSaid: (said) => { chat = [...chat, { who: "user", text: said }]; feed.send({ type: "said", text: said }); },
+        }));
+      } catch (error) {
+        return json(res, { error: error.message }, 400);
+      }
       return json(res, { ok: true });
     },
     /* 新开一条:上一条正在跑的先叫停,它后面再交回来的东西不算数。 */

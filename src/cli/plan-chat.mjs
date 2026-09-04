@@ -157,6 +157,7 @@ const HELP = [
   "一行一轮,直接打字就是对 Plan Agent 说话。",
   "/start          按开始:从 s1 起一步一步交给执行者",
   "/note r1 文字   在 r1 上批注(编号以方案里印的为准),下次 /start 时执行者会看到",
+  "/replan         把断口交给设计者:停在哪一步、闸门退了什么,原样说给它,让它出新方案",
   "/canvas         看画布现在的样子",
   "/help           这份说明",
   "正在跑的时候 Ctrl-C 停掉这一轮;没在跑的时候 Ctrl-C 退出。",
@@ -244,7 +245,8 @@ async function main() {
       if (args.save) saveRun(args.save, session, run, runNumber);
       continue;
     }
-    if (text.startsWith("/")) {
+    const handoff = text === "/replan";
+    if (text.startsWith("/") && !handoff) {
       console.log(`没有 ${text} 这个按钮。\n${HELP}`);
       continue;
     }
@@ -253,7 +255,7 @@ async function main() {
     output.write("…模型在推\n");
     let turn;
     try {
-      turn = await session.say(text);
+      turn = await (handoff ? session.escalate({ onSaid: (said) => output.write(`${said}\n`) }) : session.say(text));
     } catch (error) {
       if (error.name !== "AbortError") console.error(`这轮失败:${error.message}`);
       if (args.save) save(args.save, session, turnNumber, { speech: "", plan: null });

@@ -65,15 +65,25 @@ test("汇合:带着的合起来;单位不同就都留着,印的时候一起印",
   assert.equal(label(into), "Text · 按文件 / 按块");
 });
 
-test("写代码:出去的看它自己申报的;没申报就不知道,线上只印单位,不替它编", () => {
+test("写代码:出去的看它自己申报的;没申报就不知道它加了什么——线上印的是上游带下来的,并且标上不知道", () => {
   const canvas = { nodes: [node("读", "readFile"), node("算", "code", { code: "//" }), node("写", "writeDatabase")], edges: [edge("读", "算"), edge("算", "写")] };
   let f = flows(table, canvas);
   assert.equal(adds(table.find((d) => d.type === "code"), canvas.nodes[1]), null);
   assert.equal(label(at(f, canvas.edges[1])), "File · 按文件");
+  assert.equal(at(f, canvas.edges[1]).unknown, true);
+  assert.equal(at(f, canvas.edges[0]).unknown, undefined);
   canvas.nodes[1].params.outputKind = "JSON";
   f = flows(table, canvas);
   assert.equal(label(at(f, canvas.edges[1])), "JSON · 按文件");
   assert.deepEqual(at(f, canvas.edges[1]).carries, ["File", "JSON"]);
+  assert.equal(at(f, canvas.edges[1]).unknown, undefined);
+});
+
+test("不在表里的类型也是不知道,而且往下传", () => {
+  const canvas = { nodes: [node("老", "n8n-nodes-base.set"), node("识", "ocr")], edges: [edge("老", "识")] };
+  const f = flows(table, canvas);
+  assert.equal(at(f, canvas.edges[0]).unknown, true);
+  assert.equal(f.out.get("识").unknown, true);
 });
 
 test("有环也停得下来,接了不存在的节点的线不算", () => {

@@ -1,4 +1,4 @@
-import { checkAgainstNodeTable } from "../nodes/check-nodes.mjs";
+import { checkAgainstNodeTable, checkFlow } from "../nodes/check-nodes.mjs";
 import { createPlanSession } from "../plan/plan-session.mjs";
 import { stepWaves, assembleTable } from "./step-context.mjs";
 
@@ -140,6 +140,20 @@ export function createWorkflowSession({ callModel, executor = null, systemPrompt
       return structuredClone(run);
     },
 
+    /* 交给设计者。断口不是搭法的问题、是方案少了一步或者接错了地方的时候,人按一下,
+       停在哪儿、闸门退了什么,原样作为一句话交给设计者,让它出新方案。
+       架构里这条路叫「执行者说不的出口」,执行者自己还没有这个口;现在是人替它说,走同一条路。
+       onSaid 在话说出去之前喊一声:界面要把这句话先摆上墙,跟人自己打的一句一样。 */
+    async escalate({ onSaid, ...options } = {}) {
+      requireUserTurn("交给设计者");
+      const stop = breakOf(runs.at(-1), plan.currentPlan);
+      if (!stop) throw new Error("上一趟没停在哪一步,没什么可交给设计者的");
+      const text = handoffText(stop);
+      onSaid?.(text);
+      const turn = await plan.say(text, options);
+      return { ...turn, text };
+    },
+
     /* 停:谁在跑就停谁。返回停掉的是谁;没人在跑返回 false。 */
     stop() {
       if (controller) {
@@ -233,13 +247,16 @@ export function checkResult(result, step, canvas) {
   }
   if (reasons.length) return reasons;
 
-  return checkAgainstNodeTable(nodes, edges, canvas.nodes);
+  const table = checkAgainstNodeTable(nodes, edges, canvas.nodes);
+  if (table.length) return table;
+  /* 接得上要看这一步进去之后的画布——老节点换掉、新线接上——所以先照 commit 的规矩拼一份,不真提交。 */
+  return checkFlow(nodes, merged(canvas, ref, { nodes, edges }));
 }
 
 /* 换掉这一步原有的节点。线的归属:进这一步的线由这一步自己在改动里声明,所以老的进线全部去掉、
    换成改动里的;出这一步的线是下游声明的,只要这头的节点名还在(原地改),就留着;
    名字没了的,碰到它的线一起去掉,下游那一步重走时会看见自己没接上。版本加一。 */
-function commit(canvas, ref, patch) {
+function merged(canvas, ref, patch) {
   const oldIds = new Set(canvas.nodes.filter((node) => node.step === ref).map((node) => node.name));
   const nodes = [
     ...canvas.nodes.filter((node) => !oldIds.has(node.name)),
@@ -251,15 +268,36 @@ function commit(canvas, ref, patch) {
   );
   const declared = patch.edges ?? [];
   const seen = new Set();
-  canvas.nodes = nodes;
-  canvas.edges = [...kept, ...declared].filter((edge) => {
+  const edges = [...kept, ...declared].filter((edge) => {
     const key = `${edge.from}→${edge.to}#${edge.output ?? ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  return { nodes, edges };
+}
+
+function commit(canvas, ref, patch) {
+  const next = merged(canvas, ref, patch);
+  canvas.nodes = next.nodes;
+  canvas.edges = next.edges;
   canvas.version += 1;
 }
+
+/* 上一趟停在哪儿、为什么。跑完了、或者最后一步是做完/已经有了,就是没停。
+   原因是一条一条的:闸门退几条就是几条;出错是一条;按了停也是一条。 */
+export function breakOf(run, plan) {
+  if (!run || run.endedBy === "finished") return null;
+  const last = run.steps.at(-1);
+  if (!last || last.outcome === "done" || last.outcome === "covered") return null;
+  const reasons = last.reasons ?? (last.error ? [last.error] : last.outcome === "stopped" ? ["按了停"] : []);
+  return { ref: last.ref, title: plan?.steps.find((step) => step.ref === last.ref)?.title ?? last.ref, reasons };
+}
+
+/* 交给设计者时说的话:停在哪儿、闸门退了什么,原样。不替设计者下结论该怎么改——
+   它读到这些自己会问、会改;它看不见画布,这几行就是它眼前唯一的画布。 */
+export const handoffText = ({ ref, title, reasons }) =>
+  `「${title}」（${ref}）在画布上没搭成，闸门退回：\n${reasons.map((why) => `- ${why}`).join("\n")}`;
 
 /* 整轮走完,拿方案对着整张画布查一遍。查的是形状:每一步在画布上有没有节点,
    接在谁后面的有没有一条线真的从那一步接过来。查出来的只记在这一轮的记录里,先不自动发回。 */

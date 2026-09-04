@@ -86,11 +86,18 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   stopEl.hidden = true;
   stopEl.innerHTML =
     '<div class="stop-top"><i class="stop-mark"></i><h3 class="stop-name"></h3></div>' +
-    '<p class="stop-why"></p><button class="stop-again" type="button">重走</button>';
+    '<p class="stop-why"></p>' +
+    '<div class="stop-acts"><button class="stop-talk" type="button">改这一步</button>' +
+    '<button class="stop-plan" type="button">改方案</button><button class="stop-again" type="button">重走</button></div>';
   world.appendChild(stopEl);
   let onBreak = {};
-  stopEl.querySelector(".stop-again").addEventListener("click", (e) => { e.stopPropagation(); onBreak.rerun?.(); });
-  stopEl.addEventListener("click", () => onBreak.talk?.());
+  /* 收着的时候只有「重走」;点开看全了才给另外两个选择——改这一步、改方案。
+     点卡身是点开,不是别的:它是一张卡,按卡的规矩办。 */
+  const act = (sel, fn) => stopEl.querySelector(sel).addEventListener("click", (e) => { e.stopPropagation(); fn(); });
+  act(".stop-again", () => onBreak.rerun?.());
+  act(".stop-talk", () => onBreak.talk?.());
+  act(".stop-plan", () => { shutBreak(); onBreak.plan?.(); });
+  stopEl.addEventListener("click", (e) => { e.stopPropagation(); openBreak(); });
   let pending = null, closeTrack = false;
 
   /* 自己挪的镜头是有过渡的:一跳一跳的镜头看不出东西是从哪儿长出来的。
@@ -509,6 +516,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   async function toggle(name) {
     if (!shown.has(name)) return;
     if (opened === name) return void shut(true);
+    if (breakOpen) shutBreak(false);
     const p = last.placed.find((q) => q.node.name === name);
     const el = nodes.get(name);
     if (!p || !el) return;
@@ -527,7 +535,33 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     el.classList.add("open");
   }
 
+  /* 断口卡点开:跟点开一张卡是同一个手势——镜头带过去,别的退到背景,这一张撑开。
+     撑开之后原因不再截,三个选择都在。 */
+  let breakOpen = false;
+
+  function openBreak() {
+    if (breakOpen || !pending?.broken) return;
+    if (opened) shut(false);
+    if (!home) home = { tx, ty, scale, userMoved };
+    breakOpen = true;
+    stopEl.classList.add("open");
+    for (const e of nodes.values()) e.classList.add("dim");
+    const at = head();
+    const h = stopEl.offsetHeight, w = stopEl.offsetWidth;
+    aim({ x: at.x + w / 2 - TILE / 2, y: at.y - h / 2 }, h);
+  }
+
+  function shutBreak(back = true) {
+    if (!breakOpen) return false;
+    breakOpen = false;
+    stopEl.classList.remove("open");
+    if (!opened) for (const e of nodes.values()) e.classList.remove("dim");
+    if (back && home && !opened) { ({ tx, ty, scale, userMoved } = home); apply(); home = null; }
+    return true;
+  }
+
   function shut(back = true) {
+    if (breakOpen) return shutBreak(back);
     if (!opened) return false;
     const el = nodes.get(opened);
     ++turn;
@@ -582,7 +616,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
      谁在上头谁先收:选择器盖在展开的卡上,点画布的那一下只收选择器。 */
   addEventListener("click", (e) => {
     if (filling || e.target.closest(".picker")) return;
-    if (!e.target.closest(".node")) shut(true);
+    if (!e.target.closest(".node") && !e.target.closest(".stop")) shut(true);
   });
   addEventListener("keydown", (e) => { if (e.key === "Escape") shut(true); });
 
@@ -595,6 +629,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     waiting(info) {
       if (info === null && (playing || queue.length)) { closeTrack = true; return; }
       closeTrack = false;
+      if (!info?.broken) shutBreak(false);
       pending = info;
       draw(last.canvas);
     },

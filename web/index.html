@@ -54,19 +54,28 @@
   /* 停住的那一步:长在它本该出现的那一格上。是一张卡,但一眼看得出不是建好的卡——
      只有一圈描边,没有影子;哪一步、为什么、能做什么,都在同一个地方。 */
   .stop{position:absolute;width:300px;transform:translate(0,-50%);padding:14px 16px 13px;
-    border-radius:18px;background:var(--paper);box-shadow:0 0 0 1px var(--line);cursor:pointer}
+    border-radius:18px;background:var(--paper);box-shadow:0 0 0 1px var(--line);cursor:pointer;
+    transition:width 420ms var(--spring),padding 420ms var(--spring),border-radius 420ms var(--spring)}
+  /* 点开:跟一张卡撑开是同一个尺寸(540 / 22 / 18),原因不再截,三个选择都在。 */
+  .stop.open{width:540px;border-radius:22px;padding:18px;cursor:default;z-index:20;
+    box-shadow:0 22px 40px -18px rgba(20,26,38,.34),0 6px 14px -4px rgba(20,26,38,.10),0 0 0 1px var(--line)}
   .stop[hidden]{display:none}
   .stop-top{display:flex;align-items:center;gap:9px}
   .stop-mark{flex:0 0 auto;width:9px;height:9px;border-radius:50%;border:2px solid #c0c6d0}
   .stop-name{margin:0;font-size:14px;font-weight:550;line-height:20px;color:var(--ink)}
-  /* 理由再长也只给四行:出错的原文可能整段 JSON,全铺出来这张卡就成了一堵墙。
-     完整的在 .runs/ 里。 */
-  .stop-why{margin:8px 0 0;font-size:12.5px;line-height:19px;color:var(--ink-3);
+  /* 原因一条一行。收着的时候只给四行,点开看全——卡就是这么用的。 */
+  .stop-why{margin:8px 0 0;font-size:12.5px;line-height:19px;color:var(--ink-3);white-space:pre-line;
     display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .stop.open .stop-why{display:block;-webkit-line-clamp:unset;overflow:visible;color:var(--ink-2)}
   .stop-why[hidden]{display:none}
-  .stop-again{margin-top:12px;border:0;border-radius:9px;padding:6px 13px;background:var(--accent);
-    color:#fff;font:inherit;font-size:12.5px;cursor:pointer;transition:background 160ms ease}
+  .stop-acts{display:flex;gap:8px;margin-top:12px}
+  .stop-acts button{border:0;border-radius:9px;padding:6px 13px;font:inherit;font-size:12.5px;cursor:pointer;
+    transition:background 160ms ease,color 160ms ease}
+  .stop-again{background:var(--accent);color:#fff}
   .stop-again:hover{background:#2458c7}
+  .stop-talk,.stop-plan{background:rgba(20,26,38,.05);color:var(--ink)}
+  .stop-talk:hover,.stop-plan:hover{background:rgba(20,26,38,.09)}
+  .stop:not(.open) .stop-talk,.stop:not(.open) .stop-plan{display:none}
   /* 一行字,一行到底:再长也不许在画布上摊开成一段文章。 */
   .track-label{position:absolute;transform-origin:50% 0;white-space:nowrap;max-width:320px;
     overflow:hidden;text-overflow:ellipsis;
@@ -222,7 +231,7 @@
   .plan-turn.me{align-self:flex-end;max-width:84%;padding:6px 12px;border-radius:13px;
     background:var(--surface);color:var(--ink);font-size:12.5px;line-height:19px}
   .plan-turn.me > span{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;
-    overflow:hidden}
+    overflow:hidden;white-space:pre-line}
   .plan-says{font-size:12.5px;line-height:19px;color:var(--ink-2)}
   .plan-says p{margin:0 0 9px}
   .plan-says p:last-child{margin-bottom:0}

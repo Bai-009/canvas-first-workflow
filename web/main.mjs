@@ -35,8 +35,9 @@ function stopAt(run) {
   if (!run || run.endedBy === "finished") return null;
   const last = run.steps.at(-1);
   if (!last || last.outcome === "done" || last.outcome === "covered") return null;
-  const why = last.reasons?.[0] ?? last.error ?? (last.outcome === "stopped" ? "按了停" : "");
-  return { ref: last.ref, why: named(why) };
+  /* 闸门退几条就是几条,一条一行。只给第一条的话,人按它改了、重走,撞第二条。 */
+  const whys = last.reasons ?? (last.error ? [last.error] : last.outcome === "stopped" ? ["按了停"] : []);
+  return { ref: last.ref, why: whys.map(named).join("\n") };
 }
 
 /* 手上有东西的时候才给「新建」:空画布上没什么可以重开的。 */
@@ -50,10 +51,14 @@ function showBreak() {
   view.waiting({ title: titleOf(broke.ref), note: broke.why, remaining: 0, broken: true });
 }
 
+/* 输入框对谁说,看中央开着什么:方案卡摊在中央就对方案说;方案卡收在角上、画布上有断口,
+   才对停住的那一步说。同一个框,收信人由位置定,不由一个看不见的状态定。 */
+const toStep = () => Boolean(broke) && card.isMini;
+
 /* 输入框的提示按阶段换:没方案时说要什么,有待确认时先答它,答完了就是改。 */
 function placeholder() {
   const el = $("input");
-  if (broke) el.placeholder = `告诉「${titleOf(broke.ref)}」该怎么改，发出去就从这一步重走`;
+  if (toStep()) el.placeholder = `告诉「${titleOf(broke.ref)}」该怎么改，发出去就从这一步重走`;
   else if (!plan) el.placeholder = "描述你要做的数据处理";
   else if (plan.openQuestions.length) el.placeholder = "回答上面待确认的问题";
   else el.placeholder = "还想改点什么";
@@ -78,9 +83,9 @@ async function send() {
   $("input").value = "";
   grow();
   refreshSend();
-  /* 停着的时候这句话不给 Plan Agent:挂到停住的那一步上,再从那一步重走。
+  /* 对着断口说的话不给 Plan Agent:挂到停住的那一步上,再从那一步重走。
      已经做完的几步会说「已经有了」,只有这一步重做。 */
-  if (broke) {
+  if (toStep()) {
     const at = broke.ref;
     const r = await post("/api/note", { step: at, text });
     if (r.error) return card.status(r.error);
@@ -124,15 +129,21 @@ card.onGo(async () => {
   await card.toMini("正在生成");
   view.fit();
 });
-card.onClose(async () => { await card.back(); view.fit(); });
+card.onClose(async () => { await card.back(); view.fit(); placeholder(); });
 /* 新建:这一条清掉,画布空出来,重新说一句。 */
 $("fresh").addEventListener("click", () => post("/api/reset"));
-/* 断口那张卡:按「重走」就接着走,点卡身就是要跟这一步说话,光标落到输入框。 */
-view.onBreak({ rerun, talk: () => $("input").focus() });
+/* 断口那张卡上的三个选择:改这一步(光标落到输入框,它已经写着「告诉『这一步』该怎么改」)、
+   改方案(交给设计者)、重走。 */
+view.onBreak({
+  rerun,
+  talk: () => $("input").focus(),
+  plan: async () => { const r = await post("/api/escalate"); if (r.error) card.status(r.error); },
+});
 $("plan").addEventListener("click", async () => {
   if (!card.isMini) return;
   await card.toCenter();
   view.fit();
+  placeholder();
 });
 /* 同一条规矩:方案卡摊在中央的时候,点它外面就收回右上角。
    两处不算「外面」——收得回去才收(「收起」亮着才有右上角那个位置可回,
@@ -143,14 +154,23 @@ addEventListener("click", async (e) => {
   if (e.target.closest(".bar") || $("plan").querySelector(".plan-close").hidden) return;
   await card.back();
   view.fit();
+  placeholder();
 });
 
 /* ?still 只看现在这一眼,不挂长连接——截图工具等不到一个不断线的页面。 */
 const still = new URLSearchParams(location.search).has("still");
 const feed = still ? {} : new EventSource("/api/events");
-feed.onmessage = (e) => {
+feed.onmessage = async (e) => {
   const event = JSON.parse(e.data);
   if (event.type === "reset") return location.reload();
+  /* 画布替人说的那句(断口交给设计者):跟人自己打的一句走一样的路——先上墙,再等回话。 */
+  if (event.type === "said") {
+    if (card.isMini) await card.toCenter();
+    started = true;
+    canReset();
+    placeholder();
+    return card.ask(event.text);
+  }
   if (event.type === "draft") return card.draft(event);
   if (event.type === "thinking") { busy = event.who; refreshSend(); }
   /* 这一波要做哪几步,写到画布上——等着的人得知道当下在做什么。 */

@@ -28,22 +28,28 @@ const EMPTY = { head: null, carries: [], per: null };
 const uniq = (list) => [...new Set(list.flat().filter((x) => x !== null && x !== undefined))];
 const one = (list) => (list.length === 0 ? null : list.length === 1 ? list[0] : list);
 
-/* 几路汇进同一个节点:带着的东西合起来;单位不同就都留着,印的时候一起印,不挑一个。 */
+/* 几路汇进同一个节点:带着的东西合起来;单位不同就都留着,印的时候一起印,不挑一个。
+   有一路不知道,合起来就不知道。 */
 export function join(list) {
   if (!list.length) return EMPTY;
   return {
     head: one(uniq(list.map((f) => f.head))),
     carries: uniq(list.map((f) => f.carries)),
     per: one(uniq(list.map((f) => f.per))),
+    ...(list.some((f) => f.unknown) ? { unknown: true } : {}),
   };
 }
 
+/* 不知道加了什么的两种:不在表里的类型,和没申报出口的写代码卡。上游有一个不知道,
+   下游就都不知道——闸门只拦能确定为假的,不知道不拦。 */
 function through(def, node, into) {
   const a = adds(def, node);
+  const blind = !def || (typeof def.output?.adds === "string" && def.output.adds.startsWith("slot:") && a === null);
   return {
     head: a ?? into.head,
     carries: a && !into.carries.includes(a) ? [...into.carries, a] : into.carries,
     per: def?.output?.per === "same" || !def?.output?.per ? into.per : def.output.per,
+    ...(into.unknown || blind ? { unknown: true } : {}),
   };
 }
 
