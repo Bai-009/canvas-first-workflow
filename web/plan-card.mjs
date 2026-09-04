@@ -32,15 +32,19 @@ export function createPlanCard({ card, stage, onStart }) {
      一轮说完,该读的是理解和路线,卡片回到顶上。 */
   const followChat = () => { if (!mini) $(".plan-body").scrollTop = $(".plan-body").scrollHeight; };
   const turnHtml = (t) => (t.who === "user"
-    ? `<div class="plan-turn me">${esc(t.text)}</div>`
+    ? `<div class="plan-turn me"><span>${esc(t.text)}</span></div>`
     : `<div class="plan-turn plan-says">${rich(t.text)}</div>`);
 
-  /* 整条重画。新的那条在最底下,所以画完滚到底。 */
+  /* 第一句自己说的话不进线程:它已经写在上面的「需求」栏里了。
+     同一段话在同一张卡上出现两次,读的人要比对一遍才知道是同一句。 */
+  const inThread = () => (thread[0]?.who === "user" ? thread.slice(1) : thread);
+
+  /* 整条重画。滚到底那件事归 followChat 管:滚的是整张卡的正文,线程自己不滚。 */
   function paintChat() {
     const box = chatBox();
-    box.innerHTML = thread.map(turnHtml).join("");
-    $(".sec-chat").hidden = thread.length === 0;
-    box.scrollTop = box.scrollHeight;
+    const turns = inThread();
+    box.innerHTML = turns.map(turnHtml).join("");
+    $(".sec-chat").hidden = turns.length === 0;
   }
 
   /* 正在写的那一条单独更新,前面说过的话不跟着重画。 */
@@ -54,7 +58,6 @@ export function createPlanCard({ card, stage, onStart }) {
     }
     el.innerHTML = rich(text);
     $(".sec-chat").hidden = false;
-    box.scrollTop = box.scrollHeight;
     followChat();
   }
 
@@ -114,7 +117,7 @@ export function createPlanCard({ card, stage, onStart }) {
     }
     /* 对话摆在最后一块:紧挨着输入框。方案那几块的位置就固定住了,
        不会因为多聊了两句被顶到看不见的地方——待确认尤其不能被顶走。 */
-    if (thread.length) {
+    if (inThread().length) {
       paintChat();
       secs.push($(".sec-chat"));
     }
