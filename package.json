@@ -11,7 +11,7 @@
     "validate:fixture": "node dist/src/plan/validate-plan-proposal.mjs fixtures/contract-processing.plan.json",
     "executor:step": "node --env-file-if-exists=.env dist/src/cli/executor-step.mjs",
     "web": "node --env-file-if-exists=.env dist/src/web/server.mjs",
-    "build": "npm run contracts && tsc -p tsconfig.json && tsc -p tsconfig.classic.json && node .build-tools/build-assets.mjs",
+    "build": "node --experimental-strip-types scripts/clean-build.mts && npm run contracts && tsc -p tsconfig.json && tsc -p tsconfig.classic.json && node .build-tools/build-assets.mjs",
     "build:watch": "npm run build && node .build-tools/watch.mjs",
     "typecheck": "npm run build && tsc -p tsconfig.check.json",
     "pretest": "npm run build",
