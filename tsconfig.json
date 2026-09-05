@@ -29,7 +29,8 @@
     "web/*.mjs",
     "web/*.mts",
     "web/*.js",
-    "fixtures/doubles/*.mjs"
+    "fixtures/doubles/*.mjs",
+    "test/**/*.test.mts"
   ],
   "exclude": [
     "web/generated"

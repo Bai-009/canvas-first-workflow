@@ -1,9 +1,12 @@
+import type { AssistantMessage, ToolCall, ModelCaller, ModelSettings, ModelDelta } from "../../shared/model.mjs";
+import { assistantFromResponse, deltaFromResponse } from "./model-response.mjs";
+
 /* 通用插座:任何 OpenAI 兼容接口都能接(DeepSeek、Kimi、Ollama、vLLM……)。
    不引厂商 SDK,换模型只换地址、key、模型名。设计者和执行者共用这一个,各自带自己的工具进来。 */
-export function openAiCompatibleCaller({ baseUrl, apiKey, model, tools = [], reasoning }) {
+export function openAiCompatibleCaller({ baseUrl, apiKey, model, tools = [], reasoning }: ModelSettings & { baseUrl: string; apiKey: string; model: string }): ModelCaller {
   const endpoint = `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
   return async function callModel(messages, { signal, tools: toolsForThisCall = tools, onDelta } = {}) {
-    const body = { model, messages };
+    const body: Record<string, unknown> = { model, messages };
     /* 会推理的模型先想很久再动笔。想的那几十秒里外面看不到任何东西,
        所以要边写边看的地方把它关掉:关掉之后第一个字零点几秒就到。 */
     if (reasoning) body.reasoning_effort = reasoning;
@@ -16,7 +19,7 @@ export function openAiCompatibleCaller({ baseUrl, apiKey, model, tools = [], rea
     if (onDelta) body.stream = true;
     const response = await fetch(endpoint, {
       method: "POST",
-      signal,
+      ...(signal ? { signal } : {}),
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${apiKey}`,
@@ -27,8 +30,8 @@ export function openAiCompatibleCaller({ baseUrl, apiKey, model, tools = [], rea
       throw new Error(`模型接口返回 ${response.status}：${await response.text()}`);
     }
     if (!onDelta) {
-      const reply = await response.json();
-      return reply.choices[0].message;
+      const reply: unknown = await response.json();
+      return assistantFromResponse(reply);
     }
     return readStream(response, onDelta);
   };
@@ -36,9 +39,10 @@ export function openAiCompatibleCaller({ baseUrl, apiKey, model, tools = [], rea
 
 /* 流式:一行行读回来,拼成跟一次性返回一模一样的一条消息;
    拼的同时把每一小块交给 onDelta——正文是一块块的字,工具参数是一块块的 JSON 文本。 */
-async function readStream(response, onDelta) {
-  const message = { role: "assistant", content: "" };
-  const calls = [];
+async function readStream(response: Response, onDelta: (delta: ModelDelta) => void): Promise<AssistantMessage> {
+  if (!response.body) throw new Error("模型接口返回了空的响应流");
+  const message: AssistantMessage = { role: "assistant", content: "" };
+  const calls: ToolCall[] = [];
   const decoder = new TextDecoder();
   let buffer = "";
   for await (const chunk of response.body) {
@@ -50,12 +54,12 @@ async function readStream(response, onDelta) {
       if (!line.startsWith("data:")) continue;
       const payload = line.slice(5).trim();
       if (payload === "[DONE]") continue;
-      let piece;
+      let piece: unknown;
       try { piece = JSON.parse(payload); } catch { continue; }
-      const delta = piece.choices?.[0]?.delta;
+      const delta = deltaFromResponse(piece);
       if (!delta) continue;
       if (delta.content) {
-        message.content += delta.content;
+        message.content = (message.content ?? "") + delta.content;
         onDelta({ kind: "text", text: delta.content });
       }
       /* 会推理的模型先想很久再动笔。想的过程它一直在往外吐,不接住,
@@ -63,12 +67,12 @@ async function readStream(response, onDelta) {
       if (delta.reasoning_content) onDelta({ kind: "reason", text: delta.reasoning_content });
       for (const call of delta.tool_calls ?? []) {
         const i = call.index ?? 0;
-        calls[i] ??= { id: "", type: "function", function: { name: "", arguments: "" } };
-        if (call.id) calls[i].id = call.id;
-        if (call.function?.name) calls[i].function.name = call.function.name;
+        const assembled = calls[i] ??= { id: "", type: "function", function: { name: "", arguments: "" } };
+        if (call.id) assembled.id = call.id;
+        if (call.function?.name) assembled.function.name = call.function.name;
         const args = call.function?.arguments;
         if (args) {
-          calls[i].function.arguments += args;
+          assembled.function.arguments += args;
           onDelta({ kind: "args", index: i, text: args });
         }
       }
@@ -80,7 +84,7 @@ async function readStream(response, onDelta) {
 }
 
 /* 从 .env 组装调用器;三项缺一个就报错,不猜。 */
-export function callerFromEnv(env = process.env, { tools = [], reasoning } = {}) {
+export function callerFromEnv(env: NodeJS.ProcessEnv = process.env, { tools = [], reasoning }: ModelSettings = {}): ModelCaller {
   const { MODEL_BASE_URL, MODEL_API_KEY, MODEL_NAME } = env;
   if (!MODEL_BASE_URL || !MODEL_API_KEY || !MODEL_NAME) {
     throw new Error(

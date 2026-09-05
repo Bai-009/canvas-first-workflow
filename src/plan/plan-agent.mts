@@ -1,13 +1,27 @@
+import type { PlanProposal } from "../../shared/contracts.mjs";
+import type { ModelCaller, Message, ModelDelta } from "../../shared/model.mjs";
+import type { DraftPlan } from "./partial-plan.mjs";
+
+export interface PlanDraft { speech: string; plan: DraftPlan | null; phase: 'writing' | 'thinking' }
+export interface PlanAgentOptions {
+  callModel: ModelCaller;
+  messages: Message[];
+  systemPrompt?: string | undefined;
+  signal?: AbortSignal | undefined;
+  onDraft?: ((draft: PlanDraft) => void) | undefined;
+}
+export interface PlanAgentResult { speech: string; plan: PlanProposal | null; transcript: Message[] }
+
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { proposePlanTool } from "./propose-plan-tool.mjs";
 import { parsePartial, draftPlan } from "./partial-plan.mjs";
-import { validatePlanProposal } from "./validate-plan-proposal.mjs";
+import { inspectPlanProposal } from "./validate-plan-proposal.mjs";
 import { callerFromEnv as modelCallerFromEnv } from "../model/openai-compatible.mjs";
 
 /* 提示词两版:中文是原文,英文是按语境译的,分节一一对应。
    默认中文;PLAN_PROMPT_LANG=en 换英文版。 */
-const promptFiles = {
+const promptFiles: Record<string, URL> = {
   zh: new URL("../../prompts/plan-agent.md", import.meta.url),
   en: new URL("../../prompts/plan-agent.en.md", import.meta.url),
 };
@@ -28,16 +42,16 @@ const MAX_GATE_RETRIES = 3;
    这种一轮里方案没交上来,而正文又是一坨给机器看的东西:直接当成一次没交,
    让它重来。留着就是把 XML 摆到用户脸上,而且这一轮白跑。 */
 const FAKE_CALL = /<(?:invoke|function_calls|tool_call)\b[^>]*>|<invoke\b/i;
-const spokenOnly = (text) => (text ?? "").split(FAKE_CALL)[0].trim();
+const spokenOnly = (text: string | null | undefined) => ((text ?? "").split(FAKE_CALL)[0] ?? "").trim();
 
 /* 边写边看:模型一个字一个字往外吐的时候,把手上这半份交出去。
    说的话原样累加;方案是半截 JSON,退到最近能收口的地方读一遍。
    一秒最多刷十次——再密人眼也读不过来,只会闪。 */
-function draftReporter(spoken, onDraft) {
+function draftReporter(spoken: string[], onDraft: NonNullable<PlanAgentOptions["onDraft"]>) {
   let text = "";
   let args = "";
   let last = 0;
-  return (delta) => {
+  return (delta: ModelDelta) => {
     if (delta.kind === "text") text += delta.text;
     else if (delta.kind === "args") args += delta.text;
     const now = Date.now();
@@ -55,12 +69,12 @@ function draftReporter(spoken, onDraft) {
 /* 一轮设计:模型先说话,可能再提交一份方案。
    方案过闸门;没过就把错误原样发回去让它重交完整一份,重试有上限。
    模型不调工具就是只说话——信息不够先澄清,这个行为本身就是合法产出。 */
-export async function runPlanAgent({ callModel, messages, systemPrompt = defaultSystemPrompt, signal, onDraft }) {
-  const transcript = [{ role: "system", content: systemPrompt }, ...messages];
-  let lastErrors = [];
+export async function runPlanAgent({ callModel, messages, systemPrompt = defaultSystemPrompt, signal, onDraft }: PlanAgentOptions): Promise<PlanAgentResult> {
+  const transcript: Message[] = [{ role: "system", content: systemPrompt }, ...messages];
+  let lastErrors: string[] = [];
   /* 说给人听的话要攒着:闸门打回之后模型重交时通常不再说话,
      第一次说的那段不能因为重交而丢掉。 */
-  const spoken = [];
+  const spoken: string[] = [];
 
   for (let attempt = 0; attempt <= MAX_GATE_RETRIES; attempt++) {
     const reply = await callModel(transcript, { signal, onDelta: onDraft && draftReporter(spoken, onDraft) });
@@ -79,7 +93,7 @@ export async function runPlanAgent({ callModel, messages, systemPrompt = default
       continue;
     }
 
-    if (calls.length === 0) {
+    if (!calls[0]) {
       return { speech, plan: null, transcript: [...transcript, reply] };
     }
 
@@ -94,11 +108,10 @@ export async function runPlanAgent({ callModel, messages, systemPrompt = default
       });
     }
 
-    let gate;
-    let plan = null;
+    let gate: ReturnType<typeof inspectPlanProposal>;
     try {
-      plan = JSON.parse(first.function.arguments);
-      gate = validatePlanProposal(plan);
+      const parsed: unknown = JSON.parse(first.function.arguments);
+      gate = inspectPlanProposal(parsed);
     } catch {
       gate = { ok: false, errors: ["提交的内容不是合法的 JSON"] };
     }
@@ -109,7 +122,7 @@ export async function runPlanAgent({ callModel, messages, systemPrompt = default
         tool_call_id: first.id,
         content: "方案已通过校验并收下。",
       });
-      return { speech, plan, transcript };
+      return { speech, plan: gate.plan, transcript };
     }
 
     lastErrors = gate.errors;
@@ -148,7 +161,7 @@ async function runCli() {
   try {
     callModel = callerFromEnv();
   } catch (error) {
-    console.error(error.message);
+    console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 2;
     return;
   }
