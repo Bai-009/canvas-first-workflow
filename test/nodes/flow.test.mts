@@ -1,13 +1,15 @@
+import { present } from "../helpers/fixtures.mjs";
+import type { CanvasFlows, FlowEdge } from "../../shared/flow.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { nodeTable } from "../../dist/src/nodes/node-table.mjs";
-import { adds, edgeKey, flows, label } from "../../dist/web/flow.mjs";
+import { nodeTable } from "../../src/nodes/node-table.mjs";
+import { adds, edgeKey, flows, label } from "../../web/flow.mjs";
 
 const table = nodeTable();
-const node = (name, type, params = {}) => ({ name, step: "s", type, params, blanks: [] });
-const edge = (from, to, output) => (output ? { from, to, output } : { from, to });
-const at = (f, e) => f.edges.get(edgeKey(e));
+const node = (name: string, type: string, params: Record<string, unknown> = {}) => ({ name, step: "s", type, params, blanks: [] });
+const edge = (from: string, to: string, output?: string) => (output ? { from, to, output } : { from, to });
+const at = (f: CanvasFlows, e: FlowEdge | undefined) => present(f.edges.get(edgeKey(present(e))));
 
 test("一条直链:读文件 → OCR → LLM → 写库,每根线上流的是什么", () => {
   const canvas = {
@@ -59,7 +61,7 @@ test("汇合:带着的合起来;单位不同就都留着,印的时候一起印",
     edges: [edge("解", "合"), edge("切", "合"), edge("读", "解"), edge("解", "切")],
   };
   const f = flows(table, canvas);
-  const into = f.out.get("合");
+  const into = present(f.out.get("合"));
   assert.deepEqual(into.carries, ["File", "Text"]);
   assert.deepEqual(into.per, ["文件", "块"]);
   assert.equal(label(into), "Text · 按文件 / 按块");
@@ -72,7 +74,7 @@ test("写代码:出去的看它自己申报的;没申报就不知道它加了什
   assert.equal(label(at(f, canvas.edges[1])), "File · 按文件");
   assert.equal(at(f, canvas.edges[1]).unknown, true);
   assert.equal(at(f, canvas.edges[0]).unknown, undefined);
-  canvas.nodes[1].params.outputKind = "JSON";
+  present(canvas.nodes[1]).params.outputKind = "JSON";
   f = flows(table, canvas);
   assert.equal(label(at(f, canvas.edges[1])), "JSON · 按文件");
   assert.deepEqual(at(f, canvas.edges[1]).carries, ["File", "JSON"]);
@@ -83,7 +85,7 @@ test("不在表里的类型也是不知道,而且往下传", () => {
   const canvas = { nodes: [node("老", "n8n-nodes-base.set"), node("识", "ocr")], edges: [edge("老", "识")] };
   const f = flows(table, canvas);
   assert.equal(at(f, canvas.edges[0]).unknown, true);
-  assert.equal(f.out.get("识").unknown, true);
+  assert.equal(present(f.out.get("识")).unknown, true);
 });
 
 test("有环也停得下来,接了不存在的节点的线不算", () => {

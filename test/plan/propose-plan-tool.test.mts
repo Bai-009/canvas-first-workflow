@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { proposePlanTool } from "../../dist/src/plan/propose-plan-tool.mjs";
+import { readJson, record } from "../helpers/fixtures.mjs";
+import { proposePlanTool } from "../../src/plan/propose-plan-tool.mjs";
 
 const contractUrl = new URL("../../contracts/plan-proposal.schema.json", import.meta.url);
-const contract = JSON.parse(readFileSync(contractUrl, "utf8"));
+const contract = record(readJson(contractUrl));
 
 test("工具叫 propose_plan,带说明", () => {
   assert.equal(proposePlanTool.name, "propose_plan");
@@ -22,5 +22,5 @@ test("契约文件自己的元数据不进工具参数", () => {
   assert.ok(!("title" in proposePlanTool.parameters));
   /* 顶层 description 会被模型当成字段填回来(run5、run6 实录),所以也不进 */
   assert.ok(!("description" in proposePlanTool.parameters));
-  assert.ok("description" in proposePlanTool.parameters.properties.readiness);
+  assert.ok("description" in record(record(proposePlanTool.parameters.properties).readiness));
 });

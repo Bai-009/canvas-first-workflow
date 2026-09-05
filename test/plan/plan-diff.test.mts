@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { diffPlans } from "../../dist/src/plan/plan-diff.mjs";
+import { readPlan } from "../helpers/fixtures.mjs";
+import { diffPlans } from "../../src/plan/plan-diff.mjs";
 
-const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
+const read = (rel: string) => readPlan(new URL(rel, import.meta.url));
 const before = read("../../fixtures/observed/run4-修订轮/turn-1.plan.json");
 const after = read("../../fixtures/observed/run4-修订轮/turn-2.plan.json");
 

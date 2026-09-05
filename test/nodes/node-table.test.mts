@@ -1,10 +1,11 @@
+import { present } from "../helpers/fixtures.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checkNodeDefinition, findNodeDefinition, loadNodeTable } from "../../dist/src/nodes/node-table.mjs";
+import { checkNodeDefinition, findNodeDefinition, loadNodeTable } from "../../src/nodes/node-table.mjs";
 
 test("nodes/ 里每个文件都合契约,type 不重", () => {
   const table = loadNodeTable();
@@ -13,18 +14,18 @@ test("nodes/ 里每个文件都合契约,type 不重", () => {
 });
 
 test("LLM:卡类型 LLM;三格 Model 挑一个、Output Schema 上传、Prompt 正文;进出形态都写了", () => {
-  const llm = findNodeDefinition("llm");
+  const llm = present(findNodeDefinition("llm"));
   assert.equal(llm.kind, "LLM");
   assert.deepEqual(llm.slots.map((s) => s.label), ["Model", "Output Schema", "Prompt"]);
   assert.deepEqual(llm.slots.map((s) => s.kind), ["pick", "upload", "body"]);
-  assert.equal(llm.slots[0].default, "DeepSeek V4 Pro");
+  assert.equal(present(llm.slots[0]).default, "DeepSeek V4 Pro");
   assert.deepEqual(llm.input, { needs: "Text" });
   assert.deepEqual(llm.output, { adds: "JSON", per: "same" });
   assert.equal(findNodeDefinition("没有这种"), null);
 });
 
 test("读文件:卡类型 File;两格 Folder 接数据源、Pattern 真打字;是起点,没有 input", () => {
-  const node = findNodeDefinition("readFile");
+  const node = present(findNodeDefinition("readFile"));
   assert.equal(node.kind, "File");
   assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Folder", "source"], ["Pattern", "text"]]);
   assert.equal(node.input, undefined);
@@ -32,7 +33,7 @@ test("读文件:卡类型 File;两格 Folder 接数据源、Pattern 真打字;�
 });
 
 test("OCR:卡类型 OCR;只有 Engine 一格,凭证是平台的事;File 进 Text 出", () => {
-  const node = findNodeDefinition("ocr");
+  const node = present(findNodeDefinition("ocr"));
   assert.equal(node.kind, "OCR");
   assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Engine", "pick"]]);
   assert.deepEqual(node.input, { needs: "File" });
@@ -40,7 +41,7 @@ test("OCR:卡类型 OCR;只有 Engine 一格,凭证是平台的事;File 进 Text
 });
 
 test("解析文档:卡类型 Parser;没有格子;File 进 Text 出", () => {
-  const node = findNodeDefinition("parseDocument");
+  const node = present(findNodeDefinition("parseDocument"));
   assert.equal(node.kind, "Parser");
   assert.deepEqual(node.slots, []);
   assert.deepEqual(node.input, { needs: "File" });
@@ -48,7 +49,7 @@ test("解析文档:卡类型 Parser;没有格子;File 进 Text 出", () => {
 });
 
 test("切块:卡类型 Splitter;两格都是填个数,带默认值;Text 进,一块一条出", () => {
-  const node = findNodeDefinition("splitText");
+  const node = present(findNodeDefinition("splitText"));
   assert.equal(node.kind, "Splitter");
   assert.deepEqual(node.slots.map((s) => [s.label, s.kind, s.default]), [["Chunk Size", "number", 500], ["Overlap", "number", 50]]);
   assert.deepEqual(node.input, { needs: "Text" });
@@ -56,7 +57,7 @@ test("切块:卡类型 Splitter;两格都是填个数,带默认值;Text 进,一�
 });
 
 test("向量化:卡类型 Embedding;一格 Model 挑一个,印产品名;Text 进,Vector 带原文出", () => {
-  const node = findNodeDefinition("embedText");
+  const node = present(findNodeDefinition("embedText"));
   assert.equal(node.kind, "Embedding");
   assert.deepEqual(node.slots.map((s) => [s.label, s.kind, s.default]), [["Model", "pick", "BGE-M3"]]);
   assert.deepEqual(node.input, { needs: "Text" });
@@ -64,7 +65,7 @@ test("向量化:卡类型 Embedding;一格 Model 挑一个,印产品名;Text 进
 });
 
 test("写向量库:卡类型 Vector Store;Connection 接连接、Collection 接数据源,都是用户的;Vector 进,Result 出", () => {
-  const node = findNodeDefinition("writeVectorStore");
+  const node = present(findNodeDefinition("writeVectorStore"));
   assert.equal(node.kind, "Vector Store");
   assert.deepEqual(node.slots.map((s) => [s.label, s.kind, s.empty]), [["Connection", "credential", "选连接"], ["Collection", "source", "选集合"]]);
   assert.deepEqual(node.input, { needs: "Vector" });
@@ -72,7 +73,7 @@ test("写向量库:卡类型 Vector Store;Connection 接连接、Collection 接�
 });
 
 test("定时触发:卡类型 Trigger;一格 Schedule 真打字,带默认值;起点,没有 input;Event 出", () => {
-  const node = findNodeDefinition("schedule");
+  const node = present(findNodeDefinition("schedule"));
   assert.equal(node.kind, "Trigger");
   assert.deepEqual(node.slots.map((s) => [s.label, s.kind, s.default]), [["Schedule", "text", "每天 00:00"]]);
   assert.equal(node.input, undefined);
@@ -80,7 +81,7 @@ test("定时触发:卡类型 Trigger;一格 Schedule 真打字,带默认值;起�
 });
 
 test("写数据库:Connection、Table 是用户的,Mode、Mapping 挑一个带默认值;JSON 进,Result 出", () => {
-  const node = findNodeDefinition("writeDatabase");
+  const node = present(findNodeDefinition("writeDatabase"));
   assert.equal(node.kind, "Database");
   assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Connection", "credential"], ["Table", "source"], ["Mode", "pick"], ["Mapping", "pick"]]);
   assert.deepEqual(node.input, { needs: "JSON" });
@@ -88,7 +89,7 @@ test("写数据库:Connection、Table 是用户的,Mode、Mapping 挑一个带�
 });
 
 test("条件分岔:一格条件 AI 写;两个出口 true / false;数据原样带过去", () => {
-  const node = findNodeDefinition("condition");
+  const node = present(findNodeDefinition("condition"));
   assert.equal(node.kind, "Condition");
   assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Condition", "conditions"]]);
   assert.deepEqual(node.ports, ["true", "false"]);
@@ -97,12 +98,12 @@ test("条件分岔:一格条件 AI 写;两个出口 true / false;数据原样带
 });
 
 test("写代码:Language 挑一个,Code 正文 AI 写;什么都接;出去的看它自己申报的 Output Type", () => {
-  const node = findNodeDefinition("code");
+  const node = present(findNodeDefinition("code"));
   assert.equal(node.kind, "Code");
   assert.deepEqual(node.slots.map((s) => [s.label, s.kind]), [["Language", "pick"], ["Code", "body"], ["Output Type", "pick"]]);
   assert.deepEqual(node.input, { needs: null });
   assert.deepEqual(node.output, { adds: "slot:outputKind", per: "same" });
-  assert.equal(node.slots[2].required, false);
+  assert.equal(present(node.slots[2]).required, false);
 });
 
 test("节点表收口:十一张,每张都有卡类型", () => {
@@ -115,7 +116,7 @@ test("节点表收口:十一张,每张都有卡类型", () => {
 
 test("契约:格子只有八种;挑一个必须给 options;默认值得在 options 里;key 不许重;不许自己加字段", () => {
   const base = { type: "x", kind: "X", color: "#123456", summary: "s", slots: [], input: { needs: "Text" }, output: { adds: "Text", per: "same" } };
-  const slot = (extra) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });
+  const slot = (extra: Record<string, unknown>) => ({ ...base, slots: [{ key: "a", label: "A", ...extra }] });
   assert.deepEqual(checkNodeDefinition(base), []);
   assert.match(checkNodeDefinition(slot({ kind: "magic" })).join("\n"), /取值不在允许范围内/);
   assert.match(checkNodeDefinition(slot({ kind: "pick" })).join("\n"), /是挑一个,却没给 options/);
