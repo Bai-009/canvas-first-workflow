@@ -1,9 +1,9 @@
 /* 卡上的图标,按节点类型取。这是纯长相,不进节点表:
    加一个节点不给图标也能画(落到 fallback),给了更好看。 */
-const S = (inner) =>
+const S = (inner: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 
-export const ICONS = {
+export const ICONS: Readonly<Record<string, string>> = {
   schedule: S('<circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/>'),
   readFile: S('<path d="M4 7.5A1.5 1.5 0 0 1 5.5 6H10l2 2h6.5A1.5 1.5 0 0 1 20 9.5v8A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5z"/>'),
   parseDocument: S('<path d="M7 3.5h7l4 4V19a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5z"/><path d="M14 3.5V8h4M9 12h6M9 15.5h6"/>'),
@@ -19,4 +19,4 @@ export const ICONS = {
 
 export const PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 
-export const icon = (type) => ICONS[type] ?? S('<circle cx="12" cy="12" r="7.5"/>');
+export const icon = (type: string) => ICONS[type] ?? S('<circle cx="12" cy="12" r="7.5"/>');

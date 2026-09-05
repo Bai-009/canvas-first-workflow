@@ -1,3 +1,15 @@
+import type { Edge } from '../shared/contracts.mjs';
+export interface Point { x: number; y: number }
+export interface PlacedNode<N> extends Point { node: N }
+export interface Wire { d: string; x0: number; y0: number; x1: number; y1: number }
+type Rows = Map<string, number>;
+type Neighbors = Map<string, string[]>;
+// 这些表由本次布局的节点和占位统一建立；缺项代表布局内部不变量被破坏。
+function required<K, V>(map: ReadonlyMap<K, V>, key: K): V {
+  const value = map.get(key);
+  if (value === undefined) throw new Error(`布局缺少内部位置：${String(key)}`);
+  return value;
+}
 /* 卡放哪儿、线怎么走。画布上没有坐标,坐标是算出来的。
 
    一个节点的列 = 从起点走到它最长要几步,所以分岔的两路各占一列,
@@ -26,7 +38,7 @@ const LANE = TILE + GAP_Y;
    线才有流的样子,不是一根根横杠。幅度远小于分岔两路的间距,
    所以岔开的两路照样分得清。 */
 const AMP = 48;
-export const wave = (col) => Math.round(AMP * Math.sin(col * 0.9));
+export const wave = (col: number) => Math.round(AMP * Math.sin(col * 0.9));
 
 /* 一根线两头之间只有一条曲线,不切段。横着出、横着进,控制点取横距的 0.52。
    切了段,每个接缝上线都要先压平再拐,跨三列就压平三次、起拐三次,长线就成了
@@ -34,15 +46,15 @@ export const wave = (col) => Math.round(AMP * Math.sin(col * 0.9));
 
    画布上只有这一种线:已经建好的、等着的虚线、还没走到的那截轨道,全从这儿出。 */
 const SHOULDER = 0.52;
-const cub = (a, b, c, d, t) => { const u = 1 - t; return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d; };
+const cub = (a: number, b: number, c: number, d: number, t: number) => { const u = 1 - t; return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d; };
 
-export function path(a, b) {
+export function path(a: Point, b: Point) {
   const s = (b.x - a.x) * SHOULDER;
   return `M ${a.x} ${a.y} C ${a.x + s} ${a.y}, ${b.x - s} ${b.y}, ${b.x} ${b.y}`;
 }
 
 /* 这根线走到某个横坐标上有多高。x 一路向右,二分就够。 */
-export function heightAt(a, b, x) {
+export function heightAt(a: Point, b: Point, x: number) {
   const s = (b.x - a.x) * SHOULDER;
   let lo = 0, hi = 1;
   for (let i = 0; i < 26; i++) {
@@ -52,7 +64,7 @@ export function heightAt(a, b, x) {
   return cub(a.y, a.y, b.y, b.y, (lo + hi) / 2);
 }
 
-export function layout(nodes, edges) {
+export function layout<N extends { name: string }>(nodes: readonly N[], edges: readonly Edge[]) {
   const names = nodes.map((n) => n.name);
   const known = new Set(names);
   const live = edges.filter((e) => known.has(e.from) && known.has(e.to));
@@ -62,24 +74,24 @@ export function layout(nodes, edges) {
   for (let pass = 0; pass < names.length; pass++) {
     let moved = false;
     for (const e of live) {
-      const want = col.get(e.from) + 1;
-      if (want > col.get(e.to)) { col.set(e.to, want); moved = true; }
+      const want = required(col, e.from) + 1;
+      if (want > required(col, e.to)) { col.set(e.to, want); moved = true; }
     }
     if (!moved) break;
   }
 
-  const members = [];
-  const owner = new Map();                                  // 占位 → 它是哪根线的
-  const parents = new Map(names.map((n) => [n, []]));
-  const ups = new Map(), downs = new Map();
-  const join = (a, b) => {
-    (ups.get(b) ?? ups.set(b, []).get(b)).push(a);
-    (downs.get(a) ?? downs.set(a, []).get(a)).push(b);
+  const members: string[][] = [];
+  const owner = new Map<string, Edge>();                                  // 占位 → 它是哪根线的
+  const parents: Neighbors = new Map(names.map((n) => [n, []]));
+  const ups: Neighbors = new Map(), downs: Neighbors = new Map();
+  const join = (a: string, b: string) => {
+    const above = ups.get(b) ?? []; above.push(a); ups.set(b, above);
+    const below = downs.get(a) ?? []; below.push(b); downs.set(a, below);
   };
-  for (const n of names) (members[col.get(n)] ??= []).push(n);
+  for (const n of names) (members[required(col, n)] ??= []).push(n);
   for (const e of live) {
     let prev = e.from;
-    for (let c = col.get(e.from) + 1; c < col.get(e.to); c++) {
+    for (let c = required(col, e.from) + 1; c < required(col, e.to); c++) {
       const id = `${e.from}>${e.to}>${e.output ?? ""}@${c}`;
       (members[c] ??= []).push(id);
       owner.set(id, e);
@@ -89,23 +101,23 @@ export function layout(nodes, edges) {
     join(prev, e.to);
     /* 下游想待的高度看的是真正的上游那张卡,不是这根线路上的占位——占位是
        跟着线算出来的,让它当爹,这根线会顺着自己把自己一路往下拽。 */
-    parents.get(e.to).push(e.from);
+    required(parents, e.to).push(e.from);
   }
-  const colOf = (id) => (col.has(id) ? col.get(id) : Number(id.slice(id.lastIndexOf("@") + 1)));
-  const mean = (of, id, row) => {
+  const colOf = (id: string) => (col.has(id) ? required(col, id) : Number(id.slice(id.lastIndexOf("@") + 1)));
+  const mean = (of: Neighbors, id: string, row: Rows) => {
     const seen = (of.get(id) ?? []).filter((p) => row.has(p));
-    return seen.length ? seen.reduce((s, p) => s + row.get(p), 0) / seen.length : 0;
+    return seen.length ? seen.reduce((s, p) => s + required(row, p), 0) / seen.length : 0;
   };
 
   /* 这根线在这一列上真正经过的高度,换算成行。 */
-  const onLine = (id, row) => {
-    const e = owner.get(id), c = colOf(id);
-    const a = { x: col.get(e.from) * PITCH + TILE, y: row.get(e.from) * LANE + wave(col.get(e.from)) + TILE / 2 };
-    const b = { x: col.get(e.to) * PITCH, y: row.get(e.to) * LANE + wave(col.get(e.to)) + TILE / 2 };
+  const onLine = (id: string, row: Rows) => {
+    const e = required(owner, id), c = colOf(id);
+    const a = { x: required(col, e.from) * PITCH + TILE, y: required(row, e.from) * LANE + wave(required(col, e.from)) + TILE / 2 };
+    const b = { x: required(col, e.to) * PITCH, y: required(row, e.to) * LANE + wave(required(col, e.to)) + TILE / 2 };
     return (heightAt(a, b, c * PITCH + TILE / 2) - TILE / 2 - wave(c)) / LANE;
   };
-  const nearestFree = (at, held) => {
-    const free = (r) => held.every((h) => Math.abs(h - r) >= 1);
+  const nearestFree = (at: number, held: number[]) => {
+    const free = (r: number) => held.every((h) => Math.abs(h - r) >= 1);
     if (free(at)) return at;
     for (let d = 0.05; d <= 12; d += 0.05) {
       if (free(at - d)) return at - d;
@@ -116,8 +128,8 @@ export function layout(nodes, edges) {
 
   /* 一列一列往右排。第一遍还不知道线要从哪儿过,占位先跟着上游;
      之后每一遍,占位待在线真正经过的高度上,卡片往最近的空位让。 */
-  function pack(prev) {
-    const row = new Map();
+  function pack(prev: Rows | null) {
+    const row: Rows = new Map();
     for (const column of members) {
       if (!column) continue;
       const want = column.map((id) => {
@@ -131,7 +143,7 @@ export function layout(nodes, edges) {
         for (const { id, at } of want) { const r = Math.max(at, taken + 1); row.set(id, r); taken = r; }
         continue;
       }
-      const held = [];
+      const held: number[] = [];
       for (const w of want) if (w.line) { row.set(w.id, w.at); held.push(w.at); }
       for (const w of want) {
         if (w.line) continue;
@@ -144,15 +156,15 @@ export function layout(nodes, edges) {
 
   /* 一列里谁上谁下。只从左往右扫一遍,下游的高低管不到上游,线就要交叉。
      来回扫几遍:往右看上游的平均高度,往左看下游的平均高度。 */
-  function sweep(row, back) {
+  function sweep(row: Rows, back: boolean) {
     const out = new Map(row);
     const cols = members.map((_, i) => i).filter((i) => members[i]);
     for (const c of back ? cols.slice().reverse() : cols) {
-      const want = members[c].map((id) => {
+      const want = (members[c] ?? []).map((id) => {
         const near = ((back ? downs : ups).get(id) ?? []).filter((n) => out.has(n));
-        return { id, at: near.length ? near.reduce((s, n) => s + out.get(n), 0) / near.length : row.get(id) };
+        return { id, at: near.length ? near.reduce((s, n) => s + required(out, n), 0) / near.length : required(row, id) };
       });
-      want.sort((a, b) => a.at - b.at || row.get(a.id) - row.get(b.id));
+      want.sort((a, b) => a.at - b.at || required(row, a.id) - required(row, b.id));
       let taken = -Infinity;
       for (const { id, at } of want) { const r = Math.max(at, taken + 1); out.set(id, r); taken = r; }
     }
@@ -176,10 +188,10 @@ export function layout(nodes, edges) {
      上游,最后一列右边没有下游。所以拉平之后没人再动得了它们。 */
   const flat = members.length - 1;
   if (flat > 0) {
-    const yAt = (id) => row.get(id) * LANE + wave(colOf(id));
-    const avg = (ids) => ids.reduce((sum, id) => sum + yAt(id), 0) / ids.length;
-    const tilt = avg(members[flat]) - avg(members[0]);
-    if (tilt) for (const id of row.keys()) row.set(id, row.get(id) - (tilt * colOf(id)) / flat / LANE);
+    const yAt = (id: string) => required(row, id) * LANE + wave(colOf(id));
+    const avg = (ids: string[]) => ids.reduce((sum, id) => sum + yAt(id), 0) / ids.length;
+    const tilt = avg(members[flat] ?? []) - avg(members[0] ?? []);
+    if (tilt) for (const id of row.keys()) row.set(id, required(row, id) - (tilt * colOf(id)) / flat / LANE);
   }
 
   /* 收尾。前面几遍算占位,看的是线在那一列正中间有多高;可线是斜着过去的,
@@ -187,26 +199,26 @@ export function layout(nodes, edges) {
      这张卡的整个宽度时占住哪一段,那一段里有卡就把卡挪开。只挪被压的那张。 */
   const MARGIN = 10;
   for (let round = 0; round < 8; round++) {
-    const y = (n) => row.get(n) * LANE + wave(col.get(n));
+    const y = (n: string) => required(row, n) * LANE + wave(required(col, n));
     const bands = [];
     for (const e of live) {
-      const a = { x: col.get(e.from) * PITCH + TILE, y: y(e.from) + TILE / 2 };
-      const b = { x: col.get(e.to) * PITCH, y: y(e.to) + TILE / 2 };
-      for (let c = col.get(e.from) + 1; c < col.get(e.to); c++) {
+      const a = { x: required(col, e.from) * PITCH + TILE, y: y(e.from) + TILE / 2 };
+      const b = { x: required(col, e.to) * PITCH, y: y(e.to) + TILE / 2 };
+      for (let c = required(col, e.from) + 1; c < required(col, e.to); c++) {
         const l = heightAt(a, b, c * PITCH), r = heightAt(a, b, c * PITCH + TILE);
         bands.push({ c, lo: Math.min(l, r), hi: Math.max(l, r) });
       }
     }
     let moved = false;
     for (const n of names) {
-      const c = col.get(n);
+      const c = required(col, n);
       const over = bands.filter((b) => b.c === c);
-      const near = names.filter((m) => m !== n && col.get(m) === c).map(y);
-      const ok = (t) => over.every((b) => b.hi < t - MARGIN || b.lo > t + TILE + MARGIN)
+      const near = names.filter((m) => m !== n && required(col, m) === c).map(y);
+      const ok = (t: number) => over.every((b) => b.hi < t - MARGIN || b.lo > t + TILE + MARGIN)
         && near.every((o) => Math.abs(o - t) >= TILE + GAP_Y);
       const now = y(n);
       if (ok(now)) continue;
-      let go = null;
+      let go: number | null = null;
       for (let d = 6; d <= 1200 && go === null; d += 6) {
         if (ok(now - d)) go = now - d;
         else if (ok(now + d)) go = now + d;
@@ -218,15 +230,15 @@ export function layout(nodes, edges) {
     if (!moved) break;
   }
 
-  const top = (id) => row.get(id) * LANE + wave(colOf(id));
-  const placed = nodes.map((n) => ({ node: n, x: col.get(n.name) * PITCH, y: top(n.name) }));
+  const top = (id: string) => required(row, id) * LANE + wave(colOf(id));
+  const placed = nodes.map((n) => ({ node: n, x: required(col, n.name) * PITCH, y: top(n.name) }));
   const lift = Math.min(...placed.map((p) => p.y));
   for (const p of placed) p.y -= lift;
   return { placed };
 }
 
 /* 线:从上游右沿的中点到下游左沿的中点。 */
-export function wire(from, to) {
+export function wire(from: Point, to: Point): Wire {
   const a = { x: from.x + TILE, y: from.y + TILE / 2 };
   const b = { x: to.x, y: to.y + TILE / 2 };
   return { d: path(a, b), x0: a.x, y0: a.y, x1: b.x, y1: b.y };
@@ -235,7 +247,7 @@ export function wire(from, to) {
 /* 出口名(True / False)贴在线刚离开上游的那一段上。跨得再远也贴在起点旁边,
    不跟着线跑到画布中间去。 */
 const LABEL_X = 80;
-export function wireLabelAt(w) {
+export function wireLabelAt(w: Wire) {
   const a = { x: w.x0, y: w.y0 }, b = { x: w.x1, y: w.y1 };
   const x = Math.min(w.x0 + LABEL_X, (w.x0 + w.x1) / 2);
   return { x, y: heightAt(a, b, x) };

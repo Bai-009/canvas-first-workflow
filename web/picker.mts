@@ -1,3 +1,6 @@
+import type { NodeDefinition } from '../shared/contracts.mjs';
+import type { CardNode } from './card.mjs';
+interface SourceRow { v: string; icon: string; main: string; sub: string; meta: string }
 import { PLUS } from "./icons.mjs";
 
 /* 空位不是填空题,是入口。一个没定的参数要怎么补上,得看它是什么东西——
@@ -10,9 +13,9 @@ import { PLUS } from "./icons.mjs";
 
    传文件(upload)是数据源面板里的那个动作单独拿出来用。 */
 
-const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const esc = (s: unknown) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const I = (inner) =>
+const I = (inner: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
 const BUCKET = I('<ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/>');
 const FOLDER = I('<path d="M3 7.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>');
@@ -35,17 +38,17 @@ const 编的连接 = [
 ];
 const 编的 = "这几条是编的，POC 不接真实平台。节点、参数、空位本身来自模型真正交回来的那一份。";
 
-const row = (r) => `<button class="src-row" type="button" data-v="${esc(r.v)}">
+const row = (r: SourceRow) => `<button class="src-row" type="button" data-v="${esc(r.v)}">
   <span class="src-ico">${r.icon}</span>
   <span class="src-main"><b>${esc(r.main)}</b>${r.sub ? `<i>${esc(r.sub)}</i>` : ""}</span>
   ${r.meta ? `<span class="src-meta">${esc(r.meta)}</span>` : ""}
 </button>`;
 
-const drop = (text, icon, act) => `<button class="src-row drop" type="button" data-do="${act}">
+const drop = (text: string, icon: string, act: string) => `<button class="src-row drop" type="button" data-do="${act}">
   <span class="src-ico">${icon}</span><span class="src-main"><b>${esc(text)}</b></span></button>`;
 
 /* 一格印成一张面板。返回面板正文;选中什么由 data-v 说,打字的走 .panel-field。 */
-export function panel(def, slot, node) {
+export function panel(def: NodeDefinition, slot: NodeDefinition["slots"][number], node: CardNode) {
   const now = node.params?.[slot.key] ?? slot.default ?? "";
   const 待定 = node.blanks?.includes(slot.key);
   const top = `<div class="panel-top"><h4>${esc(slot.label)}</h4>
