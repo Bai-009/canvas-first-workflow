@@ -1,3 +1,30 @@
+import type { Canvas, CanvasNode, Edge, NodeDefinition } from '../shared/contracts.mjs';
+import type { Edit } from '../shared/workflow.mjs';
+import type { CanvasFlows, Flow } from './flow.mjs';
+import type { Point, PlacedNode, Wire } from './layout.mjs';
+import { errorMessage } from '../shared/errors.mjs';
+import { element } from './dom.mjs';
+interface ParameterRequest { node: string; key: string; value: unknown }
+interface RevisionState { edits: Edit[]; busy: boolean; blockedReason: string }
+interface Waiting { title: string; remaining?: number; broken?: boolean; note?: string }
+interface BreakHandlers { rerun?: () => void; plan?: () => void }
+interface Camera { tx: number; ty: number; scale: number; userMoved: boolean }
+interface CanvasViewOptions {
+  table: NodeDefinition[];
+  world: HTMLElement;
+  wires: SVGSVGElement;
+  viewport: HTMLElement;
+  stage: HTMLElement;
+  picker: HTMLElement;
+  onFill?: (request: ParameterRequest) => void | Promise<unknown>;
+  onRevise?: (request: { node: CanvasNode; text: string }) => void | Promise<unknown>;
+  onStopRevision?: () => void | Promise<unknown>;
+  onZoom?: (scale: number) => void;
+  nodeDraft?: (node: CanvasNode) => string;
+  onNodeDraft?: (node: CanvasNode, text: string) => void;
+  insets?: () => { left?: number; right?: number; bottom?: number };
+}
+interface EdgeElements { g: SVGGElement; port: SVGCircleElement; path: SVGPathElement; tip: SVGPathElement; text: SVGTextElement }
 import { fullCard, miniCard } from "./card.mjs";
 import { panel } from "./picker.mjs";
 import { layout, wire, wireLabelAt, wave, TILE, PITCH } from "./layout.mjs";
@@ -5,12 +32,12 @@ import { edgeKey, flows, label } from "./flow.mjs";
 import { createNodeConversation, editPresentation } from "./node-conversation.mjs";
 
 const SVG = "http://www.w3.org/2000/svg";
-const svg = (name, attrs) => {
+const svg = <K extends keyof SVGElementTagNameMap>(name: K, attrs: Record<string, string | number>) => {
   const el = document.createElementNS(SVG, name);
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, String(v));
   return el;
 };
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /* 展开之后的卡有多宽。高度是内容自己写出来的,量出来才知道。 */
 const OPEN_W = 540;
@@ -39,23 +66,23 @@ const TRACK_TAIL = 620;
 /* 画布这一头只做一件事:把画布数据摆到屏幕上,新长出来的卡带一下动静。
    它不认得任何一种具体节点——那些全在节点表里。 */
 export function createCanvasView({ table, world, wires, viewport, stage, picker,
-  onFill, onRevise, onStopRevision, onZoom = () => {}, nodeDraft = () => "", onNodeDraft = () => {}, insets = () => ({ right: 0, bottom: 0 }) }) {
+  onFill, onRevise, onStopRevision, onZoom = () => {}, nodeDraft = () => "", onNodeDraft = () => {}, insets = () => ({ right: 0, bottom: 0 }) }: CanvasViewOptions) {
   const byType = new Map(table.map((d) => [d.type, d]));
-  const nodes = new Map();
-  const edges = new Map();
-  const conversations = new Map();
+  const nodes = new Map<string, HTMLDivElement>();
+  const edges = new Map<string, EdgeElements>();
+  const conversations = new Map<string, ReturnType<typeof createNodeConversation<CanvasNode>>>();
   /* 遮罩直接改变内容透明度；只在还有内容可滚动的边缘出现。 */
-  const updateScrollFade = (body) => {
+  const updateScrollFade = (body: HTMLElement) => {
     const above = Math.max(0, body.scrollTop);
     const below = Math.max(0, body.scrollHeight - body.clientHeight - above);
     body.style.setProperty("--node-fade-top", `${Math.min(32, above)}px`);
     body.style.setProperty("--node-fade-bottom", `${below < 1 ? 0 : Math.min(32, below)}px`);
   };
   const fadeObserver = new ResizeObserver((entries) => {
-    for (const { target } of entries) updateScrollFade(target);
+    for (const { target } of entries) if (target instanceof HTMLElement) updateScrollFade(target);
   });
-  const watchedFades = new WeakSet();
-  const watchScrollFade = (body) => {
+  const watchedFades = new WeakSet<HTMLElement>();
+  const watchScrollFade = (body: HTMLElement | null) => {
     if (!body) return;
     if (!watchedFades.has(body)) {
       body.addEventListener("scroll", () => updateScrollFade(body), { passive: true });
@@ -64,7 +91,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     fadeObserver.observe(body);
     updateScrollFade(body);
   };
-  let revisionState = { edits: [], busy: false, blockedReason: "" };
+  let revisionState: RevisionState = { edits: [], busy: false, blockedReason: "" };
   /* box 是整幅东西的范围:已经落地的卡,加上那截还没走到的轨道。
      SVG 照它画,镜头也照它摆——人看的是整幅画,不是其中某一个点。 */
   let scale = 1, tx = 0, ty = 0, userMoved = false, box = { w: 1, h: 1 };
@@ -72,12 +99,13 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
      世界的 transform 是空的,一上过渡就成了「从左上角 1:1 的位置飘过来」——
      而那个位置从来没有存在过。 */
   let framed = false;
-  let last = { placed: [], canvas: { nodes: [], edges: [] } };
+  let last: { placed: PlacedNode<CanvasNode>[]; canvas: Canvas; flows?: CanvasFlows } = { placed: [], canvas: { nodes: [], edges: [], version: 0 } };
   /* 已经露过面的卡和已经走完的线。排队的那几张还挂在 queue 上,画布上是空位。 */
-  const shown = new Set();
-  const drawn = new Set();
-  const queue = [];
-  let playing = false, idleWaiters = [];
+  const shown = new Set<string>();
+  const drawn = new Set<string>();
+  const queue: string[] = [];
+  let playing = false;
+  const idleWaiters: (() => void)[] = [];
 
   /* 线归一层,等待的轨道归另一层。轨道每次重画,线是留着的——
      线要自己走出来,重画一次就等于从头走一次。 */
@@ -113,14 +141,14 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     '<div class="stop-acts">' +
     '<button class="stop-plan" type="button">改方案</button><button class="stop-again" type="button">重走</button></div>';
   world.appendChild(stopEl);
-  let onBreak = {};
+  let onBreak: BreakHandlers = {};
   /* 收着的时候只有「重走」;点开看全了才给另外两个选择——改这一步、改方案。
      点卡身是点开,不是别的:它是一张卡,按卡的规矩办。 */
-  const act = (sel, fn) => stopEl.querySelector(sel).addEventListener("click", (e) => { e.stopPropagation(); fn(); });
+  const act = (sel: string, fn: () => void) => element(stopEl, sel).addEventListener("click", (e) => { e.stopPropagation(); fn(); });
   act(".stop-again", () => onBreak.rerun?.());
   act(".stop-plan", () => { shutBreak(); onBreak.plan?.(); });
   stopEl.addEventListener("click", (e) => { e.stopPropagation(); openBreak(); });
-  let pending = null, closeTrack = false;
+  let pending: Waiting | null = null, closeTrack = false;
 
   /* 自己挪的镜头是有过渡的:一跳一跳的镜头看不出东西是从哪儿长出来的。
      用户在拖、在滚的时候不能有过渡,那会变成拖不动。 */
@@ -152,7 +180,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   /* 跑着的时候,头站在画面横向的这个位置:左边是已经建好的,右边留一截给轨道。
      早先试过让头落在正中,右边空一大片——那是因为当时轨道还没画出来。 */
   const AHEAD = 0.64;
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
   /* 镜头两种状态,分得很开。
 
@@ -188,7 +216,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
 
   const visible = () => last.placed.filter((p) => shown.has(p.node.name));
 
-  function draw(canvas, { instant = false } = {}) {
+  function draw(canvas: Canvas, { instant = false } = {}) {
     /* 刷新回来的那一下不重演:已经在画布上的东西直接就位。 */
     if (instant) {
       for (const n of canvas.nodes) shown.add(n.name);
@@ -201,7 +229,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     last = { placed, canvas, flows: f };
 
     for (const [name, el] of nodes) if (!at.has(name)) {
-      fadeObserver.unobserve(el.querySelector(".card-content"));
+      fadeObserver.unobserve(element(el, ".card-content"));
       el.remove(); nodes.delete(name); shown.delete(name);
     }
 
@@ -215,8 +243,8 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
         el = document.createElement("div");
         el.className = ready ? "node" : "node born";
         el.appendChild(document.createElement("div")).className = "card";
-        el.firstChild.appendChild(document.createElement("div")).className = "card-mini";
-        const detail = el.firstChild.appendChild(document.createElement("div"));
+        element(el, ".card").appendChild(document.createElement("div")).className = "card-mini";
+        const detail = element(el, ".card").appendChild(document.createElement("div"));
         detail.className = "card-detail";
         detail.inert = true;
         detail.appendChild(document.createElement("div")).className = "card-header";
@@ -226,22 +254,23 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
         watchScrollFade(body);
         const conversation = conversations.get(p.node.name) ?? createNodeConversation({
           initialDraft: nodeDraft(p.node), onDraftChange: (value) => onNodeDraft(p.node, value),
-          node: p.node, onSend: onRevise, onStop: onStopRevision,
-          onResize: () => { if (opened === p.node.name) remeasure(el); },
+          node: p.node, ...(onRevise ? { onSend: onRevise } : {}), ...(onStopRevision ? { onStop: onStopRevision } : {}),
+          onResize: () => { if (el && opened === p.node.name) remeasure(el); },
         });
         conversations.set(p.node.name, conversation);
         body.appendChild(conversation.resultsEl);
         detail.appendChild(conversation.el);
         el.addEventListener("click", (e) => {
+          if (!(e.target instanceof Element) || !el) return;
           e.stopPropagation();
-          if (e.target.closest(".node-conversation")) return;
-          if (e.target.closest("details")) {
-            const cell = e.target.closest("[data-key]");
+          if (e.target.closest<HTMLElement>(".node-conversation")) return;
+          if (e.target.closest<HTMLElement>("details")) {
+            const cell = e.target.closest<HTMLElement>("[data-key]");
             if (!cell) return;
           }
           /* 卡上那一格是入口,不是卡身的一部分:点它是「定这一格」,
              不该顺手把卡收回去。 */
-          const cell = e.target.closest("[data-key]");
+          const cell = e.target.closest<HTMLElement>("[data-key]");
           const current = last.canvas.nodes.find((n) => n.name === p.node.name);
           if (cell && el.classList.contains("open")) return openPicker(el, current, cell);
           toggle(p.node.name);
@@ -271,31 +300,31 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     pump();
   }
 
-  function paintNode(el, def, node) {
-    const content = el.querySelector(".card-node-content");
-    const expanded = new Set([...content.querySelectorAll("details[open][data-disclosure]")].map((detail) => detail.dataset.disclosure));
+  function paintNode(el: HTMLElement, def: NodeDefinition, node: CanvasNode) {
+    const content = element(el, ".card-node-content");
+    const expanded = new Set([...content.querySelectorAll<HTMLDetailsElement>("details[open][data-disclosure]")].map((detail) => detail.dataset.disclosure));
     content.innerHTML = `${miniCard(def, node)}${fullCard(def, node, last.canvas.edges, last.flows)}`;
-    el.querySelector(".card-mini").replaceChildren(content.querySelector(".mini"));
-    el.querySelector(".card-header").replaceChildren(content.querySelector(".full-top"));
-    for (const detail of content.querySelectorAll("details[data-disclosure]")) {
+    element(el, ".card-mini").replaceChildren(element(content, ".mini"));
+    element(el, ".card-header").replaceChildren(element(content, ".full-top"));
+    for (const detail of content.querySelectorAll<HTMLDetailsElement>("details[data-disclosure]")) {
       detail.open = expanded.has(detail.dataset.disclosure);
       detail.addEventListener("toggle", () => { if (opened === node.name) remeasure(el); });
     }
-    for (const cell of el.querySelectorAll("[data-key]")) {
+    for (const cell of el.querySelectorAll<HTMLButtonElement>("[data-key]")) {
       cell.disabled = Boolean(revisionState.busy);
       if (cell.disabled) cell.title = "等待当前工作流操作完成后配置";
     }
     refreshConversation(el, node);
-    updateScrollFade(el.querySelector(".card-content"));
+    updateScrollFade(element(el, ".card-content"));
   }
 
-  function refreshConversation(el, node) {
+  function refreshConversation(el: HTMLElement, node: CanvasNode) {
     const edits = revisionState.edits.filter((edit) => edit.target?.node === node.name && edit.target?.step === node.step);
     conversations.get(node.name)?.update({ ...revisionState, node, edits });
-    updateScrollFade(el.querySelector(".card-content"));
+    updateScrollFade(element(el, ".card-content"));
     const badge = editPresentation(edits.at(-1)).badge;
     if (badge) {
-      const evidence = el.querySelector(".mini-evi");
+      const evidence = element(el, ".mini-evi");
       evidence.textContent = badge;
       evidence.classList.add("revision-evi");
     }
@@ -306,9 +335,9 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
      和线刚离开上游那一段上的一行字——流的是什么(「Text · 按文件」);分岔的线前面
      再加出口名(「True · Text · 按文件」)。箭头停在卡片外一点五像素,不顶着卡沿。 */
   const key = edgeKey;
-  const wording = (e, flow) => [e.output && (e.output === "true" ? "True" : "False"), label(flow)].filter(Boolean).join(" · ");
+  const wording = (e: Edge, flow?: Flow) => [e.output && (e.output === "true" ? "True" : "False"), label(flow)].filter(Boolean).join(" · ");
 
-  function paint(e, w, flow) {
+  function paint(e: Edge, w: Wire, flow?: Flow) {
     const k = key(e);
     let it = edges.get(k);
     if (!it) {
@@ -323,22 +352,22 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
       edges.set(k, it);
     }
     it.path.setAttribute("d", w.d);
-    it.port.setAttribute("cx", w.x0);
-    it.port.setAttribute("cy", w.y0);
+    it.port.setAttribute("cx", String(w.x0));
+    it.port.setAttribute("cy", String(w.y0));
     it.tip.setAttribute("d", `M${w.x1 - 9},${w.y1 - 6} L${w.x1 - 1.5},${w.y1} L${w.x1 - 9},${w.y1 + 6}`);
     it.text.textContent = wording(e, flow);
     const spot = wireLabelAt(w);
-    it.text.setAttribute("x", spot.x);
-    it.text.setAttribute("y", spot.y - 8);
+    it.text.setAttribute("x", String(spot.x));
+    it.text.setAttribute("y", String(spot.y - 8));
     /* 还没轮到的线是收着的:整条按自己的长度藏进虚线的空档里。 */
     const len = it.path.getTotalLength();
-    it.path.style.strokeDasharray = len;
-    it.path.style.strokeDashoffset = drawn.has(k) ? 0 : len;
+    it.path.style.strokeDasharray = String(len);
+    it.path.style.strokeDashoffset = String(drawn.has(k) ? 0 : len);
     it.g.classList.toggle("held", !drawn.has(k));
   }
 
   /* 线自己走一遍。走的是这一格的入线,走完卡片才落下来。 */
-  function light(k) {
+  function light(k: string) {
     const it = edges.get(k);
     drawn.add(k);
     if (!it) return;
@@ -346,7 +375,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
        线会直接整条出现。读一下几何就是钉住的办法。 */
     void it.path.getBoundingClientRect();
     it.path.style.transition = `stroke-dashoffset ${LEAD}ms cubic-bezier(.4,0,.2,1)`;
-    it.path.style.strokeDashoffset = 0;
+    it.path.style.strokeDashoffset = "0";
     /* 箭头等线走到了才出现:线还在半路,末端先冒出个箭头是不对的。 */
     setTimeout(() => it.g.classList.remove("held"), LEAD - 60);
   }
@@ -358,6 +387,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     playing = true;
     while (queue.length) {
       const name = queue.shift();
+      if (name === undefined) break;
       const el = nodes.get(name);
       if (!el) continue;
       const feed = last.canvas.edges.filter((e) => e.to === name && shown.has(e.from)).map(key);
@@ -394,8 +424,8 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
       box = { w: Math.max(box.w, at.x + (pending.broken ? 320 : 40)), h: Math.max(box.h, at.y + 120) };
       paper = { w: Math.max(box.w, at.x + ahead * STEP_GAP + TRACK_TAIL), h: box.h };
     }
-    wires.setAttribute("width", paper.w);
-    wires.setAttribute("height", paper.h);
+    wires.setAttribute("width", String(paper.w));
+    wires.setAttribute("height", String(paper.h));
   }
 
   /* 下一张卡会落在哪一格,头就在哪儿。已经落地的卡里最右一列往后接一格,
@@ -407,7 +437,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   function head() {
     const seen = visible();
     if (!seen.length) return { x: 0, y: TILE / 2 };
-    const colOf = (p) => Math.round(p.x / PITCH);
+    const colOf = (p: Point) => Math.round(p.x / PITCH);
     const col = Math.max(...seen.map(colOf)) + 1;
     const tail = seen.filter((p) => colOf(p) === col - 1);
     const base = tail.reduce((sum, p) => sum + p.y - wave(colOf(p)), 0) / (tail.length || 1) + TILE / 2;
@@ -438,10 +468,10 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
        而且是淡出去的——链路到这儿并没有结束,只是还没长出来。 */
     if (ahead) {
       const from = at.x + HEAD_R, to = at.x + ahead * STEP_GAP + TRACK_TAIL;
-      fade.setAttribute("x1", from);
-      fade.setAttribute("x2", to);
-      fade.setAttribute("y1", at.y);
-      fade.setAttribute("y2", at.y);
+      fade.setAttribute("x1", String(from));
+      fade.setAttribute("x2", String(to));
+      fade.setAttribute("y1", String(at.y));
+      fade.setAttribute("y2", String(at.y));
       gTrack.appendChild(svg("line", { class: "track", x1: from, y1: at.y, x2: to, y2: at.y }));
       for (let i = 1; i <= ahead; i++) {
         const x = at.x + i * STEP_GAP;
@@ -456,9 +486,9 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     if (broken) {
       stopEl.style.left = `${at.x}px`;
       stopEl.style.top = `${at.y}px`;
-      stopEl.querySelector(".stop-name").textContent = pending.title;
-      stopEl.querySelector(".stop-why").textContent = pending.note ?? "";
-      stopEl.querySelector(".stop-why").hidden = !pending.note;
+      element(stopEl, ".stop-name").textContent = pending.title;
+      element(stopEl, ".stop-why").textContent = pending.note ?? "";
+      element(stopEl, ".stop-why").hidden = !pending.note;
       return;
     }
     gTrack.appendChild(svg("circle", { class: "track-head", cx: at.x, cy: at.y, r: HEAD_MAX }));
@@ -474,15 +504,15 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
 
      V6 的规矩:上台的东西要从它来的地方长出来。把变形原点挪到你点的那一格上,
      面板就是从那个洞里撑开的,不是凭空淡进来的。 */
-  let filling = null;
+  let filling: { el: HTMLElement; node: CanvasNode; key: string } | null = null;
 
-  function openPicker(el, node, cell) {
+  function openPicker(el: HTMLElement, node: CanvasNode | undefined, cell: HTMLElement) {
     if (!node || revisionState.busy) return;
     const def = byType.get(node.type);
     const slot = def?.slots.find((s) => s.key === cell.dataset.key);
-    if (!slot || !picker) return;
+    if (!def || !slot || !picker) return;
     filling = { el, node, key: slot.key };
-    const box = picker.querySelector(".panel");
+    const box = element(picker, ".panel");
     box.innerHTML = panel(def, slot, node);
     picker.hidden = false;
     /* 落在这张卡的中轴上,不是屏幕的中轴。
@@ -493,7 +523,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     const M = 20;
     const { pad, left, w: roomW, h: roomH } = room();
     const w = box.offsetWidth, h = box.offsetHeight;
-    const grip = (v, hi) => Math.min(Math.max(v, M), Math.max(M, hi));
+    const grip = (v: number, hi: number) => Math.min(Math.max(v, M), Math.max(M, hi));
     box.style.left = `${grip(left + pad + roomW / 2 - w / 2, innerWidth - w - M)}px`;
     box.style.top = `${grip(pad + roomH / 2 - h / 2, innerHeight - h - M)}px`;
     /* 原点要在面板自己的坐标里量,所以得等它落好位置之后再量。 */
@@ -521,21 +551,21 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
 
   /* 定了:这一格从「待定」变成一个值,卡当场重画,小卡上的「待定 N 项」跟着少一项。 */
   let savingParameter = false;
-  async function fill(value) {
+  async function fill(value: unknown) {
     if (savingParameter) return;
     if (!filling) return;
     if (value === "") return shutPicker();
-    const { el, key: slotKey } = filling;
-    const node = last.canvas.nodes.find((n) => n.name === filling.node.name);
+    const { el, key: slotKey, node: targetNode } = filling;
+    const node = last.canvas.nodes.find((n) => n.name === targetNode.name);
     if (!node || revisionState.busy) return shutPicker();
     if (onFill) {
       savingParameter = true;
-      const panel = picker.querySelector(".panel");
+      const panel = element(picker, ".panel");
       try { await onFill({ node: node.name, key: slotKey, value }); shutPicker(); }
       catch (error) {
         let message = panel.querySelector(".panel-save-error");
         if (!message) { message = document.createElement("p"); message.className = "panel-save-error"; message.setAttribute("role", "alert"); panel.append(message); }
-        message.textContent = error.message;
+        message.textContent = errorMessage(error);
       } finally { savingParameter = false; }
       return;
     }
@@ -545,27 +575,27 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     const def = byType.get(node.type);
     /* 定的那一格可能改了这个节点往下送什么(写代码的 Output Type):线上的字跟着重印。 */
     last.flows = flows(table, last.canvas);
-    paintNode(el, def, node);
+    if (def) paintNode(el, def, node);
     for (const e of last.canvas.edges) edges.get(key(e))?.text.replaceChildren(wording(e, last.flows.edges.get(key(e))));
     if (opened === node.name) remeasure(el);
-    onFill?.({ node: node.name, key: slotKey, value });
   }
 
   if (picker) {
     picker.addEventListener("click", (e) => {
+      if (!(e.target instanceof Element)) return;
       if (e.target === picker) return shutPicker();
-      if (e.target.closest(".panel-close")) return shutPicker();
-      const act = e.target.closest("[data-do]")?.dataset.do;
-      if (act === "ok") return fill(picker.querySelector(".panel-field")?.value.trim() ?? "");
+      if (e.target.closest<HTMLElement>(".panel-close")) return shutPicker();
+      const act = e.target.closest<HTMLElement>("[data-do]")?.dataset.do;
+      if (act === "ok") return fill(picker.querySelector<HTMLInputElement | HTMLTextAreaElement>(".panel-field")?.value.trim() ?? "");
       /* 传文件和新建连接这两条,POC 到不了真的那一步:传文件当场落一个值,
          新建连接只能关掉——装成建好了才是骗人。 */
       if (act === "upload") return fill("刚上传的文件");
       if (act === "new") return shutPicker();
-      const row = e.target.closest(".src-row[data-v]");
+      const row = e.target.closest<HTMLElement>(".src-row[data-v]");
       if (row) return fill(row.dataset.v);
     });
     picker.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && e.target.matches("input.panel-field")) fill(e.target.value.trim());
+      if (e.key === "Enter" && e.target instanceof HTMLInputElement && e.target.matches("input.panel-field")) fill(e.target.value.trim());
     });
     addEventListener("keydown", (e) => { if (e.key === "Escape") shutPicker(); });
   }
@@ -573,42 +603,43 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   /* ── 点开一张卡 ───────────────────────────────────────
      展开是「聚焦」的结果:镜头先带过去,别的卡退到背景里,这一张才撑开。
      卡片钉住上沿往下长,所以镜头瞄的是「上沿 + 展开高度的一半」。 */
-  let opened = null, home = null, turn = 0;
+  let opened: string | null = null, home: Camera | null = null, turn = 0;
 
-  function measure(el) {
+  function measure(el: HTMLElement) {
     /* 用真实取景框留给卡的高度，给固定输入区留位置；不靠把整张卡缩小来塞进屏幕。 */
     el.style.setProperty("--node-room-height", `${Math.max(280, room().h + 32)}px`);
     /* 在不可见副本上量终点。对正在运动的卡禁用 transition 会直接取消展开，
        也不能为测量切换真实输入框的显示状态，否则会丢失焦点和中文组词。 */
     const probe = el.cloneNode(true);
+    if (!(probe instanceof HTMLElement)) throw new Error("节点卡副本不是 HTML 元素");
     probe.className = "node measuring open";
     probe.inert = true;
     probe.setAttribute("aria-hidden", "true");
     probe.style.visibility = "hidden";
     for (const child of probe.querySelectorAll("[id]")) child.removeAttribute("id");
-    const card = probe.firstChild;
+    const card = element(probe, ".card");
     card.style.height = "auto";
     world.appendChild(probe);
     try { return card.offsetHeight; }
     finally { probe.remove(); }
   }
 
-  const box0 = (el, h) => {
-    el.firstChild.style.height = `${h}px`;
-    el.firstChild.style.transform = `translate(-50%, calc(-50% + ${((h - TILE) / 2).toFixed(1)}px))`;
+  const box0 = (el: HTMLElement, h: number) => {
+    element(el, ".card").style.height = `${h}px`;
+    element(el, ".card").style.transform = `translate(-50%, calc(-50% + ${((h - TILE) / 2).toFixed(1)}px))`;
   };
 
   /* 内容变高时只重测外壳，输入框和展开状态保留。 */
-  const remeasure = (el) => {
+  const remeasure = (el: HTMLElement) => {
     const h = measure(el);
-    if (el.firstChild.style.height === `${h}px`) return;
+    if (element(el, ".card").style.height === `${h}px`) return;
     box0(el, h); el.classList.add("open");
     const p = last.placed.find((placed) => nodes.get(placed.node.name) === el);
     const { pad, h: roomHeight } = room();
     if (p && !userMoved && (ty + p.y * scale < pad - 32 || ty + (p.y + h) * scale > pad + roomHeight + 32)) aim(p, h);
   };
 
-  function aim(p, h) {
+  function aim(p: Point, h: number) {
     const { pad, left, w, h: room_h } = room();
     const s = Math.min(1, (w - 32) / OPEN_W, (room_h + 32) / h);
     scale = s;
@@ -617,7 +648,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     apply();
   }
 
-  async function toggle(name) {
+  async function toggle(name: string) {
     if (!shown.has(name)) return;
     if (opened === name) return void shut(true);
     if (breakOpen) shutBreak(false);
@@ -637,7 +668,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     el.classList.add("morph");
     box0(el, h);
     el.classList.add("open");
-    el.querySelector(".card-detail").inert = false;
+    element(el, ".card-detail").inert = false;
   }
 
   /* 断口卡点开:跟点开一张卡是同一个手势——镜头带过去,别的退到背景,这一张撑开。
@@ -673,16 +704,16 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     opened = null;
     if (el) {
       el.classList.remove("open");
-      el.querySelector(".card-detail").inert = true;
-      el.firstChild.style.height = "";
-      el.firstChild.style.transform = "";
+      element(el, ".card-detail").inert = true;
+      element(el, ".card").style.height = "";
+      element(el, ".card").style.transform = "";
     }
     for (const e of nodes.values()) e.classList.remove("dim");
     if (back && home) { ({ tx, ty, scale, userMoved } = home); apply(); home = null; }
     return true;
   }
 
-  function zoomTo(value, x, y, glide = true) {
+  function zoomTo(value: number, x?: number, y?: number, glide = true) {
     const next = clamp(value, 0.2, 1.6);
     const r = room();
     x ??= r.left + r.pad + r.w / 2;
@@ -707,15 +738,17 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   }
 
   viewport.addEventListener("wheel", (e) => {
-    if (e.target.closest(".node.open .card-content")) return;
+    if (!(e.target instanceof Element)) return;
+    if (e.target.closest<HTMLElement>(".node.open .card-content")) return;
     e.preventDefault();
     zoomTo(scale * Math.exp(-e.deltaY / 420), e.clientX, e.clientY, false);
   }, { passive: false });
 
   /* 按下先不抢指针,挪过 4 像素才算拖,否则那一下是点在卡片上。 */
-  let drag = null;
+  let drag: { x: number; y: number; from: [number, number]; moved: boolean } | null = null;
   viewport.addEventListener("pointerdown", (e) => {
-    if (e.target.closest(".node")) return;
+    if (!(e.target instanceof Element)) return;
+    if (e.target.closest<HTMLElement>(".node")) return;
     drag = { x: e.clientX - tx, y: e.clientY - ty, from: [e.clientX, e.clientY], moved: false };
   });
   viewport.addEventListener("pointermove", (e) => {
@@ -741,21 +774,22 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
      同样是「外面」,结果却不一样。
      谁在上头谁先收:选择器盖在展开的卡上,点画布的那一下只收选择器。 */
   addEventListener("click", (e) => {
-    if (filling || e.target.closest(".picker, .canvas-controls")) return;
-    if (!e.target.closest(".node") && !e.target.closest(".stop")) shut(true);
+    if (!(e.target instanceof Element)) return;
+    if (filling || e.target.closest<HTMLElement>(".picker, .canvas-controls")) return;
+    if (!e.target.closest<HTMLElement>(".node") && !e.target.closest<HTMLElement>(".stop")) shut(true);
   });
   addEventListener("keydown", (e) => { if (e.key === "Escape") shut(true); });
 
   return {
     draw,
-    revisions(info) {
+    revisions(info: Partial<RevisionState>) {
       revisionState = { ...revisionState, ...info };
       if (revisionState.busy) shutPicker();
       for (const node of last.canvas.nodes) {
         const el = nodes.get(node.name);
         if (!el) continue;
         refreshConversation(el, node);
-        for (const cell of el.querySelectorAll("[data-key]")) {
+        for (const cell of el.querySelectorAll<HTMLButtonElement>("[data-key]")) {
           cell.disabled = Boolean(revisionState.busy);
           cell.title = cell.disabled ? "等待当前工作流操作完成后配置" : "";
         }
@@ -763,13 +797,13 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
       }
     },
     fit,
-    zoomBy: (direction) => zoomTo(Math.round((scale + direction * 0.1) * 100) / 100),
+    zoomBy: (direction: number) => zoomTo(Math.round((scale + direction * 0.1) * 100) / 100),
     resetZoom: () => zoomTo(1),
     fitAll,
     refit: () => { userMoved = false; if (opened) { const el = nodes.get(opened); const p = last.placed.find((p) => p.node.name === opened); if (el && p) aim(p, measure(el)); } else fit(); },
     /* 正在做哪一步、后面还剩几步。传 null 就是做完了,轨道收掉——
        但队伍还没放完的话得等它放完,卡还在落,轨道先撤是空一块。 */
-    waiting(info) {
+    waiting(info: Waiting | null) {
       if (info === null && (playing || queue.length)) { closeTrack = true; return; }
       closeTrack = false;
       if (!info?.broken) shutBreak(false);
@@ -777,9 +811,9 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
       draw(last.canvas);
     },
     /* 断口那张卡上能做的两件事:按「重走」,或者点一下卡身去跟这一步说话。 */
-    onBreak(handlers) { onBreak = handlers; },
+    onBreak(handlers: BreakHandlers) { onBreak = handlers; },
     /* 卡全落地了再报数。还在落的时候报「已生成 9 个」,画布上只有 4 张。 */
-    onIdle(fn) {
+    onIdle(fn: () => void) {
       if (!playing && !queue.length) return void fn();
       idleWaiters.push(fn);
     },
