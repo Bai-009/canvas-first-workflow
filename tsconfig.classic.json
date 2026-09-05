@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "legacy",
+    "rootDir": "web/classic",
+    "outDir": "dist/web",
+    "types": [],
+    "declaration": false,
+    "allowJs": false
+  },
+  "include": [
+    "web/classic/*.ts"
+  ],
+  "exclude": []
+}

@@ -2,16 +2,12 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "rootDir": ".",
-    "allowJs": true,
-    "checkJs": false
+    "rootDir": "."
   },
   "include": [
     "shared/**/*.mts",
     "src/**/*.mts",
     "web/*.mts",
-    "web/*.mjs",
-    "web/*.js",
     "test/types/**/*.mts",
     "fixtures/doubles/*.mts",
     "test/**/*.test.mts"
