@@ -1,3 +1,20 @@
+import { element } from "../web/dom.mjs";
+import { readDemoData } from "../shared/demo-data.mjs";
+
+// 这些数组由同一条生成流程建立；缺项意味着内部编排失配，不静默跳过动画。
+function present<T>(value: T | undefined | null): T {
+  if (value === undefined || value === null) throw new Error("原型编排缺少对应元素");
+  return value;
+}
+interface Point { x: number; y: number }
+interface Token { cls: string | null; text: string }
+interface Line { el: HTMLDivElement; tokens: Token[]; spans: HTMLSpanElement[]; tw: number[]; width: number; raw: string; cost: number }
+interface EdgeView { g: SVGGElement; path: SVGPathElement; len: number; head: number; tail: number; drawn: boolean; outAt: Point; inAt: Point }
+interface View { lang: string; content: string[]; note?: string | undefined; engine: string; kind: string; title: string; color: string }
+interface Step extends View { id: string; icon: string; hold: number; evidence: string }
+interface CardState { status: "new" | "done"; edited: boolean; view: View | null }
+interface Prepared { card: HTMLElement; lines: Line[]; codeEl: HTMLElement; inner: HTMLElement; visLines: number; baseH: number; fullH: number }
+
 /* Workflow prototype v6
    在 v5（单格内部的流畅度）之上改三件事：
 
@@ -16,10 +33,10 @@
 (() => {
   "use strict";
 
-  const $ = (s) => document.querySelector(s);
+  const $ = <E extends Element = HTMLElement>(s: string) => element<E>(document, s);
   const viewport = $("#viewport");
   const world = $("#world");
-  const wires = $("#wires");
+  const wires = $<SVGSVGElement>("#wires");
   const taskCard = $("#taskCard");
   const stage = $("#stage");
   const planClose = $("#planClose");
@@ -29,18 +46,18 @@
   const planPair = $("#planPair");
   const planRoute = $("#planRoute");
   const planAsks = $("#planAsks");
-  const planBody = document.querySelector(".plan-body");
+  const planBody = element(document, ".plan-body");
   const planDot = $("#planDot");
   const planSay = $("#planSay");
   const taskText = $("#taskText");
   const taskDot = $("#taskDot");
   const taskState = $("#taskState");
-  const taskFoot = document.querySelector(".task-foot");
+  const taskFoot = element(document, ".task-foot");
   const engBtn = $("#engBtn");
   const wfNameEl = $("#wfName");
-  const formEl = $("#form");
-  const inputEl = $("#input");
-  const sendEl = formEl.querySelector(".send");
+  const formEl = $<HTMLFormElement>("#form");
+  const inputEl = $<HTMLTextAreaElement>("#input");
+  const sendEl = element<HTMLButtonElement>(formEl, ".send");
   const chipEl = $("#chip");
   const speedBtn = $("#speedBtn");
   const skipBtn = $("#skipBtn");
@@ -72,14 +89,14 @@
 
   /* 节点不排成一条直线：同一条线上的贝塞尔退化成直线，看着就硬。 */
   const BASE_Y = 96, AMP = 48;
-  const nodeY = (i) => Math.round(BASE_Y + AMP * Math.sin(i * 0.9));
-  const nodeX = (i) => i * PITCH;
+  const nodeY = (i: number) => Math.round(BASE_Y + AMP * Math.sin(i * 0.9));
+  const nodeX = (i: number) => i * PITCH;
 
   /* ── Plan 阶段的内容:真实数据 ─────────────────────────
-     v7 起不再手写。plan-data.js 由 src/prototype/build-demo-data.mjs 从
+     v7 起不再手写。plan-data.js 由 src/prototype/build-demo-data.mts 从
      fixtures/observed/ 里真实模型输出的修订轮一对生成,生成时过闸门。
      对话、理解、路线、待确认、答掉哪几个,全部来自实录。 */
-  const DATA = window.PLAN_DATA;
+  const DATA = readDemoData(Reflect.get(window, "PLAN_DATA"));
   const TASK = DATA.task;
   const WF_NAME = DATA.wfName;
   const PLAN = {
@@ -93,7 +110,7 @@
     after: DATA.after,
   };
 
-  const ICONS = {
+  const ICONS: Record<string, string> = {
     db: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg>',
     doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/></svg>',
     braces: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H8a3 3 0 0 0-3 3v3a3 3 0 0 1-3 3 3 3 0 0 1 3 3v3a3 3 0 0 0 3 3h1"/><path d="M15 3h1a3 3 0 0 1 3 3v3a3 3 0 0 0 3 3 3 3 0 0 0-3 3v3a3 3 0 0 1-3 3h-1"/></svg>',
@@ -102,7 +119,7 @@
     clock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   };
 
-  const STEPS = [
+  const STEPS: Step[] = [
     {
       id: "read", kind: "数据源", color: "#2f6fed", icon: "db",
       engine: "flow:catalog.source.read.v2",
@@ -348,7 +365,7 @@
   };
 
   /* ── 语法上色 ─────────────────────────────────────────── */
-  const RULES = {
+  const RULES: Record<string, {cls: string; re: RegExp}[]> = {
     sql: [
       { cls: "com", re: /--[^\n]*/y },
       { cls: "str", re: /'(?:[^']|'')*'/y },
@@ -386,9 +403,9 @@
     ],
   };
 
-  function tokenize(text, lang) {
+  function tokenize(text: string, lang: string): Token[] {
     const rules = RULES[lang] || [];
-    const out = []; let i = 0, plain = "";
+    const out: Token[] = []; let i = 0, plain = "";
     outer: while (i < text.length) {
       for (const rule of rules) {
         rule.re.lastIndex = i;
@@ -405,8 +422,8 @@
     if (plain) out.push({ cls: null, text: plain });
     return out;
   }
-  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-  function renderTokens(tokens) {
+  const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
+  function renderTokens(tokens: Token[]) {
     let html = "";
     for (const tk of tokens) html += tk.cls ? `<span class="t-${tk.cls}">${esc(tk.text)}</span>` : esc(tk.text);
     return html;
@@ -416,9 +433,9 @@
   const SPEEDS = [1, 2, 4];
   let speedIdx = 0;
   let runToken = 0;
-  const wait = (ms) => new Promise((r) => setTimeout(r, REDUCED ? Math.min(ms, 16) : ms / SPEED));
-  const alive = (t) => t === runToken;
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, REDUCED ? Math.min(ms, 16) : ms / SPEED));
+  const alive = (t: number) => t === runToken;
+  const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
   /* ── 镜头 ─────────────────────────────────────────────
      整个生成过程里镜头只平移、不缩放：卡片高度被 MAX_CODE_LINES 封了顶，
@@ -433,12 +450,12 @@
       (viewport.clientHeight - 170) / estH,
       1), .45, 1);
   }
-  function applyCam(animate) {
+  function applyCam(animate: boolean) {
     world.classList.toggle("animate", Boolean(animate));
     world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.s})`;
     zoomPct.textContent = Math.round(cam.s * 100) + "%";
   }
-  function centerOn(wx, wy, s, animate, reserve) {
+  function centerOn(wx: number, wy: number, s: number, animate: boolean, reserve?: number) {
     cam.s = s;
     cam.x = (viewport.clientWidth - (reserve === undefined ? RESERVE : reserve)) / 2 - wx * s;
     cam.y = viewport.clientHeight / 2 - 12 - wy * s;
@@ -446,7 +463,7 @@
   }
   /* openH 是这一格展开写满之后的高度。卡片钉住上沿往下长，
      所以镜头瞄的是「上沿 + openH/2」，写满的那一刻它正好落在画面正中。 */
-  function focusNode(i, animate, openH) {
+  function focusNode(i: number, animate?: boolean, openH?: number) {
     const cy = nodeY(i) + (openH ? openH / 2 : TILE / 2);
     centerOn(nodeX(i) + TILE / 2, cy, runScale, animate !== false);
   }
@@ -462,7 +479,7 @@
     const s = clamp(Math.min((viewport.clientWidth - 140) / b.w, (viewport.clientHeight - 280) / b.h, 1), .25, 1);
     centerOn(b.w / 2, b.cy, s, true, 0);
   }
-  function zoomBy(f) {
+  function zoomBy(f: number) {
     const ns = clamp(cam.s * f, .25, 2);
     const mx = viewport.clientWidth / 2, my = viewport.clientHeight / 2;
     cam.x = mx - (mx - cam.x) * (ns / cam.s);
@@ -472,6 +489,7 @@
   }
 
   viewport.addEventListener("wheel", (e) => {
+    if (!(e.target instanceof Element)) return;
     /* 卡片展开着的时候，滚轮归这张卡：在代码区里就交给它原生滚（横向也一并），
        在卡片其它地方也把滚动转给代码区。一滚就把整张画布缩掉是不对的。 */
     const open = e.target.closest(".card.open");
@@ -493,8 +511,9 @@
     applyCam(false);
   }, { passive: false });
 
-  let drag = null;
+  let drag: {px: number; py: number; x: number; y: number; moved: number; el: Element} | null = null;
   viewport.addEventListener("pointerdown", (e) => {
+    if (!(e.target instanceof Element)) return;
     if (e.target.closest(".code")) return;
     /* 按下时就把真正命中的元素记住：setPointerCapture 之后
        pointerup 的 target 会被重定向成 viewport，卡片就认不出来了。 */
@@ -511,7 +530,7 @@
   });
   viewport.addEventListener("pointerup", () => {
     if (drag && drag.moved < 5) {
-      const card = drag.el.closest(".card");
+      const card = drag.el.closest<HTMLElement>(".card");
       if (card && card.classList.contains("clickable")) expandNode(Number(card.dataset.i));
       else { shutInspect(true); closeWin(); }
     }
@@ -520,13 +539,13 @@
   });
 
   /* ── 节点与连边 ───────────────────────────────────────── */
-  const nodes = [];
-  const cards = [];
-  const edges = [];
-  const state = [];
+  const nodes: HTMLElement[] = [];
+  const cards: HTMLElement[] = [];
+  const edges: EdgeView[] = [];
+  const state: CardState[] = [];
 
   /* 沿路径找到 x = 目标 的位置对应的弧长。控制点的 x 单调，二分足够。 */
-  function lengthAtX(path, targetX) {
+  function lengthAtX(path: SVGPathElement, targetX: number) {
     const total = path.getTotalLength();
     let lo = 0, hi = total;
     for (let k = 0; k < 18; k++) {
@@ -537,7 +556,7 @@
   }
 
   /* edges[k]：node k → node k+1 */
-  function makeEdge(k, to) {
+  function makeEdge(k: number, to: Step) {
     const x1 = nodeX(k) + TILE, y1 = nodeY(k) + TILE / 2;
     const x2 = nodeX(k + 1), y2 = nodeY(k + 1) + TILE / 2;
     const d = (x2 - x1) * 0.52;
@@ -548,7 +567,7 @@
 
     const port = document.createElementNS(SVGNS, "circle");
     port.setAttribute("class", "port");
-    port.setAttribute("cx", x1); port.setAttribute("cy", y1); port.setAttribute("r", 3.2);
+    port.setAttribute("cx", String(x1)); port.setAttribute("cy", String(y1)); port.setAttribute("r", String(3.2));
     g.appendChild(port);
 
     const path = document.createElementNS(SVGNS, "path");
@@ -563,8 +582,8 @@
 
     wires.appendChild(g);
     const len = path.getTotalLength();
-    path.style.strokeDasharray = len;
-    path.style.strokeDashoffset = len;
+    path.style.strokeDasharray = String(len);
+    path.style.strokeDashoffset = String(len);
 
     /* dashoffset 正数收尾端、负数收首端。
        head：源节点展开时被它右沿盖住的那一段。
@@ -583,18 +602,18 @@
     edges[k] = e;
     return e;
   }
-  const placeSocket = (node, sel, pt) => {
-    const s = node.querySelector(sel);
+  const placeSocket = (node: HTMLElement, sel: string, pt: Point) => {
+    const s = element(node, sel);
     s.style.left = pt.x + "px";
     s.style.top = pt.y + "px";
   };
-  function setDash(e, off, ms) {
+  function setDash(e: EdgeView, off: number, ms: number) {
     e.path.style.transition = ms
       ? `stroke-dashoffset ${ms}ms var(--ease-flow), stroke 300ms ease, stroke-width 280ms ease`
       : "none";
-    e.path.style.strokeDashoffset = off;
+    e.path.style.strokeDashoffset = String(off);
   }
-  function drawEdge(k, ms) {
+  function drawEdge(k: number, ms?: number) {
     const e = edges[k];
     if (!e || e.drawn) return;
     e.drawn = true;
@@ -602,17 +621,17 @@
     setDash(e, 0, ms === undefined ? T.edge / SPEED : ms);
   }
   /* 卡片展开／收回时，两侧的线跟着缩回／伸出，始终接在卡片边上。 */
-  function plugEdges(i, open, ms) {
+  function plugEdges(i: number, open: boolean, ms: number) {
     const inE = edges[i - 1], outE = edges[i];
     if (inE && inE.drawn) {
       setDash(inE, open ? inE.tail : 0, ms);
       inE.g.classList.toggle("tuck", open);
     }
     if (outE && outE.drawn) setDash(outE, open ? -outE.head : 0, ms);
-    nodes[i].classList.toggle("open", open);
+    present(nodes[i]).classList.toggle("open", open);
   }
 
-  function makeNode(i, step) {
+  function makeNode(i: number, step: Step) {
     const edge = i > 0 ? makeEdge(i - 1, step) : null;
 
     const node = document.createElement("div");
@@ -623,8 +642,8 @@
     node.innerHTML = '<i class="socket socket-in"></i><i class="socket socket-out"></i>';
     if (edge) {
       placeSocket(node, ".socket-in", edge.inAt);
-      placeSocket(nodes[i - 1], ".socket-out", edge.outAt);
-      nodes[i - 1].classList.add("has-out");
+      placeSocket(present(nodes[i - 1]), ".socket-out", edge.outAt);
+      present(nodes[i - 1]).classList.add("has-out");
     }
 
     const card = document.createElement("article");
@@ -640,8 +659,8 @@
       `<div class="full-top"><span class="icon">${ICONS[step.icon]}</span><h3 class="full-name"></h3><span class="full-kind"></span></div>` +
       '<p class="note"></p><div class="code"><div class="code-in"></div></div>' +
       "</div>";
-    card.querySelector(".mini-kind").textContent = step.kind;
-    card.querySelector(".full-kind").textContent = step.kind;
+    element(card, ".mini-kind").textContent = step.kind;
+    element(card, ".full-kind").textContent = step.kind;
     node.appendChild(card);
     world.appendChild(node);
 
@@ -650,12 +669,12 @@
     return card;
   }
 
-  const dimOthers = (active) => cards.forEach((c, i) => c.classList.toggle("dim", active !== null && i !== active));
+  const dimOthers = (active: number | null) => cards.forEach((c, i) => c.classList.toggle("dim", active !== null && i !== active));
 
-  function fillFull(card, spec) {
-    const noteEl = card.querySelector(".note");
-    const codeEl = card.querySelector(".code");
-    const inner = card.querySelector(".code-in");
+  function fillFull(card: HTMLElement, spec: Step) {
+    const noteEl = element(card, ".note");
+    const codeEl = element(card, ".code");
+    const inner = element(card, ".code-in");
     noteEl.textContent = spec.note || "";
     noteEl.style.display = spec.note ? "" : "none";
     inner.innerHTML = "";
@@ -687,15 +706,15 @@
      写字时每多一行就是上沿弹一下 9.5px，一张卡弹三十次。
      位移由高度算出来（h=TILE 时正好是 0，等于收回态），
      上沿就在整个展开、书写、收回的过程里一动不动，只有下沿跟着字往下走。 */
-  function setBox(card, h) {
+  function setBox(card: HTMLElement, h: number) {
     card.style.width = OPEN_W + "px";
     card.style.height = h + "px";
     card.style.transform = `translate(-50%, calc(-50% + ${((h - TILE) / 2).toFixed(1)}px))`;
   }
-  const closeBox = (card) => {
+  const closeBox = (card: HTMLElement) => {
     card.style.width = TILE + "px"; card.style.height = TILE + "px"; card.style.transform = "";
   };
-  function measureOpen(card) {
+  function measureOpen(card: HTMLElement) {
     card.classList.add("measuring", "open");
     card.style.width = OPEN_W + "px"; card.style.height = "auto";
     const h = card.offsetHeight;
@@ -726,34 +745,34 @@
   const CPS = 240;              /* 每秒推进多少「字宽」（全角计 2） */
   const NL_REST = 70;           /* 行末换气 */
   const BLANK_REST = 120;       /* 空行没有字可落，气留长一点 */
-  const rest = (ms) => (CPS * ms) / 1000;   /* 把停顿也折成字宽，光标就只有一条时间轴 */
+  const rest = (ms: number) => (CPS * ms) / 1000;   /* 把停顿也折成字宽，光标就只有一条时间轴 */
   /* 换气这段时长 CSS 也要用（框在这段里腾地方），从这里写过去，
      省得两边各写一份、改一边忘一边。 */
   document.documentElement.style.setProperty("--breath", NL_REST + "ms");
 
   const WIDE = /[\u1100-\u115F\u2E80-\u303E\u3041-\u33FF\u3400-\u4DBF\u4E00-\u9FFF\uA000-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE6F\uFF00-\uFF60\uFFE0-\uFFE6]/;
-  const wide = (s) => { let n = 0; for (const c of s) n += WIDE.test(c) ? 2 : 1; return n; };
+  const wide = (s: string) => { let n = 0; for (const c of s) n += WIDE.test(c) ? 2 : 1; return n; };
 
   const caretEl = document.createElement("span");
   caretEl.className = "caret";
 
   /* 光标推进到「第 u 个字宽」处。只有它落在中间的那一个 span 需要改，
      后面的 span 还是空的——所以 caret append 在行尾就正好在已写出的字后面。 */
-  function revealUnits(line, u) {
+  function revealUnits(line: Line, u: number) {
     const { tokens, spans, tw } = line;
     let acc = 0;
     for (let k = 0; k < spans.length; k++) {
-      const t = tokens[k].text;
+      const t = present(tokens[k]).text;
       let want;
       if (acc >= u) want = 0;
-      else if (acc + tw[k] <= u) want = t.length;
+      else if (acc + present(tw[k]) <= u) want = t.length;
       else {
         let i = 0, a = acc;
-        while (i < t.length && a + wide(t[i]) <= u) { a += wide(t[i]); i++; }
+        while (i < t.length && a + wide(t.charAt(i)) <= u) { a += wide(t.charAt(i)); i++; }
         want = i;
       }
-      if (spans[k].textContent.length !== want) spans[k].textContent = t.slice(0, want);
-      acc += tw[k];
+      if ((present(spans[k]).textContent ?? "").length !== want) present(spans[k]).textContent = t.slice(0, want);
+      acc += present(tw[k]);
       if (acc >= u) break;
     }
   }
@@ -768,19 +787,19 @@
      19px 也是抖，所以给它整段换气的时长走完，和写字互不重叠。
      写满可见行数之后框不再长，改成往上顶一行；光标始终钉在最后一行，
      所以顶的那一下发生在视线之外。 */
-  function streamCard(lines, visLines, scrollEl, grow, token) {
-    return new Promise((resolve) => {
+  function streamCard(lines: Line[], visLines: number, scrollEl: HTMLElement, grow: (n: number) => void, token: number) {
+    return new Promise<boolean>((resolve) => {
       let pos = 0, base = 0, li = 0, last = 0, roomed = false;
-      lines[0].el.classList.add("on");
-      lines[0].el.appendChild(caretEl);
-      const tick = (t) => {
+      present(lines[0]).el.classList.add("on");
+      present(lines[0]).el.appendChild(caretEl);
+      const tick = (t: number) => {
         if (!alive(token)) { caretEl.remove(); return resolve(false); }
         if (!last) last = t;
         pos += (CPS * SPEED * Math.min(t - last, 100)) / 1000;   /* 掉帧时不要一次补太多 */
         last = t;
         /* 一帧里可能跨过好几行——掉帧时不能只走一行，否则会越落越远。 */
         for (;;) {
-          const line = lines[li];
+          const line = present(lines[li]);
           const local = pos - base;
           if (local < line.width) { revealUnits(line, local); break; }
           revealUnits(line, line.width);
@@ -788,7 +807,7 @@
           if (!roomed) { roomed = true; if (li + 2 <= visLines) grow(li + 2); }
           if (local < line.cost) break;      /* 还在换气 */
           base += line.cost; li++; roomed = false;
-          const next = lines[li];
+          const next = present(lines[li]);
           next.el.classList.add("on");
           next.el.appendChild(caretEl);      /* span 都还空着，等于插在行首 */
           if (li + 1 > visLines) scrollEl.scrollTop = scrollEl.scrollHeight;
@@ -802,13 +821,13 @@
   /* ── 一个节点：备料 → 到达 → 写 → 收回 ─────────────────
      拆成四段而不是一个大函数，是因为「收回」的尾巴要和下一格的「到达」重叠，
      这段重叠正是之前缺的那口气。 */
-  function prepare(i, spec, rework) {
-    const card = rework ? cards[i] : makeNode(i, spec);
+  function prepare(i: number, spec: Step, rework: boolean) {
+    const card = rework ? present(cards[i]) : makeNode(i, spec);
     card.classList.remove("done", "clickable", "writing", "morph");
-    card.querySelector(".mini-evi").classList.remove("visible");
-    card.querySelector(".mini-kind").textContent = spec.kind;
-    card.querySelector(".full-name").textContent = spec.title;
-    card.querySelector(".full-kind").textContent = spec.kind;
+    element(card, ".mini-evi").classList.remove("visible");
+    element(card, ".mini-kind").textContent = spec.kind;
+    element(card, ".full-name").textContent = spec.title;
+    element(card, ".full-kind").textContent = spec.kind;
     const { lines, codeEl, inner } = fillFull(card, spec);
     const baseH = measureOpen(card);
     const visLines = Math.min(lines.length, MAX_CODE_LINES);
@@ -820,8 +839,8 @@
      approach 返回时这一格是完全静止的，展开是从静止开始的。
      镜头要瞄写满之后的那个框，不是脚下这块砖：卡片钉住上沿往下长，
      瞄砖的话写到一半就掉出画面下沿了。这一下也只在这一拍里发生。 */
-  async function approach(i, spec, prep, token) {
-    const card = cards[i];
+  async function approach(i: number, spec: Step, prep: Prepared, token: number) {
+    const card = present(cards[i]);
     if (i === 0) {
       focusNode(0, false, prep.fullH);
       card.classList.add("shown");
@@ -839,17 +858,17 @@
     return alive(token);
   }
 
-  async function write(i, spec, prep, token) {
+  async function write(i: number, spec: Step, prep: Prepared, token: number) {
     const { card, lines, codeEl, inner, visLines, baseH } = prep;
     /* 钉住的这一小拍：卡片已经停稳，只亮起「下一个是我」的点，不动几何。 */
     card.classList.add("frontier");
-    if (edges[i - 1]) edges[i - 1].g.classList.add("hot");
+    if (edges[i - 1]) present(edges[i - 1]).g.classList.add("hot");
     await wait(T.fix);
     if (!alive(token)) return false;
 
     /* 展开：只开出第一行的高度。往下有多少内容，是内容自己写出来的，
        不是框先划好一块空地等着填。 */
-    const grow = (n) => {
+    const grow = (n: number) => {
       codeEl.style.height = CODE_PAD + n * CODE_LH + "px";
       setBox(card, baseH + n * CODE_LH);
     };
@@ -875,18 +894,18 @@
   }
 
   /* 收回：立牌之后就返回，让弹簧的尾巴和下一格的出发叠在一起。 */
-  async function settle(i, spec, prep, token, rework) {
+  async function settle(i: number, spec: Step, prep: Prepared, token: number, rework: boolean) {
     const { card } = prep;
-    const st = state[i];
+    const st = present(state[i]);
     st.status = "done";
     if (rework) st.edited = true;
     st.view = {
-      lang: spec.lang, content: prep.lines.map((l) => l.el.textContent), note: spec.note,
+      lang: spec.lang, content: prep.lines.map((l) => l.el.textContent ?? ""), note: spec.note,
       engine: spec.engine, kind: spec.kind, title: spec.title, color: spec.color,
     };
 
-    card.querySelector(".mini-name").textContent = spec.title;
-    card.querySelector(".mini-evi").innerHTML =
+    element(card, ".mini-name").textContent = spec.title;
+    element(card, ".mini-evi").innerHTML =
       spec.evidence + (st.edited ? ' · <span class="tag-you">已修改</span>' : "");
 
     /* 收回也得让高度和位移同一条时长走，否则上沿会在收的过程里飘。 */
@@ -896,16 +915,16 @@
     plugEdges(i, false, T.close / SPEED);
     await wait(180);
     if (!alive(token)) return false;
-    card.querySelector(".mini-evi").classList.add("visible");
+    element(card, ".mini-evi").classList.add("visible");
     card.classList.remove("frontier");
     card.classList.add("done");
-    if (edges[i - 1]) edges[i - 1].g.classList.remove("hot");
+    if (edges[i - 1]) present(edges[i - 1]).g.classList.remove("hot");
     await wait(T.lead);
     return alive(token);
   }
 
   /* ── 全局状态（挂在需求框里） ─────────────────────────── */
-  function setStatus(color, text, done) {
+  function setStatus(color: string | null, text: string, done?: boolean) {
     taskDot.style.setProperty("--dot", color || "#c9ced6");
     taskDot.classList.toggle("done", Boolean(done));
     taskState.textContent = text;
@@ -914,23 +933,23 @@
   function showDone() {
     setStatus(null, `已生成 ${state.length} 步 · 每天定时运行`, true);
   }
-  function setDock(on) {
+  function setDock(on: boolean) {
     sendEl.disabled = !on;
     inputEl.disabled = !on;
     inputEl.placeholder = on ? "描述你要改的地方" : "正在生成…";
     chipEl.classList.toggle("visible", on);
     if (on) chipEl.textContent = FOLLOWUP.text;
     /* 生成过程中不给点开：镜头归导演管，两边抢会打架。 */
-    cards.forEach((c, i) => c.classList.toggle("clickable", on && state[i].status === "done"));
+    cards.forEach((c, i) => c.classList.toggle("clickable", on && present(state[i]).status === "done"));
   }
 
   /* ── 需求框：从输入框飞到右上角 ───────────────────────── */
-  function typeInput(text, token) {
+  function typeInput(text: string, token: number) {
     inputEl.value = "";
     autosize();
-    return new Promise((resolve) => {
+    return new Promise<boolean>((resolve) => {
       let shown = 0, last = 0;
-      const tick = (t) => {
+      const tick = (t: number) => {
         if (!alive(token)) return resolve(false);
         if (!last) last = t;
         const dt = Math.min(t - last, 50); last = t;
@@ -981,14 +1000,14 @@
 
   /* 结构化内容是一条一条落的，不是一块一块闪出来的——
      真实的流式输出解析出一条就渲染一条，观感本来就是这样。 */
-  async function dropRows(host, htmls, token, step) {
+  async function dropRows(host: HTMLElement, htmls: string[], token: number, step: number) {
     for (const h of htmls) {
       const el = document.createElement("div");
       el.innerHTML = h;
       while (el.firstChild) {
         const node = el.firstChild;
         el.removeChild(node);
-        if (node.nodeType === 1) node.classList.add("drop");
+        if (node instanceof Element) node.classList.add("drop");
         host.appendChild(node);
       }
       await wait(step);
@@ -997,11 +1016,11 @@
     return true;
   }
 
-  const planPairHTML = (rows) => rows
+  const planPairHTML = (rows: [string, string][]) => rows
     .map(([a, b]) => `<dt>${esc(a)}</dt><dd>${esc(b)}</dd>`).join("");
 
   /* 输入框里那句话飞到画布中央，撑成 Plan 窗口。 */
-  async function flyToPlan(token) {
+  async function flyToPlan(token: number) {
     sendEl.disabled = true;
     planText.textContent = TASK;
     planCard.hidden = false;
@@ -1051,7 +1070,7 @@
     return true;
   }
 
-  const showSec = async (sel, ms, token) => {
+  const showSec = async (sel: string, ms: number, token: number) => {
     const el = $(sel);
     el.hidden = false;
     el.classList.remove("enter"); void el.offsetHeight; el.classList.add("enter");
@@ -1061,7 +1080,7 @@
 
   /* 内容一块一块出来，每块出来前先说一句在做什么——
      用户等的这段时间里，看得见它在往哪走。 */
-  async function buildPlan(token) {
+  async function buildPlan(token: number) {
     planCard.classList.add("open");
 
     /* 卡片刚落定，什么都还没有。真实场景里这一段最长——
@@ -1107,7 +1126,7 @@
 
   /* 用户回答 → 这张卡当场变：问号划掉、理解那一栏跟着改、能做到哪一步也变。
      这是「你看着什么，就改什么」——他在底下打字，变化就发生在他正看的这张卡上。 */
-  async function answerPlan(token) {
+  async function answerPlan(token: number) {
     if (!(await typeInput(PLAN.reply, token))) return false;
     await wait(360);
     if (!alive(token)) return false;
@@ -1136,14 +1155,15 @@
        补的那句话带来新的理解（u5 u6），在末尾长出来。 */
     const rows = planPair.querySelectorAll("dd");
     for (let i = 0; i < PLAN.after.understanding.length; i++) {
-      const [quote, next] = PLAN.after.understanding[i];
-      if (rows[i]) {
-        if (rows[i].textContent !== next) {
-          rows[i].classList.add("swap");
+      const [quote, next] = present(PLAN.after.understanding[i]);
+      const row = rows[i];
+      if (row) {
+        if (row.textContent !== next) {
+          row.classList.add("swap");
           await wait(TP.row * 0.6);
-          rows[i].textContent = next;
-          rows[i].classList.remove("swap");
-          rows[i].classList.add("drop");
+          row.textContent = next;
+          row.classList.remove("swap");
+          row.classList.add("drop");
         }
       } else {
         const dt = document.createElement("dt");
@@ -1162,13 +1182,14 @@
        格子不动，字换掉。 */
     const chips = planRoute.querySelectorAll("span");
     for (let i = 0; i < PLAN.after.route.length; i++) {
-      const next = PLAN.after.route[i];
-      if (chips[i] && chips[i].textContent !== next) {
-        chips[i].classList.add("swap");
+      const next = present(PLAN.after.route[i]);
+      const chip = chips[i];
+      if (chip && chip.textContent !== next) {
+        chip.classList.add("swap");
         await wait(TP.row * 0.6);
-        chips[i].textContent = next;
-        chips[i].classList.remove("swap");
-        chips[i].classList.add("drop");
+        chip.textContent = next;
+        chip.classList.remove("swap");
+        chip.classList.add("drop");
       }
       if (!alive(token)) return false;
     }
@@ -1185,7 +1206,7 @@
 
   /* 收窄 → 停一拍 → 飞。两个几何动画不叠在一起，
      这是 V6 自己的规矩：一拍只干一件事。 */
-  async function flyPlanToTask(token) {
+  async function flyPlanToTask(token: number) {
     /* 演示里替用户按一下：先停一拍让人看清入口在哪，再按。 */
     await wait(1500);
     if (!alive(token)) return false;
@@ -1251,7 +1272,7 @@
 
   /* 起点终点都写全，不靠 reverse——reverse 只翻帧序，不翻 scale 的方向，
      收起时会从 scale(.86) 起步，对着已经 scale(1) 的卡片弹一下。 */
-  function arcFrames(x0, y0, s0, x1, y1, s1, cx, cy) {
+  function arcFrames(x0: number, y0: number, s0: number, x1: number, y1: number, s1: number, cx: number, cy: number) {
     const N = 40, out = [];
     const px = x0 + (x1 - x0) * cx, py = y0 + (y1 - y0) * cy;
     for (let k = 0; k <= N; k++) {
@@ -1285,7 +1306,7 @@
 
   /* 把卡片钉在具体像素上。默认那套 left:50%/translate(-50%,-50%) 在宽高变化时
      自己也在移动，和形变叠在一起算不清，所以形变期间一律用实测坐标。 */
-  function pinPlan(rect) {
+  function pinPlan(rect: {left: number; top: number; width?: number; height?: number}) {
     planCard.style.left = rect.left + "px";
     planCard.style.top = rect.top + "px";
     planCard.style.transform = "none";
@@ -1417,7 +1438,7 @@
      位移按「输入框里的文字」和「需求框里的文字」两块的左上角对齐来算——
      卡片浮出来的时候正好接住输入框里那句话，所以是同一句话换了个身份，
      不是凭空冒出来一个新框。中间那一帧让它先起后走，走的是弧线不是斜对角直线。 */
-  async function flyTask(token) {
+  async function flyTask(token: number) {
     sendEl.disabled = true;
     taskText.textContent = TASK;
     taskCard.hidden = false;
@@ -1482,19 +1503,19 @@
      用的就是生成时那套展开：卡片从中心撑开、两侧的线缩进插口、其余变暗。
      同一个东西不该有两种形态，所以这里不另开浮窗——
      浮窗只留给「引擎节点」那种跨节点的清单。 */
-  let inspecting = null;
-  let inspectCam = null;
+  let inspecting: number | null = null;
+  let inspectCam: typeof cam | null = null;
   let inspectToken = 0;
 
-  function fillDone(card, view) {
-    const noteEl = card.querySelector(".note");
-    const codeEl = card.querySelector(".code");
-    card.querySelector(".full-name").textContent = view.title;
-    card.querySelector(".full-kind").textContent = view.kind;
+  function fillDone(card: HTMLElement, view: View) {
+    const noteEl = element(card, ".note");
+    const codeEl = element(card, ".code");
+    element(card, ".full-name").textContent = view.title;
+    element(card, ".full-kind").textContent = view.kind;
     noteEl.textContent = view.note || "";
     noteEl.style.display = view.note ? "" : "none";
     codeEl.style.height = CODE_PAD + "px";   /* 零行，measureOpen 量到的就是 baseH */
-    const inner = card.querySelector(".code-in");
+    const inner = element(card, ".code-in");
     inner.innerHTML = view.content
       .map((l) => `<div class="ln on">${renderTokens(tokenize(l, view.lang))}</div>`)
       .join("");
@@ -1505,14 +1526,14 @@
   }
 
   /* 关：restoreCam 为 false 表示只是换一格看，镜头不回原位。 */
-  function shutInspect(restoreCam) {
+  function shutInspect(restoreCam?: boolean) {
     if (inspecting === null) return false;
     const i = inspecting;
     inspecting = null;
     ++inspectToken;
-    cards[i].classList.remove("open");
-    cards[i].classList.add("morph");
-    closeBox(cards[i]);
+    present(cards[i]).classList.remove("open");
+    present(cards[i]).classList.add("morph");
+    closeBox(present(cards[i]));
     plugEdges(i, false, T.close / SPEED);
     dimOthers(null);
     if (restoreCam !== false && inspectCam) {
@@ -1523,7 +1544,7 @@
     return true;
   }
 
-  async function expandNode(i) {
+  async function expandNode(i: number) {
     const st = state[i];
     if (!st || st.status !== "done" || !st.view) return;
     if (inspecting === i) { shutInspect(true); return; }
@@ -1531,7 +1552,7 @@
     else inspectCam = { x: cam.x, y: cam.y, s: cam.s };  /* 记住退出时回哪儿 */
     const tk = ++inspectToken;   /* 必须在 shutInspect 之后取：它自己也会递增 */
 
-    const card = cards[i];
+    const card = present(cards[i]);
     const codeEl = fillDone(card, st.view);
     const baseH = measureOpen(card);
     const visLines = Math.min(st.view.content.length, MAX_CODE_LINES);
@@ -1549,14 +1570,14 @@
   }
 
   /* ── 浮窗：只用于引擎节点清单 ─────────────────────────── */
-  let winEl = null;
+  let winEl: HTMLElement | null = null;
   function closeWin() {
     if (!winEl) return;
     const el = winEl; winEl = null;
     el.classList.remove("open");
     setTimeout(() => el.remove(), 260);
   }
-  function placeWin(el, rect, avoidTask) {
+  function placeWin(el: HTMLElement, rect: DOMRect, avoidTask?: boolean) {
     const M = 16;
     const w = el.offsetWidth, h = el.offsetHeight;
     let left = rect.right + M;
@@ -1587,10 +1608,10 @@
       '<div class="win-head"><h4>引擎节点</h4><button class="win-close" type="button" aria-label="关闭">×</button></div>' +
       '<div class="eng-list">' +
       state.map((st, i) => {
-        const s = STEPS[i];
+        const s = present(STEPS[i]);
         return `<div class="eng-row"><span>${esc((st.view && st.view.title) || s.title)}</span><code>${esc((st.view && st.view.engine) || s.engine)}</code></div>`;
       }).join("") + "</div>";
-    el.querySelector(".win-close").addEventListener("click", (e) => { e.stopPropagation(); closeWin(); });
+    element(el, ".win-close").addEventListener("click", (e) => { e.stopPropagation(); closeWin(); });
     document.body.appendChild(el);
     placeWin(el, taskCard.getBoundingClientRect());
     winEl = el;
@@ -1657,7 +1678,7 @@
     if (!alive(token)) return;
 
     for (let i = 0; i < STEPS.length; i++) {
-      const spec = STEPS[i];
+      const spec = present(STEPS[i]);
       const prep = prepare(i, spec, false);
       if (!(await approach(i, spec, prep, token))) return;
       if (!(await write(i, spec, prep, token))) return;
@@ -1673,11 +1694,11 @@
     const token = ++runToken;
     closeWin();
     const i = STEPS.findIndex((s) => s.id === FOLLOWUP.target);
-    if (i < 0 || !state[i] || state[i].status !== "done") return;
+    if (i < 0 || !state[i] || present(state[i]).status !== "done") return;
     if (shutInspect(false)) { inspectCam = null; await wait(T.close); }
     if (!alive(token)) return;
     setDock(false);
-    const spec = Object.assign({}, STEPS[i], FOLLOWUP.patch);
+    const spec = Object.assign({}, present(STEPS[i]), FOLLOWUP.patch);
     const prep = prepare(i, spec, true);
     setStatus(spec.color, "正在修改 · " + spec.kind);
     focusNode(i, true, prep.fullH);
@@ -1698,12 +1719,12 @@
     wfNameEl.textContent = WF_NAME;
     STEPS.forEach((step, i) => {
       const card = makeNode(i, step);
-      const st = state[i];
+      const st = present(state[i]);
       st.status = "done";
       st.view = { lang: step.lang, content: step.content.slice(), note: step.note, engine: step.engine, kind: step.kind, title: step.title, color: step.color };
       card.classList.add("shown", "done");
-      card.querySelector(".mini-name").textContent = step.title;
-      const evi = card.querySelector(".mini-evi");
+      element(card, ".mini-name").textContent = step.title;
+      const evi = element(card, ".mini-evi");
       evi.textContent = step.evidence;
       evi.classList.add("visible");
       if (i > 0) drawEdge(i - 1, 0);
@@ -1715,7 +1736,7 @@
 
   speedBtn.addEventListener("click", () => {
     speedIdx = (speedIdx + 1) % SPEEDS.length;
-    SPEED = SPEEDS[speedIdx];
+    SPEED = present(SPEEDS[speedIdx]);
     speedBtn.textContent = SPEED + "×";
     speedBtn.setAttribute("aria-pressed", String(SPEED !== 1));
     /* CSS 里的过渡时长跟着一起缩，否则提速后编排就散了。 */
@@ -1724,6 +1745,7 @@
   skipBtn.addEventListener("click", skipToEnd);
   rerunBtn.addEventListener("click", run);
   taskCard.addEventListener("click", (e) => {
+    if (!(e.target instanceof Element)) return;
     if (e.target.closest("#engBtn")) return;
     openPlanFromTask();
   });
@@ -1731,6 +1753,7 @@
   /* 展开时点卡片以外任何地方都收起。开卡那一下也会冒泡到这里，
      但 planOpen 要等 openPlanFromTask 走完 await 才置真，所以不会开了又关。 */
   document.addEventListener("click", (e) => {
+    if (!(e.target instanceof Element)) return;
     if (!planOpen || planBusy) return;
     if (e.target.closest("#planCard")) return;
     closePlanToTask();
