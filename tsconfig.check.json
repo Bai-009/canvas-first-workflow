@@ -8,6 +8,7 @@
     "shared/**/*.mts",
     "src/**/*.mts",
     "web/*.mts",
+    "prototype/*.mts",
     "test/types/**/*.mts",
     "fixtures/doubles/*.mts",
     "test/**/*.test.mts"

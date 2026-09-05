@@ -89,7 +89,7 @@ Plan Agent 这一段是这么切的：
 
 原型是一个静态页面，不调用模型。它演的是一次完整的交互：用户打一句话，Plan 卡片长出理解、路线和待确认，用户补一句，卡片原地更新，然后画布上长出工作流。
 
-- 打字之后到「开始生成」之前，卡片上的每一个字都是真的。它们来自 deepseek-v4-pro 提交、Gate 放行的两份方案（`fixtures/observed/run4-*`），由 `src/prototype/build-demo-data.mjs` 生成成 `prototype/plan-data.js`。哪些问题被答掉、哪一步原地改，是拿两份方案的编号差异算出来的，不是手标的。
+- 打字之后到「开始生成」之前，卡片上的每一个字都是真的。它们来自 deepseek-v4-pro 提交、Gate 放行的两份方案（`fixtures/observed/run4-*`），由 `src/prototype/build-demo-data.mts` 生成成 `prototype/plan-data.js`。哪些问题被答掉、哪一步原地改，是拿两份方案的编号差异算出来的，不是手标的。
 - 「开始生成」之后长出来的六个节点，是手写的愿景演示。节点里的存储路径、字段清单、代码、定时时间都是编的。Execution Agent 还不存在，画布并没有读那份方案。
 - 现场出图有两处：`npm run web` 是真的，数据是当场跑出来的；`prototype/` 是演的，节奏做得细，数据是录下来的。
 
@@ -155,7 +155,7 @@ EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs npm run plan:chat
 node dist/src/plan/validate-plan-proposal.mjs fixtures/observed/run1-合同场景/turn-1.plan.json
 ```
 
-看原型：用任意静态服务器打开 `prototype/index.html`。改了 `fixtures/observed/` 里的修订轮方案之后，重新生成演示数据：
+看原型：先运行 `npm run build`，再用任意静态服务器打开 `dist/prototype/index.html`。改了 `fixtures/observed/` 里的修订轮方案之后，重新生成演示数据：
 
 ```bash
 node dist/src/prototype/build-demo-data.mjs
@@ -206,3 +206,5 @@ scripts/     render-figures.sh 出图
 AGENTS.md    人和 Agent 在这个仓库里怎么协作
 CLAUDE.md    Claude Code 每个会话先读的规矩，指向 AGENTS.md
 ```
+
+预览页也从编译结果加载：`dist/prototype/node-card.html`、`dist/web/node-conversation.preview.html`、`dist/web/sessions.preview.html`。现有 n8n 描述导出工具使用 `npm run dump:n8n -- <已安装的节点包目录> <输出 JSON>`；它只导出描述，不为应用接入 n8n 或执行工作流。
