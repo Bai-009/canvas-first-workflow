@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { once } from "node:events";
 import { request as httpRequest } from "node:http";
-import { createWebServer } from "../../src/web/server.mjs";
+import { createWebServer } from "../../dist/src/web/server.mjs";
 
 const plan = JSON.parse(readFileSync(new URL("../../fixtures/observed/run8-原因版提示词/turn-2.plan.json", import.meta.url)));
 plan.steps.push({ ref: "s5", title: "核对结果", intent: "保留可检查的记录", input: "写入结果", output: "核对记录", dependsOn: ["s4"] });
@@ -83,11 +83,11 @@ test("浏览器可加载同一份 TypeScript 编译结果，默认 Agent 与契�
   assert.equal(state.hasReviser, true);
   const wrapper = await fetch(`${api.base}/flow.mjs`);
   assert.equal(wrapper.status, 200);
-  assert.match(await wrapper.text(), /\.\/generated\/flow\.mjs/);
-  const generated = await fetch(`${api.base}/generated/flow.mjs`);
+  assert.match(await wrapper.text(), /\.\.\/shared\/flow\.mjs/);
+  const generated = await fetch(`${api.base}/shared/flow.mjs`);
   assert.equal(generated.status, 200);
   assert.match(generated.headers.get("content-type"), /javascript/);
-  assert.equal(await generated.text(), readFileSync(new URL("../../web/generated/flow.mjs", import.meta.url), "utf8"));
+  assert.equal(await generated.text(), readFileSync(new URL("../../dist/shared/flow.mjs", import.meta.url), "utf8"));
   assert.equal((await fetch(`${api.base}/api/node-table`)).status, 200);
 });
 

@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { checkNodeDefinition, findNodeDefinition, loadNodeTable } from "../../src/nodes/node-table.mjs";
+import { checkNodeDefinition, findNodeDefinition, loadNodeTable } from "../../dist/src/nodes/node-table.mjs";
 
 test("nodes/ 里每个文件都合契约,type 不重", () => {
   const table = loadNodeTable();

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { inspectRevision } from "../../src/state-machine/workflow-revision.mjs";
+import { inspectRevision } from "../../dist/src/state-machine/workflow-revision.mjs";
 
 const node = (name, step, type, params = {}, blanks = []) => ({ name, step, type, params, blanks, note: "" });
 const context = () => ({

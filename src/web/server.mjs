@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { nodeTable } from "../nodes/node-table.mjs";
 import { createWorkflowSession, breakOf } from "../state-machine/workflow-session.mjs";
 import { callerFromEnv, loadSystemPrompt } from "../plan/plan-agent.mjs";
+import { projectRoot, resolveRuntimeModule } from "../runtime-paths.mjs";
 
 /* 画布这一头的服务。命令行有什么,这里就有什么:说一句、按开始、批注、看画布。
    区别只在出口——命令行把事件打印成行,这里把同样的事件推给浏览器,
@@ -57,7 +58,7 @@ function createFeed() {
 async function loadExecutor(env = process.env) {
   const which = env.EXECUTOR_MODULE ?? "src/executor/executor.mjs";
   if (which === "none") return null;
-  const mod = await import(pathToFileURL(resolve(which)).href);
+  const mod = await import(pathToFileURL(resolveRuntimeModule(which)).href);
   if (typeof mod.default !== "function") throw new Error(`${which} 没有默认导出一个函数`);
   return mod.default;
 }
@@ -65,7 +66,7 @@ async function loadExecutor(env = process.env) {
 async function loadReviser(env = process.env) {
   const which = env.REVISER_MODULE ?? "src/executor/reviser.mjs";
   if (which === "none") return null;
-  const mod = await import(pathToFileURL(resolve(which)).href);
+  const mod = await import(pathToFileURL(resolveRuntimeModule(which)).href);
   if (typeof mod.default !== "function") throw new Error(`${which} 没有默认导出一个函数`);
   return mod.default;
 }
@@ -343,8 +344,10 @@ export async function createWebServer({ callModel, executor: suppliedExecutor, r
       if (route) return await route(req, res, runtime.generation);
       if (url.pathname.startsWith("/api/")) return json(res, { error: "接口不存在" }, 404);
       const rel = url.pathname === "/" ? "index.html" : normalize(url.pathname).replace(/^(\.\.[/\\])+/, "");
-      const file = join(WEB, rel);
-      if (!file.startsWith(WEB + "/")) throw new Error("越界");
+      const shared = rel.startsWith("/shared/");
+      const staticRoot = shared ? join(ROOT, "shared") : WEB;
+      const file = shared ? join(staticRoot, rel.slice("/shared/".length)) : join(WEB, rel);
+      if (!file.startsWith(staticRoot + "/")) throw new Error("越界");
       const data = await readFile(file);
       res.writeHead(200, { "content-type": TYPE[extname(file)] ?? "application/octet-stream", "cache-control": "no-store" });
       res.end(data);
@@ -359,6 +362,6 @@ export async function createWebServer({ callModel, executor: suppliedExecutor, r
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT ?? 5174);
-  (await createWebServer({ storageDir: resolve(process.env.SESSION_DIR ?? join(ROOT, ".sessions")) }))
+  (await createWebServer({ storageDir: resolve(process.env.SESSION_DIR ?? join(projectRoot, ".sessions")) }))
     .listen(port, "127.0.0.1", () => console.log(`画布在 http://127.0.0.1:${port}`));
 }

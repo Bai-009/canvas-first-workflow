@@ -2,7 +2,9 @@ import { readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
-import Ajv from "ajv/dist/2020.js";
+import { Ajv2020 as Ajv } from "ajv/dist/2020.js";
+import type { ErrorObject } from 'ajv';
+import type { PlanProposal, PlanStep } from '../../shared/contracts.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = JSON.parse(
@@ -13,9 +15,9 @@ const schema = JSON.parse(
    生成端不依赖任何一家的强制（各家支持参差），这道闸门是唯一的保证：
    校不过就把错误发回去让模型重交。 */
 const ajv = new Ajv({ allErrors: true, strict: true });
-const checkShape = ajv.compile(schema);
+const checkShape = ajv.compile<PlanProposal>(schema);
 
-function formatShapeError(error) {
+function formatShapeError(error: ErrorObject): string {
   const at = error.instancePath || "$";
   if (error.keyword === "additionalProperties") {
     return `${at} 出现了 schema 里没有的字段：${error.params.additionalProperty}`;
@@ -32,11 +34,11 @@ function formatShapeError(error) {
   return `${at} ${error.message}`;
 }
 
-function findCycle(stepsByRef) {
-  const visiting = new Set();
-  const visited = new Set();
+function findCycle(stepsByRef: Map<string, PlanStep>): string[] | null {
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
 
-  function visit(ref, trail) {
+  function visit(ref: string, trail: string[]): string[] | null {
     if (visiting.has(ref)) return [...trail, ref];
     if (visited.has(ref)) return null;
     visiting.add(ref);
@@ -60,14 +62,14 @@ function findCycle(stepsByRef) {
 
 /* 以下都是 JSON Schema 写不出来的：编号是否撞车、引用指向的东西存不存在、
    依赖会不会绕成环、readiness 跟 openQuestions 对不对得上。 */
-export function validatePlanProposal(value) {
+export function validatePlanProposal(value: unknown): { ok: boolean; errors: string[] } {
   if (!checkShape(value)) {
-    return { ok: false, errors: checkShape.errors.map(formatShapeError) };
+    return { ok: false, errors: (checkShape.errors ?? []).map(formatShapeError) };
   }
 
   const errors = [];
   const readingRefs = new Set();
-  const stepsByRef = new Map();
+  const stepsByRef = new Map<string, PlanStep>();
   const questionRefs = new Set();
 
   value.understanding.forEach((reading, index) => {
@@ -122,7 +124,7 @@ export function validatePlanProposal(value) {
 async function runCli() {
   const file = process.argv[2];
   if (!file) {
-    console.error("用法：node src/plan/validate-plan-proposal.mjs <plan.json>");
+    console.error("用法：node dist/src/plan/validate-plan-proposal.mjs <plan.json>");
     process.exitCode = 2;
     return;
   }
@@ -140,6 +142,11 @@ async function runCli() {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   }
+}
+
+// 给内部调用方的收窄入口：同样经过 Schema 与语义检查，不是类型断言。
+export function isPlanProposal(value: unknown): value is PlanProposal {
+  return validatePlanProposal(value).ok;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

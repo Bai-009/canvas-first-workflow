@@ -99,15 +99,17 @@ Plan Agent 这一段是这么切的：
 
 首次拉取或依赖变化后，先运行 `npm ci`。`npm run web`、`npm test` 和已有 Agent 命令会在启动前自动编译共用 TypeScript 模块，编译失败时不会继续启动。
 
-### TypeScript 渐进迁移（第一步）
+### TypeScript 渐进迁移
 
-当前只迁移了数据流计算：源码在 `shared/flow.mts`，严格检查后输出到 `web/generated/`（不提交）。`.mts` 是采用 ESM 的 TypeScript 文件，输出仍为 `.mjs`。原来的 `web/flow.mjs` 保留为导出入口，浏览器的连线文字与服务端的数据连接检查都使用同一份编译结果。其余模块暂时仍是 JavaScript，不能把本阶段的检查通过解释成整个仓库已经具备类型保护。
+已经接入共用数据流、从四份 JSON Schema 自动生成的数据类型，以及方案校验、方案差异和执行上下文组装。源码中的 `.mts` 编译为 `.mjs`；其余 JavaScript 暂时原样编译，尚未获得严格类型保护。计划和节点的外部输入仍经过原有运行时检查，不能用 TypeScript 类型代替模型结果校验。
 
-运行 `npm run typecheck` 检查已迁移源码和类型反例；`test/types/flow.typecheck.mts` 验证缺少连线终点、错误节点名称、未知输出种类等调用会被拒绝。这里的类型只描述数据流模块读取的部分；完整计划、状态和模型结果类型留在后续迁移，现有 JSON Schema 和运行时校验继续生效。
+`npm run build` 先生成类型，再把源码编译到 `dist/` 并复制运行资源。`npm run web`、测试和 Agent 命令会先构建，统一运行编译结果；提示词、节点表和 Schema 位于编译目录对应层级。默认 `.sessions/` 仍保存在仓库根目录，不随 `dist/` 重建而删除；`EXECUTOR_MODULE=src/...mjs` 等原有内置路径映射至编译结果，外部自定义模块路径不变。
 
-开发时仍用 `npm run web` 打开 `http://127.0.0.1:5174/`。修改 `shared/` 后运行 `npm run build`，或另开终端运行 `npm run build:watch`；浏览器刷新读取新结果，后端需要重启以重新加载模块。若直接使用 `node` 启动依赖数据流模块的入口，先运行一次 `npm run build`。测试、服务、命令行仍运行原有目录中的代码，提示词、可替换 Agent 的路径及 `.sessions/` 存档位置不变。
+运行 `npm run typecheck` 检查已迁移模块和 `test/types/` 中只编译、不执行的类型反例。后端执行上下文要求经过校验的计划，修订结果区分 patch 与无需修改，类型检查会拒绝缺少差量的 patch。生成声明不提交，也不手动维护第二份字段表。
 
-每个迁移阶段保持可运行并单独 review；后续依次覆盖共同数据约定、后端核心和界面代码。第一步不改变节点数据含义、交互布局、动效或会话存档格式。
+修改源码后重新运行 `npm run build` 并重启服务；`build:watch` 可持续编译源码，修改 Schema 或静态资源后仍需完整构建。直接使用 Node 时运行 `dist/src/` 下的入口。生成工具的一项第三方声明与严格可选属性不兼容，因此仅工具配置使用 `skipLibCheck`；项目源码的严格检查保持开启。
+
+当前阶段与后续验收见 [TypeScript 迁移记录](docs/TypeScript迁移.md)。
 
 跑测试：
 
@@ -148,13 +150,13 @@ EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs npm run plan:chat
 校验一份方案文件：
 
 ```bash
-node src/plan/validate-plan-proposal.mjs fixtures/observed/run1-合同场景/turn-1.plan.json
+node dist/src/plan/validate-plan-proposal.mjs fixtures/observed/run1-合同场景/turn-1.plan.json
 ```
 
 看原型：用任意静态服务器打开 `prototype/index.html`。改了 `fixtures/observed/` 里的修订轮方案之后，重新生成演示数据：
 
 ```bash
-node src/prototype/build-demo-data.mjs
+node dist/src/prototype/build-demo-data.mjs
 ```
 
 ## 怎么读

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { nodeTable } from "../../src/nodes/node-table.mjs";
-import { adds, edgeKey, flows, label } from "../../web/flow.mjs";
+import { nodeTable } from "../../dist/src/nodes/node-table.mjs";
+import { adds, edgeKey, flows, label } from "../../dist/web/flow.mjs";
 
 const table = nodeTable();
 const node = (name, type, params = {}) => ({ name, step: "s", type, params, blanks: [] });

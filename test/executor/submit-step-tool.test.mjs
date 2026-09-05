@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { submitStepTool } from "../../src/executor/submit-step-tool.mjs";
+import { submitStepTool } from "../../dist/src/executor/submit-step-tool.mjs";
 
 /* 每一层对象都不许自己加格子;params 例外,它装的是格子的值,键名由节点表定,契约上不封死,闸门第二道按表查 */
 function objectsIn(schema, path = "") {

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { stepMessage, toPatch, runStep, createExecutor, executorTools, loadSystemPrompt } from "../../src/executor/executor.mjs";
+import { stepMessage, toPatch, runStep, createExecutor, executorTools, loadSystemPrompt } from "../../dist/src/executor/executor.mjs";
 
 const context = (overrides = {}) => ({
   plan: { goal: "每天把新合同写进库", steps: [{ ref: "s1", title: "读文件", dependsOn: [] }], openQuestions: [] },
@@ -228,6 +228,6 @@ test("插口:出错也存实录,错照样抛出去", async () => {
 });
 
 test("默认导出就是插口:是个函数,import 时不读模型配置", async () => {
-  const mod = await import("../../src/executor/executor.mjs");
+  const mod = await import("../../dist/src/executor/executor.mjs");
   assert.equal(typeof mod.default, "function");
 });

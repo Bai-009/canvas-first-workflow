@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createEventCursor } from "../../web/event-cursor.mjs";
+import { createEventCursor } from "../../dist/web/event-cursor.mjs";
 
 test("服务重启后接受从零开始的快照与后续事件，旧流增量不能覆盖新画布", () => {
   const cursor = createEventCursor({ feedId: "before-restart", sequence: 42 });

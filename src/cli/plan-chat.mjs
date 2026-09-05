@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { callerFromEnv, loadSystemPrompt } from "../plan/plan-agent.mjs";
 import { createWorkflowSession } from "../state-machine/workflow-session.mjs";
 import { describe } from "./describe-event.mjs";
+import { resolveRuntimeModule } from "../runtime-paths.mjs";
 
 /* 多轮命令:一行一轮。对话记录攒着,过了闸门的方案换成当前方案,
    正在跑的一轮可以 Ctrl-C 停掉(那轮作废,只留你那句)。
@@ -127,7 +128,7 @@ const printEvent = (event, context) => console.log(`  [${context.step.ref} ${eve
 
 async function loadExecutor(env = process.env) {
   if (!env.EXECUTOR_MODULE) return { executor: null, label: null };
-  const url = pathToFileURL(resolve(env.EXECUTOR_MODULE)).href;
+  const url = pathToFileURL(resolveRuntimeModule(env.EXECUTOR_MODULE)).href;
   const mod = await import(url);
   if (typeof mod.default !== "function") throw new Error(`${env.EXECUTOR_MODULE} 没有默认导出一个函数`);
   return { executor: mod.default, label: env.EXECUTOR_MODULE };

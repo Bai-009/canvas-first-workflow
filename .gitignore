@@ -16,3 +16,7 @@ web/generated/
 
 # 本机会话存档，不进入版本控制
 .sessions/
+
+# TypeScript build tools and generated contract declarations
+.build-tools/
+shared/generated/

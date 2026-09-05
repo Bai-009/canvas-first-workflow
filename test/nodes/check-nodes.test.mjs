@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { checkAgainstNodeTable, checkFlow } from "../../src/nodes/check-nodes.mjs";
+import { checkAgainstNodeTable, checkFlow } from "../../dist/src/nodes/check-nodes.mjs";
 
 const node = (type, params = {}, blanks = [], name = "A") => ({ name, step: "s1", type, params, blanks });
 const reasons = (nodes, edges = [], canvas = []) => checkAgainstNodeTable(nodes, edges, canvas).join("\n");

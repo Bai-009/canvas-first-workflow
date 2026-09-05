@@ -5,27 +5,30 @@
   "description": "A canvas-first, architecture-backed prototype for AI-generated data workflows.",
   "type": "module",
   "scripts": {
-    "test": "node --test",
-    "plan": "node --env-file-if-exists=.env src/plan/plan-agent.mjs",
-    "plan:chat": "node --env-file-if-exists=.env src/cli/plan-chat.mjs",
-    "validate:fixture": "node src/plan/validate-plan-proposal.mjs fixtures/contract-processing.plan.json",
-    "executor:step": "node --env-file-if-exists=.env src/cli/executor-step.mjs",
-    "web": "node --env-file-if-exists=.env src/web/server.mjs",
-    "build": "tsc -p tsconfig.json",
-    "build:watch": "tsc -p tsconfig.json --watch",
+    "test": "node --test test/*/*.test.mjs",
+    "plan": "node --env-file-if-exists=.env dist/src/plan/plan-agent.mjs",
+    "plan:chat": "node --env-file-if-exists=.env dist/src/cli/plan-chat.mjs",
+    "validate:fixture": "node dist/src/plan/validate-plan-proposal.mjs fixtures/contract-processing.plan.json",
+    "executor:step": "node --env-file-if-exists=.env dist/src/cli/executor-step.mjs",
+    "web": "node --env-file-if-exists=.env dist/src/web/server.mjs",
+    "build": "npm run contracts && tsc -p tsconfig.json && node .build-tools/build-assets.mjs",
+    "build:watch": "npm run build && tsc -p tsconfig.json --watch",
     "typecheck": "npm run build && tsc -p tsconfig.check.json",
     "pretest": "npm run build",
     "preweb": "npm run build",
     "preplan": "npm run build",
     "preplan:chat": "npm run build",
     "prevalidate:fixture": "npm run build",
-    "preexecutor:step": "npm run build"
+    "preexecutor:step": "npm run build",
+    "contracts": "tsc -p tsconfig.tools.json && node .build-tools/generate-contracts.mjs"
   },
   "engines": {
     "node": ">=22.9"
   },
   "devDependencies": {
+    "@types/node": "^22.20.1",
     "ajv": "^8.20.0",
+    "json-schema-to-typescript": "^16.0.0",
     "typescript": "~6.0.0"
   }
 }

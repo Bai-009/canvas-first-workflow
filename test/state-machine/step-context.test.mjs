@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { stepOrder, questionsFor, assembleTable } from "../../src/state-machine/step-context.mjs";
+import { stepOrder, questionsFor, assembleTable } from "../../dist/src/state-machine/step-context.mjs";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 const run8 = read("../../fixtures/observed/run8-原因版提示词/turn-2.plan.json");

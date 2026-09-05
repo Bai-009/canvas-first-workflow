@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createPlanSession } from "../../src/plan/plan-session.mjs";
+import { createPlanSession } from "../../dist/src/plan/plan-session.mjs";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 const v1 = read("../../fixtures/observed/run4-修订轮/turn-1.plan.json");

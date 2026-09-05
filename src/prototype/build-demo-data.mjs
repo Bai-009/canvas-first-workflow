@@ -1,5 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { projectRoot } from "../runtime-paths.mjs";
 import { validatePlanProposal } from "../plan/validate-plan-proposal.mjs";
 import { diffPlans } from "../plan/plan-diff.mjs";
 
@@ -56,7 +58,7 @@ const data = {
   },
 };
 
-const out = fileURLToPath(new URL("../../prototype/plan-data.js", import.meta.url));
+const out = join(projectRoot, "prototype/plan-data.js");
 writeFileSync(
   out,
   `/* 由 src/prototype/build-demo-data.mjs 生成,不要手改。

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { runPlanAgent, loadSystemPrompt } from "../../src/plan/plan-agent.mjs";
+import { runPlanAgent, loadSystemPrompt } from "../../dist/src/plan/plan-agent.mjs";
 
 const goodPlan = JSON.parse(
   readFileSync(new URL("../../fixtures/contract-processing.plan.json", import.meta.url), "utf8")

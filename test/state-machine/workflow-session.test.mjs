@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createWorkflowSession, checkResult, wholeCanvasProblems, breakOf, handoffText } from "../../src/state-machine/workflow-session.mjs";
-import { stepWaves } from "../../src/state-machine/step-context.mjs";
+import { createWorkflowSession, checkResult, wholeCanvasProblems, breakOf, handoffText } from "../../dist/src/state-machine/workflow-session.mjs";
+import { stepWaves } from "../../dist/src/state-machine/step-context.mjs";
 import fixedExecutor from "../../fixtures/doubles/fixed-executor.mjs";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));

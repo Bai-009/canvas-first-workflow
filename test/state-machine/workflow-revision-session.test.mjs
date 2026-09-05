@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createWorkflowSession } from "../../src/state-machine/workflow-session.mjs";
+import { createWorkflowSession } from "../../dist/src/state-machine/workflow-session.mjs";
 
 const plan = {
   readiness: "ready", goal: "读取合同，抽金额并写库", understanding: [], openQuestions: [],
