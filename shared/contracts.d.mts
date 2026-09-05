@@ -7,7 +7,8 @@ export type { PlanProposal, NodeDefinition, StepSubmission, WorkflowRevision, Ed
 export type PlanStep = PlanProposal['steps'][number];
 export type PlanQuestion = PlanProposal['openQuestions'][number];
 export type SubmittedNode = NonNullable<StepSubmission['nodes']>[number];
-export type CanvasNode = SubmittedNode & { step: string };
+// 逐步构建门禁检查机器字段；旁白在这一入口是透传内容，修订入口另要求字符串。
+export type CanvasNode = Omit<SubmittedNode, 'note'> & { step: string; note?: unknown };
 export interface Canvas { nodes: CanvasNode[]; edges: Edge[]; version: number }
 export interface Annotation { step: string; text: string }
 export interface Requirement { target: { node: string; step: string }; text: string }
@@ -19,8 +20,8 @@ export interface StepContext {
   instructions: string[];
   requirements?: Requirement[];
 }
-// Schema 的信封约束之外，现有状态机还要求 patch 必须带齐节点与线。
-export type StepResult = { kind: 'covered' } | { kind: 'patch'; nodes: CanvasNode[]; edges: Edge[] };
+// 现有构建门禁要求节点，省略 edges 与空数组等价。
+export type StepResult = { kind: 'covered' } | { kind: 'patch'; nodes: CanvasNode[]; edges?: Edge[] | undefined };
 // 从生成类型取字段，补全 oneOf 生成器无法精确表达的必填差量关联。
 type RevisionBase = Pick<WorkflowRevision, 'summary' | 'review'>;
 export type RevisionResult = RevisionBase & (

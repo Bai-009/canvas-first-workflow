@@ -14,7 +14,7 @@ void unchanged;
 const missingDiff: RevisionResult = { kind: 'patch', summary: '修改', review: [] };
 // @ts-expect-error 无需修改的结果不能偷偷携带画布变化。
 const extraDiff: RevisionResult = { kind: 'unchanged', summary: '保持', review: [], removeNodes: ['s1'] };
-// @ts-expect-error 构建 patch 必须包含节点和连线。
+// @ts-expect-error 构建 patch 必须包含节点。
 const missingNodes: StepResult = { kind: 'patch' };
 // @ts-expect-error 未校验的外部数据不能直接成为已确认计划。
 assembleTable(incoming, 's1', { canvas });

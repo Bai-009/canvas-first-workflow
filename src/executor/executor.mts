@@ -1,3 +1,22 @@
+import type { StepContext, StepResult } from '../../shared/contracts.mjs';
+import type { ModelCaller, Message, ToolCall } from '../../shared/model.mjs';
+import type { AgentEvent, ExecutorOptions, StepOutcome } from '../../shared/workflow.mjs';
+import { isRecord as isObject } from '../../shared/json.mjs';
+import { errorMessage, errorDetails } from '../../shared/errors.mjs';
+interface StepOptions {
+  callModel: ModelCaller;
+  systemPrompt: string;
+  maxRounds?: number;
+  signal?: AbortSignal | undefined;
+  onEvent?: ((event: AgentEvent) => void) | undefined;
+}
+interface FactoryOptions {
+  callModel: ModelCaller;
+  systemPrompt?: string;
+  maxRounds?: number;
+  onEvent?: ((event: AgentEvent, context: StepContext) => void) | undefined;
+  save?: string | undefined;
+}
 /* 执行者本体:一步的来回。
    桌上的五样贴上标签发给模型,整张节点表常驻在提示词里,只带一个工具(交);
    它一交,交的东西先过状态机那道闸门(同一道,不另造:信封 + 对得上节点表),过了就还给状态机,没过就把原因退给它再来。
@@ -7,7 +26,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { renderNodeTable } from "./node-catalog.mjs";
 import { submitStepTool } from "./submit-step-tool.mjs";
-import { checkResult } from "../state-machine/workflow-session.mjs";
+import { checkResult, isStepResult } from "../state-machine/workflow-session.mjs";
 import { callerFromEnv as modelCallerFromEnv } from "../model/openai-compatible.mjs";
 
 export const executorTools = [submitStepTool];
@@ -22,12 +41,11 @@ export function callerFromEnv(env = process.env) {
   return modelCallerFromEnv(env, { tools: executorTools });
 }
 
-const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 
 /* 五样贴标签。画布原样发:节点的名字全线只有 name 一个叫法,这里不换。 */
-export function stepMessage(context) {
+export function stepMessage(context: StepContext) {
   const { plan, step, canvas, openQuestions, instructions } = context;
-  const block = (tag, value) => `<${tag}>\n${JSON.stringify(value, null, 2)}\n</${tag}>`;
+  const block = (tag: string, value: unknown) => `<${tag}>\n${JSON.stringify(value, null, 2)}\n</${tag}>`;
   return [
     block("plan", plan),
     block("step", step),
@@ -41,7 +59,7 @@ export function stepMessage(context) {
 /* 模型交的 → 状态机认的。这一层只拥有一样东西:节点属于哪一步(step),所以只补这一样,
    其余原样带过去。路过的层不许挑格子——挑一次,以后契约上新加的格子就在这儿悄没声地没了。
    形状不对的也原样递过去,让闸门说话。 */
-export function toPatch(submission, ref) {
+export function toPatch(submission: unknown, ref: string): unknown {
   if (!isObject(submission)) return submission;
   if (submission.kind === "covered") return { kind: "covered" };
   const nodes = Array.isArray(submission.nodes)
@@ -51,9 +69,9 @@ export function toPatch(submission, ref) {
 }
 
 /* 只有一个工具。叫了别的名字,当答案退给它,来回继续 */
-const answerTool = (name) => ({ error: `unknown tool ${name}; the only tool is submit_step, and the node table is in the system prompt` });
+const answerTool = (name: string) => ({ error: `unknown tool ${name}; the only tool is submit_step, and the node table is in the system prompt` });
 
-const toolReply = (call, content) => ({ role: "tool", tool_call_id: call.id, content: JSON.stringify(content) });
+const toolReply = (call: ToolCall, content: unknown): Message => ({ role: "tool", tool_call_id: call.id, content: JSON.stringify(content) });
 
 /* 模型偶尔不走工具,把这一交当正文写出来——`submit_step({...})`,或者 Anthropic 那套
    `<invoke name="submit_step">`。接口那头看不到工具调用,于是这一轮等于什么都没交。
@@ -62,15 +80,15 @@ const WROTE_IT_OUT = /<(?:invoke|function_calls|antml:invoke)\b|\bsubmit_step\s*
 
 /* 一步。返回 { result(状态机认的), submission(模型交的原样), rounds, messages(整段对话), events(每个动作) }。
    没交成抛错,错误上挂着 messages 和 events,实录照样能存。 */
-export async function runStep(context, { callModel, systemPrompt, maxRounds = 30, signal, onEvent = () => {} }) {
+export async function runStep(context: StepContext, { callModel, systemPrompt, maxRounds = 30, signal, onEvent = () => {} }: StepOptions): Promise<StepOutcome> {
   const ref = context.step.ref;
-  const messages = [
+  const messages: Message[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: stepMessage(context) },
   ];
-  const events = [];
-  const note = (event) => { events.push(event); onEvent(event); };
-  const fail = (message) => Object.assign(new Error(message), { messages, events });
+  const events: AgentEvent[] = [];
+  const note = (event: AgentEvent) => { events.push(event); onEvent(event); };
+  const fail = (message: string) => Object.assign(new Error(message), { messages, events });
 
   for (let round = 1; round <= maxRounds; round++) {
     let reply;
@@ -78,7 +96,7 @@ export async function runStep(context, { callModel, systemPrompt, maxRounds = 30
       reply = await callModel(messages, { signal, tools: executorTools });
     } catch (error) {
       /* 接口抛的错(网络、限流、key 不对)也带上对话记录:出错那一步的实录最该看,不能是空的 */
-      throw Object.assign(error, { messages, events });
+      throw Object.assign(error instanceof Error ? error : new Error(errorMessage(error)), { messages, events });
     }
     messages.push(reply);
     if (reply.content) note({ round, kind: "said", text: reply.content });
@@ -100,18 +118,18 @@ export async function runStep(context, { callModel, systemPrompt, maxRounds = 30
 
     for (const call of calls) {
       const name = call.function?.name;
-      let args;
+      let args: unknown;
       try {
         args = JSON.parse(call.function?.arguments || "{}");
       } catch (error) {
-        messages.push(toolReply(call, { error: `arguments is not valid JSON: ${error.message}` }));
+        messages.push(toolReply(call, { error: `arguments is not valid JSON: ${errorMessage(error)}` }));
         note({ round, kind: "bad-args", tool: name });
         continue;
       }
       if (name === "submit_step") {
         const result = toPatch(args, ref);
-        const reasons = checkResult(result, context.step, context.canvas);
-        if (reasons.length) {
+        if (!isStepResult(result, context.step, context.canvas)) {
+          const reasons = checkResult(result, context.step, context.canvas);
           messages.push(toolReply(call, { rejected: reasons }));
           note({ round, kind: "rejected", reasons });
           continue;
@@ -131,12 +149,12 @@ export async function runStep(context, { callModel, systemPrompt, maxRounds = 30
    onEvent(事件, 上下文) 让外面看得见它一路在干什么,上下文带着是哪一步——一波里可能两步同时在做。
    save 给了目录,每一步自己的对话记录、事件、交的原样都存进去:实录是执行者自己层的东西,
    它自己存,状态机不经手;出错也存,错照样抛。 */
-export function createExecutor({ callModel, systemPrompt = loadSystemPrompt(), maxRounds = 30, onEvent, save } = {}) {
+export function createExecutor({ callModel, systemPrompt = loadSystemPrompt(), maxRounds = 30, onEvent, save }: FactoryOptions) {
   let count = 0;
-  return async function executor(context, { signal, onEvent: onEventForThisCall = onEvent } = {}) {
+  return async function executor(context: StepContext, { signal, onEvent: onEventForThisCall = onEvent }: ExecutorOptions = {}): Promise<StepResult> {
     const ref = context.step.ref;
     const dir = save ? join(save, `${String(++count).padStart(2, "0")}-${ref}`) : null;
-    const keep = (name, value) => {
+    const keep = (name: string, value: unknown) => {
       if (!dir || value === undefined) return;
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, name), typeof value === "string" ? value : `${JSON.stringify(value, null, 2)}\n`);
@@ -156,9 +174,9 @@ export function createExecutor({ callModel, systemPrompt = loadSystemPrompt(), m
       keep("patch.json", outcome.result);
       return outcome.result;
     } catch (error) {
-      keep("messages.json", error.messages);
-      keep("events.json", error.events);
-      keep("error.txt", `${error.message}\n`);
+      keep("messages.json", errorDetails(error).messages);
+      keep("events.json", errorDetails(error).events);
+      keep("error.txt", `${errorMessage(error)}\n`);
       throw error;
     }
   };
@@ -167,8 +185,8 @@ export function createExecutor({ callModel, systemPrompt = loadSystemPrompt(), m
 /* 默认导出就是插口:EXECUTOR_MODULE=src/executor/executor.mjs。
    模型配置到第一次被叫到才从 .env 读,免得谁一 import 这个模块就要 key;
    EXECUTOR_SAVE=目录 时每一步的实录存进去。 */
-let plugged = null;
-export default async function executor(context, options) {
+let plugged: ReturnType<typeof createExecutor> | null = null;
+export default async function executor(context: StepContext, options?: ExecutorOptions) {
   /* 实录默认开着,写在 .runs/ 下面(已忽略)。跑停了想知道为什么,只能问实录——
      它关着的时候一趟跑完什么都没留下,人只看见「停在 s2」,谁也说不出原因。
      不想留就 EXECUTOR_SAVE=none。 */
