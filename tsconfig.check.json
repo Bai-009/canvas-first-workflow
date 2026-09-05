@@ -8,13 +8,12 @@
   },
   "include": [
     "shared/**/*.mts",
-    "src/**/*.mjs",
     "src/**/*.mts",
     "web/*.mts",
     "web/*.mjs",
     "web/*.js",
     "test/types/**/*.mts",
-    "fixtures/doubles/*.mjs",
+    "fixtures/doubles/*.mts",
     "test/**/*.test.mts"
   ]
 }

@@ -1,8 +1,8 @@
+import type { PlanProposal } from "../../shared/contracts.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { projectRoot } from "../runtime-paths.mjs";
-import { validatePlanProposal } from "../plan/validate-plan-proposal.mjs";
+import { inspectPlanProposal } from "../plan/validate-plan-proposal.mjs";
 import { diffPlans } from "../plan/plan-diff.mjs";
 
 /* 原型演示的数据从这里生成,不在前端代码里手写。
@@ -12,27 +12,25 @@ import { diffPlans } from "../plan/plan-diff.mjs";
    "哪些问题被答掉了""哪一步原地改了"不靠手标,靠编号差异算出来——
    跟界面上"沿用编号=原地改"用的是同一个机制。 */
 
-const read = (rel) =>
-  JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
-
-const before = read("../../fixtures/observed/run4-修订轮/turn-1.plan.json");
-const after = read("../../fixtures/observed/run4-修订轮/turn-2.plan.json");
-
-for (const [name, plan] of [["第一轮", before], ["第二轮", after]]) {
-  const gate = validatePlanProposal(plan);
+const read = (rel: string, name: string): PlanProposal => {
+  const value: unknown = JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
+  const gate = inspectPlanProposal(value);
   if (!gate.ok) {
     console.error(`${name}方案没过闸门:\n${gate.errors.join("\n")}`);
     process.exit(1);
   }
-}
+  return gate.plan;
+};
+const before = read("../../fixtures/observed/run4-修订轮/turn-1.plan.json", "第一轮");
+const after = read("../../fixtures/observed/run4-修订轮/turn-2.plan.json", "第二轮");
 
 /* 对话实录(与 docs/观察.md 一致) */
 const TASK = "每天定时把新增的合同 PDF 解析出关键字段,写进数据库";
 const REPLY = "PDF 都是扫描件。「新增」按文件落库时间算,每天处理昨天落库的。";
 
-const pairs = (plan) => plan.understanding.map((r) => [r.quote, r.reading]);
-const route = (plan) => plan.steps.map((s) => s.title);
-const doneLine = (plan) =>
+const pairs = (plan: PlanProposal) => plan.understanding.map((r) => [r.quote, r.reading]);
+const route = (plan: PlanProposal) => plan.steps.map((s) => s.title);
+const doneLine = (plan: PlanProposal) =>
   `${plan.steps.length} 步 · ${
     plan.openQuestions.length ? `${plan.openQuestions.length} 项待确认` : "待确认已清"
   }`;
@@ -61,10 +59,10 @@ const data = {
 const out = join(projectRoot, "prototype/plan-data.js");
 writeFileSync(
   out,
-  `/* 由 src/prototype/build-demo-data.mjs 生成,不要手改。
+  `/* 由 src/prototype/build-demo-data.mts 生成,不要手改。
    数据是真实模型输出(fixtures/observed/ 的修订轮一对),生成时已过闸门。 */
 window.PLAN_DATA = ${JSON.stringify(data, null, 2)};
 `
 );
 console.log(`已生成 ${out}`);
-console.log(`答掉的问题(按编号差异):${answeredAsks.map((i) => before.openQuestions[i].ref).join("、")}`);
+console.log(`答掉的问题(按编号差异):${answeredAsks.map((i) => before.openQuestions[i]?.ref).join("、")}`);

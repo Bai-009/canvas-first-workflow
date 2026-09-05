@@ -24,12 +24,11 @@
   },
   "include": [
     "shared/**/*.mts",
-    "src/**/*.mjs",
     "src/**/*.mts",
     "web/*.mjs",
     "web/*.mts",
     "web/*.js",
-    "fixtures/doubles/*.mjs",
+    "fixtures/doubles/*.mts",
     "test/**/*.test.mts"
   ],
   "exclude": [

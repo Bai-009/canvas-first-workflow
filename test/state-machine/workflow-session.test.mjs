@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createWorkflowSession, checkResult, wholeCanvasProblems, breakOf, handoffText } from "../../dist/src/state-machine/workflow-session.mjs";
 import { stepWaves } from "../../dist/src/state-machine/step-context.mjs";
-import fixedExecutor from "../../fixtures/doubles/fixed-executor.mjs";
+import fixedExecutor from "../../dist/fixtures/doubles/fixed-executor.mjs";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 const run8 = read("../../fixtures/observed/run8-原因版提示词/turn-2.plan.json");
