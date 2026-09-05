@@ -1,6 +1,7 @@
 node_modules/
 coverage/
 dist/
+web/generated/
 .env
 .env.*
 !.env.example

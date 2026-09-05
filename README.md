@@ -97,6 +97,18 @@ Plan Agent 这一段是这么切的：
 
 需要 Node 22.9 以上。
 
+首次拉取或依赖变化后，先运行 `npm ci`。`npm run web`、`npm test` 和已有 Agent 命令会在启动前自动编译共用 TypeScript 模块，编译失败时不会继续启动。
+
+### TypeScript 渐进迁移（第一步）
+
+当前只迁移了数据流计算：源码在 `shared/flow.mts`，严格检查后输出到 `web/generated/`（不提交）。`.mts` 是采用 ESM 的 TypeScript 文件，输出仍为 `.mjs`。原来的 `web/flow.mjs` 保留为导出入口，浏览器的连线文字与服务端的数据连接检查都使用同一份编译结果。其余模块暂时仍是 JavaScript，不能把本阶段的检查通过解释成整个仓库已经具备类型保护。
+
+运行 `npm run typecheck` 检查已迁移源码和类型反例；`test/types/flow.typecheck.mts` 验证缺少连线终点、错误节点名称、未知输出种类等调用会被拒绝。这里的类型只描述数据流模块读取的部分；完整计划、状态和模型结果类型留在后续迁移，现有 JSON Schema 和运行时校验继续生效。
+
+开发时仍用 `npm run web` 打开 `http://127.0.0.1:5174/`。修改 `shared/` 后运行 `npm run build`，或另开终端运行 `npm run build:watch`；浏览器刷新读取新结果，后端需要重启以重新加载模块。若直接使用 `node` 启动依赖数据流模块的入口，先运行一次 `npm run build`。测试、服务、命令行仍运行原有目录中的代码，提示词、可替换 Agent 的路径及 `.sessions/` 存档位置不变。
+
+每个迁移阶段保持可运行并单独 review；后续依次覆盖共同数据约定、后端核心和界面代码。第一步不改变节点数据含义、交互布局、动效或会话存档格式。
+
 跑测试：
 
 ```bash
