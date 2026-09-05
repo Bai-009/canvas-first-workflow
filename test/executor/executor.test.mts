@@ -1,26 +1,35 @@
+import type { StepContext, StepResult } from "../../shared/contracts.mjs";
+import type { AssistantMessage, Message, ToolCall } from "../../shared/model.mjs";
+import { present, record, list, text as string, jsonObject, planWithSteps } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { stepMessage, toPatch, runStep, createExecutor, executorTools, loadSystemPrompt } from "../../dist/src/executor/executor.mjs";
+import { stepMessage, toPatch, runStep, createExecutor, executorTools, loadSystemPrompt } from "../../src/executor/executor.mjs";
 
-const context = (overrides = {}) => ({
-  plan: { goal: "每天把新合同写进库", steps: [{ ref: "s1", title: "读文件", dependsOn: [] }], openQuestions: [] },
-  step: { ref: "s1", title: "读文件", intent: "读出昨天的 PDF", input: "磁盘上的 PDF", output: "PDF 清单", dependsOn: [] },
+function patchResult(result: StepResult) {
+  assert.equal(result.kind, "patch");
+  return result;
+}
+
+const context = (overrides: Omit<Partial<StepContext>, "step"> & { step?: Partial<StepContext["step"]> } = {}): StepContext => ({
+  plan: { ...planWithSteps([{ ref: "s1", title: "读文件", dependsOn: [] }]), goal: "每天把新合同写进库" },
+
   canvas: { nodes: [], edges: [], version: 0 },
   openQuestions: [],
   instructions: [],
   ...overrides,
+  step: { ref: "s1", title: "读文件", intent: "读出昨天的 PDF", input: "磁盘上的 PDF", output: "PDF 清单", dependsOn: [], ...overrides.step },
 });
 
-const call = (name, args, id = "c1") => ({ id, type: "function", function: { name, arguments: JSON.stringify(args) } });
-const assistant = (calls, content = null) => ({ role: "assistant", content, tool_calls: calls });
+const call = (name: string, args: unknown, id = "c1"): ToolCall => ({ id, type: "function", function: { name, arguments: JSON.stringify(args) } });
+const assistant = (calls: ToolCall[], content: string | null = null): AssistantMessage => ({ role: "assistant", content, tool_calls: calls });
 
 /* 照剧本答的模型:每次调用弹一条回复,顺便记下它看到的整段对话 */
-function scripted(replies) {
-  const seen = [];
-  const callModel = async (messages) => {
+function scripted(replies: AssistantMessage[]) {
+  const seen: unknown[] = [];
+  const callModel = async (messages: Message[]) => {
     seen.push(messages.map((m) => m.role));
     const next = replies.shift();
     if (!next) throw new Error("剧本演完了");
@@ -40,12 +49,12 @@ test("已应用的局部要求全量交给初建执行者,不按当前步骤裁�
   const requirements = [{ target: { node: "远处的节点", step: "s5" }, text: "金额仍保留两位小数。" }];
   const message = stepMessage(context({ requirements }));
   const block = message.match(/<requirements>\n([\s\S]*?)\n<\/requirements>/);
-  assert.deepEqual(JSON.parse(block[1]), requirements);
+  assert.deepEqual(JSON.parse(present(present(block)[1])), requirements);
   assert.doesNotMatch(stepMessage(context()), /<requirements>/);
 });
 
 test("模型交的换成状态机认的:只补 step,其余原样带过去,出口留着", () => {
-  const patch = toPatch({ kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: ["x"] }], edges: [{ from: "U", to: "A" }, { from: "A", to: "B", output: "false" }] }, "s2");
+  const patch = record(toPatch({ kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: ["x"] }], edges: [{ from: "U", to: "A" }, { from: "A", to: "B", output: "false" }] }, "s2"));
   assert.deepEqual(patch.nodes, [{ name: "A", step: "s2", type: "t", params: {}, blanks: ["x"] }]);
   assert.deepEqual(patch.edges, [{ from: "U", to: "A" }, { from: "A", to: "B", output: "false" }]);
   assert.deepEqual(toPatch({ kind: "covered", nodes: [{ name: "留着" }] }, "s2"), { kind: "covered" });
@@ -54,8 +63,8 @@ test("模型交的换成状态机认的:只补 step,其余原样带过去,出口
 /* 路过的层不许挑格子:契约上加一格,中间一行代码都不用改,它自己就能走到画布。
    这条钉住的是架构,不是某个字段——note 之前就是死在这儿的。 */
 test("契约上新加的格子原样穿过执行器,不用改中间层", () => {
-  const patch = toPatch({ kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: [], note: "为什么这么接", 将来新加的: 1 }], edges: [] }, "s2");
-  assert.deepEqual(patch.nodes[0], { name: "A", step: "s2", type: "t", params: {}, blanks: [], note: "为什么这么接", 将来新加的: 1 });
+  const patch = record(toPatch({ kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: [], note: "为什么这么接", 将来新加的: 1 }], edges: [] }, "s2"));
+  assert.deepEqual(list(patch.nodes)[0], { name: "A", step: "s2", type: "t", params: {}, blanks: [], note: "为什么这么接", 将来新加的: 1 });
 });
 
 test("一步的来回:交,过闸门就还回去;提示词里常驻整张节点表,只有一个工具", async () => {
@@ -68,12 +77,12 @@ test("一步的来回:交,过闸门就还回去;提示词里常驻整张节点�
     edges: [{ from: "Every day", to: "Read PDFs" }],
   };
   const { callModel, seen } = scripted([assistant([call("submit_step", submission)])]);
-  const events = [];
+  const events: string[] = [];
   const out = await runStep(context(), { callModel, systemPrompt: "P", onEvent: (e) => events.push(e.kind) });
   assert.equal(out.rounds, 1);
   assert.deepEqual(seen[0], ["system", "user"]);
   assert.deepEqual(events, ["submitted"]);
-  assert.deepEqual(out.result.nodes.map((n) => [n.name, n.step]), [["Every day", "s1"], ["Read PDFs", "s1"]]);
+  assert.deepEqual(patchResult(out.result).nodes.map((n) => [n.name, n.step]), [["Every day", "s1"], ["Read PDFs", "s1"]]);
   assert.deepEqual(out.submission, submission);
   assert.deepEqual(executorTools.map((t) => t.function.name), ["submit_step"]);
   const prompt = loadSystemPrompt();
@@ -92,9 +101,9 @@ test("闸门不认的交回,原因退给模型,它再交", async () => {
   const { callModel } = scripted([assistant([call("submit_step", bad)]), assistant([call("submit_step", good, "c2")])]);
   const out = await runStep(context(), { callModel, systemPrompt: "P" });
   assert.equal(out.rounds, 2);
-  const rejection = JSON.parse(out.messages[3].content);
-  assert.match(rejection.rejected.join(";"), /params/);
-  assert.deepEqual(out.result.nodes, [{ name: "A", step: "s1", type: "code", params: { code: "// a" }, blanks: [] }]);
+  const rejection = jsonObject(present(out.messages[3])?.content);
+  assert.match(list(rejection.rejected).join(";"), /params/);
+  assert.deepEqual(patchResult(out.result).nodes, [{ name: "A", step: "s1", type: "code", params: { code: "// a" }, blanks: [] }]);
 });
 
 /* 闸门只有一道,但有两处在调:执行者自己这一道,和状态机那一道。
@@ -113,9 +122,9 @@ test("接在上一步后面却不接线:执行者自己这一道就退回去,同
   ]);
   const out = await runStep(on, { callModel, systemPrompt: "P" });
   assert.equal(out.rounds, 2);
-  const rejection = JSON.parse(out.messages[3].content);
-  assert.match(rejection.rejected.join(";"), /s2 接在 s1 后面,却没有一条线从那几步的节点接进来/);
-  assert.deepEqual(out.result.edges, [{ from: "读文件", to: "切块" }]);
+  const rejection = jsonObject(present(out.messages[3])?.content);
+  assert.match(list(rejection.rejected).join(";"), /s2 接在 s1 后面,却没有一条线从那几步的节点接进来/);
+  assert.deepEqual(patchResult(out.result).edges, [{ from: "读文件", to: "切块" }]);
 });
 
 test("叫了没有的工具(搜、查都撤了),当答案退给模型,来回继续", async () => {
@@ -124,9 +133,9 @@ test("叫了没有的工具(搜、查都撤了),当答案退给模型,来回继�
     assistant([call("submit_step", { kind: "covered" }, "c2")], "nothing to change"),
   ]);
   const out = await runStep(context({ canvas: { nodes: [{ name: "A", step: "s1", type: "code", params: { code: "// a" }, blanks: [] }], edges: [], version: 1 } }), { callModel, systemPrompt: "P" });
-  assert.match(JSON.parse(out.messages[3].content).error, /unknown tool search_nodes/);
+  assert.match(string(jsonObject(present(out.messages[3])?.content).error), /unknown tool search_nodes/);
   assert.deepEqual(out.result, { kind: "covered" });
-  assert.equal(out.events[1].kind, "said");
+  assert.equal(present(out.events[1]).kind, "said");
 });
 
 test("交回对不上节点表(类型不在表里、格子不存在),原因退给模型", async () => {
@@ -139,10 +148,10 @@ test("交回对不上节点表(类型不在表里、格子不存在),原因退�
     assistant([call("submit_step", unfed, "c3")]), assistant([call("submit_step", good, "c4")])]);
   const out = await runStep(context(), { callModel, systemPrompt: "P" });
   assert.equal(out.rounds, 4);
-  assert.match(JSON.parse(out.messages[3].content).rejected.join(";"), /不在节点表里/);
-  assert.match(JSON.parse(out.messages[5].content).rejected.join(";"), /没有 temperature 这一格/);
-  assert.match(JSON.parse(out.messages[7].content).rejected.join(";"), /节点 A 要 Text,没有一根线进来/);
-  assert.equal(out.result.nodes[0].type, "readFile");
+  assert.match(list(jsonObject(present(out.messages[3])?.content).rejected).join(";"), /不在节点表里/);
+  assert.match(list(jsonObject(present(out.messages[5])?.content).rejected).join(";"), /没有 temperature 这一格/);
+  assert.match(list(jsonObject(present(out.messages[7])?.content).rejected).join(";"), /节点 A 要 Text,没有一根线进来/);
+  assert.equal(present(patchResult(out.result).nodes[0]).type, "readFile");
 });
 
 /* 说话不交不算交,但也不至于就地作废——来回上限本来就是留给这种情况的。
@@ -156,8 +165,8 @@ test("说话不交:把「没收到」说回去,下一回合交了就收下", asy
   const out = await runStep(context(), { callModel, systemPrompt: "P" });
   assert.equal(out.rounds, 2);
   const nudge = [...out.messages].reverse().find((m) => m.role === "user");
-  assert.match(nudge.content, /没有调用任何工具/);
-  assert.deepEqual(out.result.nodes, [{ name: "A", step: "s1", type: "code", params: { code: "// a" }, blanks: [] }]);
+  assert.match(string(nudge?.content), /没有调用任何工具/);
+  assert.deepEqual(patchResult(out.result).nodes, [{ name: "A", step: "s1", type: "code", params: { code: "// a" }, blanks: [] }]);
 });
 
 /* 真模型实录:Kimi K3 有时候不走工具,把这一交当正文写出来——`submit_step({...})`。
@@ -172,7 +181,7 @@ test("把 submit_step 写在正文里:当没交,而且说清是没收到", async
   const out = await runStep(context(), { callModel, systemPrompt: "P" });
   assert.equal(out.rounds, 2);
   const told = [...out.messages].reverse().find((m) => m.role === "user");
-  assert.match(told.content, /写在正文里.*没有被收到/);
+  assert.match(string(told?.content), /写在正文里.*没有被收到/);
   assert.ok(out.events.some((e) => e.kind === "no-call" && e.wrote === true));
 });
 
@@ -181,9 +190,10 @@ test("一直说话不交:来回用完才作废,整段对话挂在错误上", asy
     { role: "assistant", content: "I cannot build this step." },
     { role: "assistant", content: "still thinking." },
   ]);
-  await assert.rejects(runStep(context(), { callModel, systemPrompt: "P", maxRounds: 2 }), (error) => {
-    assert.match(error.message, /来回 2 次没交/);
-    assert.ok(error.messages.length >= 3);
+  await assert.rejects(runStep(context(), { callModel, systemPrompt: "P", maxRounds: 2 }), (error: unknown) => {
+    const details = record(error);
+    assert.match(string(details.message), /来回 2 次没交/);
+    assert.ok(list(details.messages).length >= 3);
     return true;
   });
 });
@@ -198,10 +208,11 @@ test("来回到上限没交,这一步作废", async () => {
 /* 接口抛的错(网络、限流、key 不对)也要带着对话记录:出错那一步的实录最该看,不能是空的 */
 test("接口抛错,错误上也挂着对话记录和事件", async () => {
   const callModel = async () => { throw new Error("模型接口返回 429"); };
-  await assert.rejects(runStep(context(), { callModel, systemPrompt: "P" }), (error) => {
-    assert.match(error.message, /429/);
-    assert.equal(error.messages.length, 2);
-    assert.deepEqual(error.events, []);
+  await assert.rejects(runStep(context(), { callModel, systemPrompt: "P" }), (error: unknown) => {
+    const details = record(error);
+    assert.match(string(details.message), /429/);
+    assert.equal(list(details.messages).length, 2);
+    assert.deepEqual(details.events, []);
     return true;
   });
 });
@@ -210,13 +221,13 @@ test("插口:onEvent 拿到事件和上下文;给了目录,每一步自己的实
   const dir = mkdtempSync(join(tmpdir(), "executor-"));
   const submission = { kind: "patch", nodes: [{ name: "A", type: "code", params: { code: "// a" }, blanks: [] }], edges: [] };
   const { callModel } = scripted([assistant([call("submit_step", submission)])]);
-  const seen = [];
+  const seen: unknown[] = [];
   const executor = createExecutor({ callModel, systemPrompt: "P", save: dir, onEvent: (event, ctx) => seen.push([ctx.step.ref, event.kind]) });
   const result = await executor(context(), {});
-  assert.equal(result.kind, "patch");
+  assert.equal(record(result).kind, "patch");
   assert.deepEqual(seen, [["s1", "submitted"]]);
   assert.deepEqual(readdirSync(join(dir, "01-s1")).sort(), ["context.json", "events.json", "messages.json", "patch.json", "submission.json"]);
-  assert.equal(JSON.parse(readFileSync(join(dir, "01-s1", "messages.json"), "utf8")).length, 3);
+  assert.equal(list(JSON.parse(readFileSync(join(dir, "01-s1", "messages.json"), "utf8"))).length, 3);
 });
 
 test("插口:出错也存实录,错照样抛出去", async () => {
@@ -228,6 +239,6 @@ test("插口:出错也存实录,错照样抛出去", async () => {
 });
 
 test("默认导出就是插口:是个函数,import 时不读模型配置", async () => {
-  const mod = await import("../../dist/src/executor/executor.mjs");
+  const mod = await import("../../src/executor/executor.mjs");
   assert.equal(typeof mod.default, "function");
 });
