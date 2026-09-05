@@ -36,6 +36,14 @@ test("五样贴标签,画布上的节点原样发给模型,名字就叫 name", (
   assert.doesNotMatch(text, /"id":/);
 });
 
+test("已应用的局部要求全量交给初建执行者,不按当前步骤裁剪", () => {
+  const requirements = [{ target: { node: "远处的节点", step: "s5" }, text: "金额仍保留两位小数。" }];
+  const message = stepMessage(context({ requirements }));
+  const block = message.match(/<requirements>\n([\s\S]*?)\n<\/requirements>/);
+  assert.deepEqual(JSON.parse(block[1]), requirements);
+  assert.doesNotMatch(stepMessage(context()), /<requirements>/);
+});
+
 test("模型交的换成状态机认的:只补 step,其余原样带过去,出口留着", () => {
   const patch = toPatch({ kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: ["x"] }], edges: [{ from: "U", to: "A" }, { from: "A", to: "B", output: "false" }] }, "s2");
   assert.deepEqual(patch.nodes, [{ name: "A", step: "s2", type: "t", params: {}, blanks: ["x"] }]);

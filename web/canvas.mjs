@@ -2,6 +2,7 @@ import { fullCard, miniCard } from "./card.mjs";
 import { panel } from "./picker.mjs";
 import { layout, wire, wireLabelAt, wave, TILE, PITCH } from "./layout.mjs";
 import { edgeKey, flows, label } from "./flow.mjs";
+import { createNodeConversation, editPresentation } from "./node-conversation.mjs";
 
 const SVG = "http://www.w3.org/2000/svg";
 const svg = (name, attrs) => {
@@ -38,10 +39,32 @@ const TRACK_TAIL = 620;
 /* 画布这一头只做一件事:把画布数据摆到屏幕上,新长出来的卡带一下动静。
    它不认得任何一种具体节点——那些全在节点表里。 */
 export function createCanvasView({ table, world, wires, viewport, stage, picker,
-  onFill, insets = () => ({ right: 0, bottom: 0 }) }) {
+  onFill, onRevise, onStopRevision, onZoom = () => {}, nodeDraft = () => "", onNodeDraft = () => {}, insets = () => ({ right: 0, bottom: 0 }) }) {
   const byType = new Map(table.map((d) => [d.type, d]));
   const nodes = new Map();
   const edges = new Map();
+  const conversations = new Map();
+  /* 遮罩直接改变内容透明度；只在还有内容可滚动的边缘出现。 */
+  const updateScrollFade = (body) => {
+    const above = Math.max(0, body.scrollTop);
+    const below = Math.max(0, body.scrollHeight - body.clientHeight - above);
+    body.style.setProperty("--node-fade-top", `${Math.min(32, above)}px`);
+    body.style.setProperty("--node-fade-bottom", `${below < 1 ? 0 : Math.min(32, below)}px`);
+  };
+  const fadeObserver = new ResizeObserver((entries) => {
+    for (const { target } of entries) updateScrollFade(target);
+  });
+  const watchedFades = new WeakSet();
+  const watchScrollFade = (body) => {
+    if (!body) return;
+    if (!watchedFades.has(body)) {
+      body.addEventListener("scroll", () => updateScrollFade(body), { passive: true });
+      watchedFades.add(body);
+    }
+    fadeObserver.observe(body);
+    updateScrollFade(body);
+  };
+  let revisionState = { edits: [], busy: false, blockedReason: "" };
   /* box 是整幅东西的范围:已经落地的卡,加上那截还没走到的轨道。
      SVG 照它画,镜头也照它摆——人看的是整幅画,不是其中某一个点。 */
   let scale = 1, tx = 0, ty = 0, userMoved = false, box = { w: 1, h: 1 };
@@ -87,7 +110,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   stopEl.innerHTML =
     '<div class="stop-top"><i class="stop-mark"></i><h3 class="stop-name"></h3></div>' +
     '<p class="stop-why"></p>' +
-    '<div class="stop-acts"><button class="stop-talk" type="button">改这一步</button>' +
+    '<div class="stop-acts">' +
     '<button class="stop-plan" type="button">改方案</button><button class="stop-again" type="button">重走</button></div>';
   world.appendChild(stopEl);
   let onBreak = {};
@@ -95,7 +118,6 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
      点卡身是点开,不是别的:它是一张卡,按卡的规矩办。 */
   const act = (sel, fn) => stopEl.querySelector(sel).addEventListener("click", (e) => { e.stopPropagation(); fn(); });
   act(".stop-again", () => onBreak.rerun?.());
-  act(".stop-talk", () => onBreak.talk?.());
   act(".stop-plan", () => { shutBreak(); onBreak.plan?.(); });
   stopEl.addEventListener("click", (e) => { e.stopPropagation(); openBreak(); });
   let pending = null, closeTrack = false;
@@ -105,6 +127,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   const apply = (glide = true) => {
     world.classList.toggle("gliding", glide);
     world.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+    onZoom(scale);
   };
 
   /* 正在长的时候镜头跟着头走,卡片保持看得清的大小;跑完了再退回来看全景。
@@ -113,8 +136,8 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
 
   function room() {
     const pad = 64;
-    const { right, bottom } = insets();
-    return { pad, w: innerWidth - right - pad * 2, h: innerHeight - bottom - pad * 2 };
+    const { right = 0, bottom = 0, left = 0 } = insets();
+    return { pad, left, w: Math.max(160, innerWidth - left - right - pad * 2), h: innerHeight - bottom - pad * 2 };
   }
 
   /* 画布本来就比窗口大。整条链塞不下的时候不再往小里缩——缩到看不清字,
@@ -141,13 +164,13 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
      有一张卡展开着的时候镜头归它,别的再动也不许抢。 */
   function fit() {
     if (opened) return;
-    const { pad, w, h } = room();
+    const { pad, left, w, h } = room();
 
     if (pending && !pending.broken) {
       scale = RUN_SCALE;
       const at = head();
       const wide = box.w * scale, tall = box.h * scale;
-      tx = wide > w ? Math.min(pad, pad + w * AHEAD - at.x * scale) : pad + (w - wide) / 2;
+      tx = left + (wide > w ? Math.min(pad, pad + w * AHEAD - at.x * scale) : pad + (w - wide) / 2);
       ty = tall > h ? clamp(pad + h / 2 - at.y * scale, pad + h - tall, pad) : pad + (h - tall) / 2;
       apply(framed);
       framed = box.w > 1;
@@ -157,7 +180,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     scale = Math.max(MIN_SCALE, Math.min(1, w / box.w, h / box.h));
     const wide = box.w * scale, tall = box.h * scale;
     /* 全景也放不下就右端对齐:最后那几张在眼前,往左拖能看回去。 */
-    tx = wide > w ? pad + w - wide : pad + (w - wide) / 2;
+    tx = left + (wide > w ? pad + w - wide : pad + (w - wide) / 2);
     ty = tall > h ? pad : pad + (h - tall) / 2;
     apply(framed);
     framed = box.w > 1;
@@ -177,7 +200,10 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     const f = flows(table, canvas);
     last = { placed, canvas, flows: f };
 
-    for (const [name, el] of nodes) if (!at.has(name)) { el.remove(); nodes.delete(name); shown.delete(name); }
+    for (const [name, el] of nodes) if (!at.has(name)) {
+      fadeObserver.unobserve(el.querySelector(".card-content"));
+      el.remove(); nodes.delete(name); shown.delete(name);
+    }
 
     for (const p of placed) {
       const def = byType.get(p.node.type);
@@ -189,23 +215,45 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
         el = document.createElement("div");
         el.className = ready ? "node" : "node born";
         el.appendChild(document.createElement("div")).className = "card";
+        el.firstChild.appendChild(document.createElement("div")).className = "card-mini";
+        const detail = el.firstChild.appendChild(document.createElement("div"));
+        detail.className = "card-detail";
+        detail.inert = true;
+        detail.appendChild(document.createElement("div")).className = "card-header";
+        const body = detail.appendChild(document.createElement("div"));
+        body.className = "card-content";
+        body.appendChild(document.createElement("div")).className = "card-node-content";
+        watchScrollFade(body);
+        const conversation = conversations.get(p.node.name) ?? createNodeConversation({
+          initialDraft: nodeDraft(p.node), onDraftChange: (value) => onNodeDraft(p.node, value),
+          node: p.node, onSend: onRevise, onStop: onStopRevision,
+          onResize: () => { if (opened === p.node.name) remeasure(el); },
+        });
+        conversations.set(p.node.name, conversation);
+        body.appendChild(conversation.resultsEl);
+        detail.appendChild(conversation.el);
         el.addEventListener("click", (e) => {
           e.stopPropagation();
+          if (e.target.closest(".node-conversation")) return;
+          if (e.target.closest("details")) {
+            const cell = e.target.closest("[data-key]");
+            if (!cell) return;
+          }
           /* 卡上那一格是入口,不是卡身的一部分:点它是「定这一格」,
              不该顺手把卡收回去。 */
           const cell = e.target.closest("[data-key]");
-          if (cell && el.classList.contains("open")) return openPicker(el, p.node, cell);
+          const current = last.canvas.nodes.find((n) => n.name === p.node.name);
+          if (cell && el.classList.contains("open")) return openPicker(el, current, cell);
           toggle(p.node.name);
         });
         world.appendChild(el);
         nodes.set(p.node.name, el);
         if (!ready) queue.push(p.node.name);
       }
-      el.style.setProperty("--c", def.color);
+      el.style.setProperty("--node-color", def.color);
       el.style.left = `${p.x}px`;
       el.style.top = `${p.y}px`;
-      const card = el.firstChild;
-      card.innerHTML = `${miniCard(def, p.node)}${fullCard(def, p.node, canvas.edges, f)}`;
+      paintNode(el, def, p.node);
       /* 换了内容的那张卡如果正开着,高度得跟着内容重新量。 */
       if (opened === p.node.name) remeasure(el);
     }
@@ -221,6 +269,36 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     if (!userMoved) fit();
     /* 排队放卡要等这一遍画完:线得先在画布上,才走得起来。 */
     pump();
+  }
+
+  function paintNode(el, def, node) {
+    const content = el.querySelector(".card-node-content");
+    const expanded = new Set([...content.querySelectorAll("details[open][data-disclosure]")].map((detail) => detail.dataset.disclosure));
+    content.innerHTML = `${miniCard(def, node)}${fullCard(def, node, last.canvas.edges, last.flows)}`;
+    el.querySelector(".card-mini").replaceChildren(content.querySelector(".mini"));
+    el.querySelector(".card-header").replaceChildren(content.querySelector(".full-top"));
+    for (const detail of content.querySelectorAll("details[data-disclosure]")) {
+      detail.open = expanded.has(detail.dataset.disclosure);
+      detail.addEventListener("toggle", () => { if (opened === node.name) remeasure(el); });
+    }
+    for (const cell of el.querySelectorAll("[data-key]")) {
+      cell.disabled = Boolean(revisionState.busy);
+      if (cell.disabled) cell.title = "等待当前工作流操作完成后配置";
+    }
+    refreshConversation(el, node);
+    updateScrollFade(el.querySelector(".card-content"));
+  }
+
+  function refreshConversation(el, node) {
+    const edits = revisionState.edits.filter((edit) => edit.target?.node === node.name && edit.target?.step === node.step);
+    conversations.get(node.name)?.update({ ...revisionState, node, edits });
+    updateScrollFade(el.querySelector(".card-content"));
+    const badge = editPresentation(edits.at(-1)).badge;
+    if (badge) {
+      const evidence = el.querySelector(".mini-evi");
+      evidence.textContent = badge;
+      evidence.classList.add("revision-evi");
+    }
   }
 
   /* ── 线 ───────────────────────────────────────────────
@@ -399,6 +477,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   let filling = null;
 
   function openPicker(el, node, cell) {
+    if (!node || revisionState.busy) return;
     const def = byType.get(node.type);
     const slot = def?.slots.find((s) => s.key === cell.dataset.key);
     if (!slot || !picker) return;
@@ -412,10 +491,10 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
        取景框正中是个定数,直接用它——镜头到位之后卡就在那儿。
        出不去屏幕:四边各留 20。 */
     const M = 20;
-    const { pad, w: roomW, h: roomH } = room();
+    const { pad, left, w: roomW, h: roomH } = room();
     const w = box.offsetWidth, h = box.offsetHeight;
     const grip = (v, hi) => Math.min(Math.max(v, M), Math.max(M, hi));
-    box.style.left = `${grip(pad + roomW / 2 - w / 2, innerWidth - w - M)}px`;
+    box.style.left = `${grip(left + pad + roomW / 2 - w / 2, innerWidth - w - M)}px`;
     box.style.top = `${grip(pad + roomH / 2 - h / 2, innerHeight - h - M)}px`;
     /* 原点要在面板自己的坐标里量,所以得等它落好位置之后再量。 */
     const c = cell.getBoundingClientRect(), p = box.getBoundingClientRect();
@@ -441,20 +520,35 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   }
 
   /* 定了:这一格从「待定」变成一个值,卡当场重画,小卡上的「待定 N 项」跟着少一项。 */
-  function fill(value) {
+  let savingParameter = false;
+  async function fill(value) {
+    if (savingParameter) return;
     if (!filling) return;
     if (value === "") return shutPicker();
-    const { el, node, key } = filling;
-    node.params = { ...node.params, [key]: value };
-    node.blanks = (node.blanks ?? []).filter((b) => b !== key);
+    const { el, key: slotKey } = filling;
+    const node = last.canvas.nodes.find((n) => n.name === filling.node.name);
+    if (!node || revisionState.busy) return shutPicker();
+    if (onFill) {
+      savingParameter = true;
+      const panel = picker.querySelector(".panel");
+      try { await onFill({ node: node.name, key: slotKey, value }); shutPicker(); }
+      catch (error) {
+        let message = panel.querySelector(".panel-save-error");
+        if (!message) { message = document.createElement("p"); message.className = "panel-save-error"; message.setAttribute("role", "alert"); panel.append(message); }
+        message.textContent = error.message;
+      } finally { savingParameter = false; }
+      return;
+    }
+    node.params = { ...node.params, [slotKey]: value };
+    node.blanks = (node.blanks ?? []).filter((b) => b !== slotKey);
     shutPicker();
     const def = byType.get(node.type);
     /* 定的那一格可能改了这个节点往下送什么(写代码的 Output Type):线上的字跟着重印。 */
     last.flows = flows(table, last.canvas);
-    el.firstChild.innerHTML = `${miniCard(def, node)}${fullCard(def, node, last.canvas.edges, last.flows)}`;
+    paintNode(el, def, node);
     for (const e of last.canvas.edges) edges.get(key(e))?.text.replaceChildren(wording(e, last.flows.edges.get(key(e))));
     if (opened === node.name) remeasure(el);
-    onFill?.({ node: node.name, key, value });
+    onFill?.({ node: node.name, key: slotKey, value });
   }
 
   if (picker) {
@@ -482,16 +576,21 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
   let opened = null, home = null, turn = 0;
 
   function measure(el) {
-    const card = el.firstChild;
-    el.classList.add("measuring", "open");
+    /* 用真实取景框留给卡的高度，给固定输入区留位置；不靠把整张卡缩小来塞进屏幕。 */
+    el.style.setProperty("--node-room-height", `${Math.max(280, room().h + 32)}px`);
+    /* 在不可见副本上量终点。对正在运动的卡禁用 transition 会直接取消展开，
+       也不能为测量切换真实输入框的显示状态，否则会丢失焦点和中文组词。 */
+    const probe = el.cloneNode(true);
+    probe.className = "node measuring open";
+    probe.inert = true;
+    probe.setAttribute("aria-hidden", "true");
+    probe.style.visibility = "hidden";
+    for (const child of probe.querySelectorAll("[id]")) child.removeAttribute("id");
+    const card = probe.firstChild;
     card.style.height = "auto";
-    const h = card.offsetHeight;
-    el.classList.remove("open");
-    card.style.height = "";
-    card.style.transform = "";
-    void card.offsetHeight;
-    el.classList.remove("measuring");
-    return h;
+    world.appendChild(probe);
+    try { return card.offsetHeight; }
+    finally { probe.remove(); }
   }
 
   const box0 = (el, h) => {
@@ -499,16 +598,21 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     el.firstChild.style.transform = `translate(-50%, calc(-50% + ${((h - TILE) / 2).toFixed(1)}px))`;
   };
 
-  /* 内容换了的那张卡如果正开着:重新量、重新定高,然后还得把 open 加回去——
-     measure 量完是要摘掉 open 的(它得先撑开才量得出高度,量完不能留着),
-     所以谁调 measure 谁负责把它加回来。 */
-  const remeasure = (el) => { box0(el, measure(el)); el.classList.add("open"); };
+  /* 内容变高时只重测外壳，输入框和展开状态保留。 */
+  const remeasure = (el) => {
+    const h = measure(el);
+    if (el.firstChild.style.height === `${h}px`) return;
+    box0(el, h); el.classList.add("open");
+    const p = last.placed.find((placed) => nodes.get(placed.node.name) === el);
+    const { pad, h: roomHeight } = room();
+    if (p && !userMoved && (ty + p.y * scale < pad - 32 || ty + (p.y + h) * scale > pad + roomHeight + 32)) aim(p, h);
+  };
 
   function aim(p, h) {
-    const { pad, w, h: room_h } = room();
-    const s = Math.min(1, (w - 32) / OPEN_W, (room_h - 32) / h);
+    const { pad, left, w, h: room_h } = room();
+    const s = Math.min(1, (w - 32) / OPEN_W, (room_h + 32) / h);
     scale = s;
-    tx = pad + w / 2 - (p.x + TILE / 2) * s;
+    tx = left + pad + w / 2 - (p.x + TILE / 2) * s;
     ty = pad + room_h / 2 - (p.y + h / 2) * s;
     apply();
   }
@@ -533,6 +637,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     el.classList.add("morph");
     box0(el, h);
     el.classList.add("open");
+    el.querySelector(".card-detail").inert = false;
   }
 
   /* 断口卡点开:跟点开一张卡是同一个手势——镜头带过去,别的退到背景,这一张撑开。
@@ -568,6 +673,7 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     opened = null;
     if (el) {
       el.classList.remove("open");
+      el.querySelector(".card-detail").inert = true;
       el.firstChild.style.height = "";
       el.firstChild.style.transform = "";
     }
@@ -576,14 +682,34 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     return true;
   }
 
-  viewport.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const next = Math.min(1.6, Math.max(0.2, scale * Math.exp(-e.deltaY / 420)));
-    tx = e.clientX - (e.clientX - tx) * (next / scale);
-    ty = e.clientY - (e.clientY - ty) * (next / scale);
+  function zoomTo(value, x, y, glide = true) {
+    const next = clamp(value, 0.2, 1.6);
+    const r = room();
+    x ??= r.left + r.pad + r.w / 2;
+    y ??= r.pad + r.h / 2;
+    tx = x - (x - tx) * (next / scale);
+    ty = y - (y - ty) * (next / scale);
     scale = next;
     userMoved = true;
-    apply(false);
+    apply(glide);
+  }
+
+  function fitAll() {
+    ++turn; // 也取消镜头先行阶段尚未展开的节点。
+    shut(false);
+    home = null;
+    const { pad, left, w, h } = room();
+    scale = Math.min(1, w / box.w, Math.max(1, h) / box.h);
+    tx = left + pad + (w - box.w * scale) / 2;
+    ty = pad + (h - box.h * scale) / 2;
+    userMoved = true;
+    apply();
+  }
+
+  viewport.addEventListener("wheel", (e) => {
+    if (e.target.closest(".node.open .card-content")) return;
+    e.preventDefault();
+    zoomTo(scale * Math.exp(-e.deltaY / 420), e.clientX, e.clientY, false);
   }, { passive: false });
 
   /* 按下先不抢指针,挪过 4 像素才算拖,否则那一下是点在卡片上。 */
@@ -615,15 +741,32 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
      同样是「外面」,结果却不一样。
      谁在上头谁先收:选择器盖在展开的卡上,点画布的那一下只收选择器。 */
   addEventListener("click", (e) => {
-    if (filling || e.target.closest(".picker")) return;
+    if (filling || e.target.closest(".picker, .canvas-controls")) return;
     if (!e.target.closest(".node") && !e.target.closest(".stop")) shut(true);
   });
   addEventListener("keydown", (e) => { if (e.key === "Escape") shut(true); });
 
   return {
     draw,
+    revisions(info) {
+      revisionState = { ...revisionState, ...info };
+      if (revisionState.busy) shutPicker();
+      for (const node of last.canvas.nodes) {
+        const el = nodes.get(node.name);
+        if (!el) continue;
+        refreshConversation(el, node);
+        for (const cell of el.querySelectorAll("[data-key]")) {
+          cell.disabled = Boolean(revisionState.busy);
+          cell.title = cell.disabled ? "等待当前工作流操作完成后配置" : "";
+        }
+        if (opened === node.name) remeasure(el);
+      }
+    },
     fit,
-    refit: () => { userMoved = false; fit(); },
+    zoomBy: (direction) => zoomTo(Math.round((scale + direction * 0.1) * 100) / 100),
+    resetZoom: () => zoomTo(1),
+    fitAll,
+    refit: () => { userMoved = false; if (opened) { const el = nodes.get(opened); const p = last.placed.find((p) => p.node.name === opened); if (el && p) aim(p, measure(el)); } else fit(); },
     /* 正在做哪一步、后面还剩几步。传 null 就是做完了,轨道收掉——
        但队伍还没放完的话得等它放完,卡还在落,轨道先撤是空一块。 */
     waiting(info) {

@@ -1,231 +1,284 @@
 import { createCanvasView } from "./canvas.mjs";
 import { createPlanCard } from "./plan-card.mjs";
+import { isEditing } from "./node-conversation.mjs";
+import { createEventCursor } from "./event-cursor.mjs";
+import { chooseSession, createSessionSidebar, readLocal, writeLocal, draftKey } from "./sessions.mjs";
 
 const $ = (id) => document.getElementById(id);
+const { id: sessionId, listing } = await chooseSession();
+const sessionPath = (path) => path.replace("/api/", `/api/sessions/${sessionId}/`);
+let drafts;
+try { drafts = JSON.parse(readLocal(draftKey(sessionId), "{}")); } catch { drafts = {}; }
+if (!drafts || typeof drafts !== "object" || Array.isArray(drafts)) drafts = {};
+const saveDrafts = () => writeLocal(draftKey(sessionId), JSON.stringify(drafts));
+const sidebar = createSessionSidebar({ id: sessionId, listing, onRetrySave: () => post("/api/save"), onResize: () => { view.refit(); card.reflow(); } });
 const table = await fetch("/api/node-table").then((r) => r.json());
-
 const view = createCanvasView({
   table, world: $("world"), wires: $("wires"), viewport: $("viewport"),
-  stage: $("stage"), picker: $("picker"),
-  /* 右上角的需求框占掉一条,卡片不能钻到它下面。 */
+  stage: $("stage"), picker: $("picker"), onRevise: revise, onStopRevision: stopRevision, onFill: configure,
+  onZoom: (scale) => {
+    $("zoom-reset").textContent = `${Math.round(scale * 100)}%`;
+    $("zoom-out").disabled = scale <= 0.2;
+    $("zoom-in").disabled = scale >= 1.6;
+  },
+  nodeDraft: (node) => drafts.nodes?.[JSON.stringify([node.step, node.name])] ?? "",
+  onNodeDraft: (node, value) => { drafts.nodes ??= {}; drafts.nodes[JSON.stringify([node.step, node.name])] = value; saveDrafts(); },
   insets: () => ({
-    right: card.isMini ? 360 : 0,
+    left: sidebar.left(),
+    right: card.isMini && innerWidth - sidebar.left() > 1000 ? 360 : 0,
     bottom: innerHeight - document.querySelector(".bar").getBoundingClientRect().top + 24,
   }),
 });
-const card = createPlanCard({ card: $("plan"), stage: $("stage") });
+const card = createPlanCard({ card: $("plan"), stage: $("stage"), leftInset: () => sidebar.left() });
+$("zoom-out").addEventListener("click", () => view.zoomBy(-1));
+$("zoom-in").addEventListener("click", () => view.zoomBy(1));
+$("zoom-reset").addEventListener("click", () => view.resetZoom());
+$("zoom-fit").addEventListener("click", () => view.fitAll());
+new ResizeObserver(([entry]) => {
+  document.body.style.setProperty("--composer-height", `${entry.target.getBoundingClientRect().height}px`);
+}).observe(document.querySelector(".bar"));
 
-const post = (path, data) =>
-  fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data ?? {}) })
-    .then((r) => r.json());
+async function post(path, data) {
+  let response;
+  try { response = await fetch(sessionPath(path), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data ?? {}) }); }
+  catch { throw new Error("连接中断，文字已保留。请检查连接后重试。"); }
+  let result;
+  try { result = await response.json(); }
+  catch { throw new Error("服务未能完成这次请求，文字已保留，请重试。"); }
+  if (!response.ok || result.error) throw new Error(result.error || "这次请求未被接受，请重试。");
+  return result;
+}
 
-let plan = null;
-let busy = null;
-/* 停在哪一步、为什么。停着的时候输入框接的是那一步的执行者,不是 Plan Agent——
-   Plan Agent 看不见画布,跟它说「这里少了一条线」它无从改起。 */
-let broke = null;
+let plan = null, revision = 0, busy = null, broke = null, started = false;
+let canvas = { nodes: [], edges: [], version: 0 }, edits = [], hasReviser = false;
+let canvasPlanRevision = null, lastRun = null, globalError = "", storageError = "", recoveryNotice = "";
 const done = new Set();
-
 const titleOf = (ref) => plan?.steps.find((s) => s.ref === ref)?.title ?? ref;
-/* 闸门说的是编号,画布上写的是名字。同一件事两个叫法,读的人得在心里换算一遍。 */
 const named = (text) => String(text ?? "").replace(/\bs\d+\b/g, (ref) => titleOf(ref));
-
-/* 这一趟停在哪儿。跑完了、或者最后那一步是做完/已经有了,就是没停。 */
 function stopAt(run) {
   if (!run || run.endedBy === "finished") return null;
   const last = run.steps.at(-1);
   if (!last || last.outcome === "done" || last.outcome === "covered") return null;
-  /* 闸门退几条就是几条,一条一行。只给第一条的话,人按它改了、重走,撞第二条。 */
   const whys = last.reasons ?? (last.error ? [last.error] : last.outcome === "stopped" ? ["按了停"] : []);
   return { ref: last.ref, why: whys.map(named).join("\n") };
 }
-
-/* 手上有东西的时候才给「新建」:空画布上没什么可以重开的。 */
-let started = false;
-const canReset = () => ($("fresh").hidden = !started);
-
-/* 停了:那一格上摆一张卡,写清哪一步、为什么、能做什么。输入框跟着改口。 */
+const canReset = () => {};
+function status(text) {
+  card.status(text);
+  if (!card.isMini) $("plan").querySelector(".plan-say").textContent = text;
+}
+function placeholder() {
+  const input = $("input");
+  input.placeholder = !plan ? "描述你要做的数据处理" : plan.openQuestions.length ? "回答方案里的待确认问题，或说明整体调整" : "告诉方案设计者，整体还想怎么调整";
+  input.setAttribute("aria-label", "与方案设计者讨论整体工作流");
+}
 function showBreak() {
   placeholder();
-  if (!broke) return;
-  view.waiting({ title: titleOf(broke.ref), note: broke.why, remaining: 0, broken: true });
+  if (broke) view.waiting({ title: titleOf(broke.ref), note: broke.why, remaining: 0, broken: true });
 }
-
-/* 输入框对谁说,看中央开着什么:方案卡摊在中央就对方案说;方案卡收在角上、画布上有断口,
-   才对停住的那一步说。同一个框,收信人由位置定,不由一个看不见的状态定。 */
-const toStep = () => Boolean(broke) && card.isMini;
-
-/* 输入框的提示按阶段换:没方案时说要什么,有待确认时先答它,答完了就是改。 */
-function placeholder() {
-  const el = $("input");
-  if (toStep()) el.placeholder = `告诉「${titleOf(broke.ref)}」该怎么改，发出去就从这一步重走`;
-  else if (!plan) el.placeholder = "描述你要做的数据处理";
-  else if (plan.openQuestions.length) el.placeholder = "回答上面待确认的问题";
-  else el.placeholder = "还想改点什么";
-}
-
-/* 轨道上那一行字:当下这一步的名字;后面还剩几步决定线有多长。 */
 const waitingOn = (refs) => ({
-  title: refs.map((ref) => plan?.steps.find((s) => s.ref === ref)?.title ?? ref).join("、"),
+  title: refs.map(titleOf).join("、"),
   remaining: plan ? plan.steps.filter((s) => !done.has(s.ref)).length : refs.length,
 });
-
+function revisionBlocked() {
+  if (lastRun?.problems?.length) return `当前画布未通过完整检查：${lastRun.problems.map(named).join("；")}。请打开右上方案，检查后重新生成。`;
+  if (!hasReviser) return "工作流修改尚未接入，暂时不能发送。";
+  if (!canvas.nodes.length || lastRun?.endedBy !== "finished") return "先完成工作流构建，再从节点提出修改。";
+  if (canvasPlanRevision !== revision) return "方案有新变化；先应用方案并完成构建，再修改节点。";
+  return "";
+}
 const canSend = () => $("input").value.trim() !== "" && !busy;
-const refreshSend = () => ($("send").disabled = !canSend());
-
-/* 输入框跟着字长高:把同一段字抄给那个隐形的替身,高度归 CSS 算。
-   这里不量任何东西——量出来的数会过期,替身不会。 */
+function refresh() {
+  $("send").disabled = !canSend();
+  $("send").title = busy ? "等待当前工作流操作完成；可以继续写草稿" : "发送给方案设计者";
+  const go = $("plan").querySelector(".plan-go");
+  go.disabled = Boolean(busy);
+  go.title = busy ? "等待当前操作完成后生成" : "应用当前方案并生成工作流";
+  $("bar-status").textContent = storageError || globalError || recoveryNotice || "";
+  const problems = $("plan-problems");
+  const text = busy === "executor" ? "" : (lastRun?.problems ?? []).map(named).join("\n");
+  problems.hidden = !text;
+  if (problems.textContent !== text) problems.textContent = text;
+  $("plan").querySelector(".plan-dot").classList.toggle("has-problems", Boolean(text));
+  view.revisions({ edits, busy: Boolean(busy), blockedReason: revisionBlocked() });
+}
 const grow = () => { $("grow").dataset.value = $("input").value; };
 
 async function send() {
   if (!canSend()) return;
-  const text = $("input").value.trim();
-  $("input").value = "";
-  grow();
-  refreshSend();
-  /* 对着断口说的话不给 Plan Agent:挂到停住的那一步上,再从那一步重走。
-     已经做完的几步会说「已经有了」,只有这一步重做。 */
-  if (toStep()) {
-    const at = broke.ref;
-    const r = await post("/api/note", { step: at, text });
-    if (r.error) return card.status(r.error);
-    return rerun();
-  }
+  const draft = $("input").value, text = draft.trim();
+  busy = "plan"; globalError = ""; refresh();
   if (card.isMini) await card.toCenter();
-  started = true;
-  canReset();
-  card.ask(text);
-  const r = await post("/api/say", { text });
-  if (r.error) card.status(r.error);
+  started = true; canReset(); card.ask(text);
+  try {
+    await post("/api/say", { text });
+    if ($("input").value === draft) { $("input").value = ""; drafts.global = ""; saveDrafts(); grow(); }
+  } catch (error) { busy = null; globalError = error.message; status(error.message); }
+  refresh();
 }
 
-/* 从停住的地方接着走。断口先撤掉,不然它会一直挂在画布上。 */
-async function rerun() {
-  broke = null;
-  showBreak();
-  view.waiting(null);
-  done.clear();
-  const r = await post("/api/start");
-  if (r.error) return card.status(r.error);
-  card.status("正在生成");
+async function revise({ node, text }) {
+  if (busy) throw new Error("工作流正在处理，文字已保留，稍后可发送。");
+  const blocked = revisionBlocked();
+  if (blocked) throw new Error(blocked);
+  const current = canvas.nodes.find((n) => n.name === node.name && n.step === node.step);
+  if (!current) throw new Error("这个节点已经变化，请查看当前工作流后再发送。");
+  busy = "revision"; globalError = ""; refresh();
+  status("正在结合整条工作流修改");
+  try { await post("/api/revise", { node: current.name, step: current.step, canvasVersion: canvas.version, text }); }
+  catch (error) { busy = null; status("修改未开始，文字已保留"); refresh(); throw error; }
 }
+async function configure({ node, key, value }) {
+  if (busy) throw new Error("工作流正在处理，请稍后保存参数。");
+  busy = "configuration"; $("send").disabled = true;
+  try {
+    const result = await post("/api/configure", { node, key, value, canvasVersion: canvas.version });
+    canvas = result.canvas; view.draw(canvas, { instant: true });
+  } finally { busy = null; refresh(); }
+}
+async function stopRevision() { await post("/api/stop"); }
 
-/* 发送:按钮和回车都行。Shift+回车换行,中文输入法确认候选词的那一下回车不算发送。 */
-$("input").addEventListener("input", () => { grow(); refreshSend(); });
+async function startRun() {
+  if (busy) return;
+  const previousBreak = broke;
+  broke = null; done.clear(); view.waiting(null); placeholder();
+  busy = "executor"; globalError = ""; refresh();
+  try {
+    await post("/api/start");
+    if (!card.isMini) await card.toMini("正在生成");
+    if (busy === "executor") status("正在生成");
+    else status(canvasStatus());
+    view.fit();
+  } catch (error) { busy = null; broke = previousBreak; globalError = error.message; status(error.message); showBreak(); refresh(); }
+}
+$("input").addEventListener("input", () => { drafts.global = $("input").value; saveDrafts(); globalError = ""; grow(); refresh(); });
 $("input").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
-  e.preventDefault();
-  send();
+  e.preventDefault(); send();
 });
 $("form").addEventListener("submit", (e) => { e.preventDefault(); send(); });
-
-/* 卡片飞走或飞回来,右边空出来的那一条变了,镜头跟着重新放一次。 */
-card.onGo(async () => {
-  done.clear();
-  broke = null;
-  showBreak();
-  const r = await post("/api/start");
-  if (r.error) return card.status(r.error);
-  await card.toMini("正在生成");
-  view.fit();
-});
-card.onClose(async () => { await card.back(); view.fit(); placeholder(); });
-/* 新建:这一条清掉,画布空出来,重新说一句。 */
-$("fresh").addEventListener("click", () => post("/api/reset"));
-/* 断口那张卡上的三个选择:改这一步(光标落到输入框,它已经写着「告诉『这一步』该怎么改」)、
-   改方案(交给设计者)、重走。 */
+card.onGo(startRun);
+card.onClose(async () => { await card.back(); placeholder(); });
 view.onBreak({
-  rerun,
-  talk: () => $("input").focus(),
-  plan: async () => { const r = await post("/api/escalate"); if (r.error) card.status(r.error); },
+  rerun: startRun,
+  plan: async () => {
+    if (busy) return;
+    busy = "plan"; globalError = ""; refresh();
+    try { await post("/api/escalate"); }
+    catch (error) { busy = null; globalError = error.message; status(error.message); refresh(); }
+  },
 });
 $("plan").addEventListener("click", async () => {
   if (!card.isMini) return;
-  await card.toCenter();
-  view.fit();
-  placeholder();
+  await card.toCenter(); placeholder(); refresh();
 });
-/* 同一条规矩:方案卡摊在中央的时候,点它外面就收回右上角。
-   两处不算「外面」——收得回去才收(「收起」亮着才有右上角那个位置可回,
-   不然人就被丢在一张空画布上),以及输入框:那儿写着「回答上面待确认的问题」,
-   一点输入框就把「上面」收走,说不通。 */
 addEventListener("click", async (e) => {
-  if (card.isMini || e.target.closest(".plan") || e.target.closest(".picker")) return;
+  if (card.isMini || e.target.closest(".plan") || e.target.closest(".picker") || e.target.closest(".sessions") || e.target.closest("dialog") || e.target.closest(".top")) return;
   if (e.target.closest(".bar") || $("plan").querySelector(".plan-close").hidden) return;
-  await card.back();
-  view.fit();
-  placeholder();
+  await card.back(); placeholder();
 });
 
-/* ?still 只看现在这一眼,不挂长连接——截图工具等不到一个不断线的页面。 */
-const still = new URLSearchParams(location.search).has("still");
-const feed = still ? {} : new EventSource("/api/events");
-feed.onmessage = async (e) => {
-  const event = JSON.parse(e.data);
+async function eventReceived(event) {
+  if (event.type === "sessions") return sidebar.update(event);
+  if (Object.hasOwn(event, "storageError")) storageError = event.storageError;
+  if (Object.hasOwn(event, "notice")) recoveryNotice = event.notice;
+  if (event.savedAt || storageError) sidebar.saved(storageError ? "保存失败" : "已保存到本机", Boolean(storageError));
+  if (event.type === "deleted") {
+    const url = new URL(location.href); url.searchParams.delete("session"); location.assign(url); return;
+  }
+  if (event.type === "configured") { canvas = event.canvas; view.draw(canvas, { instant: true }); }
   if (event.type === "reset") return location.reload();
-  /* 画布替人说的那句(断口交给设计者):跟人自己打的一句走一样的路——先上墙,再等回话。 */
+  if (event.type === "snapshot") return restoreSnapshot(event.state);
   if (event.type === "said") {
     if (card.isMini) await card.toCenter();
-    started = true;
-    canReset();
-    placeholder();
-    return card.ask(event.text);
+    started = true; canReset(); placeholder(); card.ask(event.text); return;
   }
   if (event.type === "draft") return card.draft(event);
-  if (event.type === "thinking") { busy = event.who; refreshSend(); }
-  /* 这一波要做哪几步,写到画布上——等着的人得知道当下在做什么。 */
+  if (event.type === "thinking") { busy = event.who; globalError = ""; }
   if (event.type === "wave") view.waiting(waitingOn(event.refs));
   if (event.type === "plan") {
-    busy = null;
-    plan = event.plan;
-    refreshSend();
-    placeholder();
-    card.show(event);
+    busy = null; plan = event.plan ?? plan; revision = event.revision ?? revision;
+    if (Object.hasOwn(event, "canvasPlanRevision")) canvasPlanRevision = event.canvasPlanRevision;
+    placeholder(); await card.show({ ...event, plan });
   }
   if (event.type === "step") {
-    done.add(event.step.ref);
-    view.draw(event.canvas);
-    card.status(`正在生成 · ${done.size} / ${plan?.steps.length ?? done.size}`);
+    done.add(event.step.ref); canvas = event.canvas; view.draw(canvas);
+    status(`正在生成 · ${done.size} / ${plan?.steps.length ?? done.size}`);
   }
   if (event.type === "run") {
-    busy = null;
-    refreshSend();
-    view.draw(event.canvas);
-    view.waiting(null);
-    broke = stopAt(event.run);
-    /* 收场的话等卡全落地了再说:还在落的时候报「已生成 9 个」,画布上只有 4 张。
-       断了就把断口和理由留在画布上,不弹东西。 */
-    view.onIdle(() => {
-      card.status(broke ? `停在 ${titleOf(broke.ref)}` : `已生成 ${event.canvas.nodes.length} 个节点`);
-      showBreak();
-    });
+    busy = null; canvas = event.canvas; lastRun = event.run;
+    canvasPlanRevision = event.canvasPlanRevision ?? null;
+    view.draw(canvas); view.waiting(null); broke = stopAt(event.run);
+    view.onIdle(() => { status(canvasStatus()); showBreak(); });
   }
-  if (event.type === "error") { busy = null; refreshSend(); view.waiting(null); card.status(event.message); }
-};
-
-const state = await fetch("/api/state").then((r) => r.json());
-plan = state.plan;
-started = Boolean(state.task || state.plan || state.canvas.nodes.length);
-canReset();
-placeholder();
-/* 生成到一半刷新页面,状态不能丢:还在跑就把那一格重新摆回画布上。 */
-if (state.turn === "executor" && state.wave) {
-  card.restore(state, "正在生成");
-  for (const s of state.canvas.nodes) done.add(s.step);
-  view.waiting(waitingOn(state.wave));
-  view.draw(state.canvas, { instant: true });
-  view.fit();
-} else if (state.canvas.nodes.length || stopAt(state.run)) {
-  /* 刷新回来也得知道停在哪儿、为什么:这几样原来只走 SSE,刷一下就没了。 */
-  broke = stopAt(state.run);
-  card.restore(state, broke ? `停在 ${titleOf(broke.ref)}` : `已生成 ${state.canvas.nodes.length} 个节点`);
-  /* 断口先挂上再画:先画再挂的话镜头要摆两次,第二次是有过渡的,
-     刷新回来会看见画面自己晃一下。 */
-  showBreak();
-  view.draw(state.canvas, { instant: true });
-} else if (state.task) {
-  card.ask(state.task);
-  await card.show(state);
+  if (event.type === "edit") {
+    edits = event.edits ?? [...edits.filter((e) => e.id !== event.edit.id), event.edit];
+    const editing = isEditing(event.edit);
+    busy = event.turn && event.turn !== "user" ? event.turn : editing ? "revision" : null;
+    if (!editing && event.canvas) {
+      canvas = event.canvas;
+      if (["applied", "unchanged"].includes(event.edit.status)) canvasPlanRevision = event.edit.planRevision;
+      view.draw(canvas, { instant: true });
+    }
+    const title = editing ? "正在结合整条工作流修改" : ({ applied: "工作流已修改", unchanged: "无需修改，画布保持原样", failed: "修改未完成，画布保持原样", stopped: "已停止修改", needs_plan: "需要完善整体方案" }[event.edit.status] ?? event.edit.summary);
+    status(title);
+  }
+  if (event.type === "error") { busy = null; globalError = event.message; view.waiting(null); status(event.message); }
+  refresh();
 }
-if (!state.hasExecutor) card.status("执行者未接入:启动时设置 EXECUTOR_MODULE。");
+
+const still = new URLSearchParams(location.search).has("still");
+const feed = still ? {} : new EventSource(sessionPath("/api/events"));
+let initialising = true, buffered = [], chain = Promise.resolve(), cursor;
+const queueEvent = (event) => {
+  chain = chain.then(async () => {
+    if (!cursor.accept(event)) return;
+    await eventReceived(event);
+  }).catch((error) => { busy = null; globalError = error.message; refresh(); });
+};
+feed.onmessage = (e) => { const event = JSON.parse(e.data); if (initialising) buffered.push(event); else queueEvent(event); };
+addEventListener("pagehide", () => feed.close?.());
+feed.onerror = () => { sidebar.saved("连接中断"); globalError = "连接暂时中断，正在重新连接；草稿已保留。"; refresh(); };
+
+function canvasStatus() {
+  if (busy === "revision") return "正在结合整条工作流修改";
+  if (busy === "executor") return "正在生成";
+  if (lastRun?.problems?.length) return `构建还需处理 ${lastRun.problems.length} 处问题`;
+  return broke ? `停在 ${titleOf(broke.ref)}` : `已生成 ${canvas.nodes.length} 个节点`;
+}
+async function restoreSnapshot(state, { initial = false } = {}) {
+  sidebar.update(state);
+  plan = state.plan; revision = state.revision ?? 0; canvas = state.canvas;
+  edits = state.edits ?? []; hasReviser = Boolean(state.hasReviser); lastRun = state.run;
+  canvasPlanRevision = state.canvasPlanRevision ?? null;
+  busy = state.turn && state.turn !== "user" ? state.turn : null;
+  globalError = ""; storageError = state.storageError || ""; recoveryNotice = state.notice || "";
+  sidebar.saved(storageError ? "保存失败" : "已保存到本机", Boolean(storageError));
+  started = Boolean(state.task || plan || canvas.nodes.length); canReset(); placeholder();
+  broke = stopAt(state.run);
+  if (canvas.nodes.length || broke || state.turn === "executor") {
+    if (initial) card.restore(state, canvasStatus());
+    else await card.show(state);
+    if (state.turn === "executor" && state.wave) {
+      done.clear(); for (const n of canvas.nodes) done.add(n.step);
+      view.waiting(waitingOn(state.wave));
+    } else { view.waiting(null); showBreak(); }
+    view.draw(canvas, { instant: true });
+    status(canvasStatus());
+  } else if (state.task) {
+    if (initial) card.ask(state.task);
+    await card.show(state);
+  }
+  if (!state.hasExecutor) status("执行者未接入：暂时不能生成工作流。");
+  refresh();
+}
+const state = await fetch(sessionPath("/api/state")).then((r) => r.json());
+$("input").value = drafts.global || $("input").value;
+try { const boot = sessionStorage.getItem("canvasflow:boot-draft"); if (boot) { $("input").value = boot; drafts.global = boot; saveDrafts(); sessionStorage.removeItem("canvasflow:boot-draft"); } } catch {}
+grow();
+cursor = createEventCursor(state);
+await restoreSnapshot(state, { initial: true });
+initialising = false;
+for (const event of buffered) queueEvent(event);
+buffered = [];
 addEventListener("resize", () => { view.fit(); card.reflow(); });

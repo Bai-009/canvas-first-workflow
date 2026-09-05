@@ -61,8 +61,8 @@ export function fullCard(def, node, edges, flows = null) {
   for (const slot of def.slots) {
     if (BLOCK.has(slot.kind) && !node.blanks?.includes(slot.key)) {
       const body = node.params?.[slot.key];
-      if (body) blocks.push(`<div class="sec">${esc(slot.label)}</div>`
-        + `<button type="button" class="prompt" data-key="${esc(slot.key)}">${esc(body)}</button>`);
+      if (body) blocks.push(`<details class="node-block" data-disclosure="${esc(slot.key)}"><summary aria-label="展开 ${esc(slot.label)}"><span>${esc(slot.label)}</span><span class="node-disclosure-hint">全文</span><span class="node-preview">${esc(String(body).slice(0, 160))}${String(body).length > 160 ? "…" : ""}</span></summary>`
+        + `<button type="button" class="prompt" data-key="${esc(slot.key)}" title="编辑 ${esc(slot.label)}">${esc(body)}</button></details>`);
       continue;
     }
     const value = fieldValue(slot, node);
@@ -72,10 +72,12 @@ export function fullCard(def, node, edges, flows = null) {
     `<div class="full">`,
     `<div class="full-top"><span class="icon">${icon(def.type)}</span>`,
     `<h3 class="full-name">${esc(node.name)}</h3><span class="full-kind">${esc(def.kind)}</span></div>`,
+    `<div class="node-inspect">`,
     node.note ? `<p class="note">${esc(node.note)}</p>` : "",
     rows.length ? `<div class="fields">${rows.join("")}</div>` : "",
     blocks.join(""),
-    io(def, node, edges, flows),
+    `<details class="node-connections" data-disclosure="connections"><summary>数据连接<span class="node-disclosure-hint">查看</span></summary>${io(def, node, edges, flows)}</details>`,
+    `</div>`,
     `</div>`,
   ].join("");
 }

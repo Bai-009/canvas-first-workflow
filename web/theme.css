@@ -1,0 +1,70 @@
+/* 主题只改变色彩与光影，保持画布的尺寸、排版和动作。 */
+:root{color-scheme:light}
+/* 设置属于侧栏，面板贴着入口向上展开。 */
+.session-settings{position:relative;margin-top:6px;font-size:12px}
+.session-settings>summary{display:flex;align-items:center;gap:8px;width:fit-content;margin-left:-6px;padding:6px;border-radius:7px;list-style:none;color:var(--ink-2);cursor:pointer}
+.session-settings>summary::-webkit-details-marker{display:none}
+.session-settings>summary:hover,.session-settings[open]>summary{background:var(--nav-hover);color:var(--ink)}
+.session-settings>summary svg{width:16px;height:16px}
+.settings-panel{position:absolute;bottom:calc(100% + 8px);left:-12px;width:192px;padding:14px;border-radius:14px;background:var(--paper);color:var(--ink);box-shadow:0 12px 32px -12px rgba(20,26,38,.2),0 0 0 1px var(--line)}
+.settings-panel fieldset{min-width:0;padding:0;margin:0;border:0}
+.settings-panel legend{padding:0;margin-bottom:12px;font-size:11px;color:var(--ink-2)}
+.theme-options{display:flex;gap:3px;padding:3px;border-radius:10px;background:var(--surface)}
+.theme-option{position:relative;flex:1;cursor:pointer}
+.theme-option input{position:absolute;width:1px;height:1px;opacity:0}
+.theme-option span{display:block;padding:7px 8px;border-radius:8px;text-align:center;font-size:12px;line-height:18px;color:var(--ink-2)}
+.theme-option:hover span{color:var(--ink)}
+.theme-option input:checked+span{background:var(--paper);color:var(--ink);box-shadow:0 1px 4px rgba(20,26,38,.08)}
+.theme-option input:focus-visible+span{outline:1.5px solid var(--accent);outline-offset:1px}
+[data-theme=dark] .settings-panel{box-shadow:var(--dark-raised)}
+.node{--c:var(--node-color)}
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --canvas:#191b20;--paper:#26292f;--surface:#2e323a;--line:#3a3f48;
+  --ink:#e6e8ed;--ink-2:#b8bec9;--ink-3:#939ba9;
+  --accent:#416ed1;
+  --nc-error:#ed9991;--nc-success:#94c9a5;--nc-hover:#383e48;--nc-focus:#8799b5;--nc-rule:#3a3f48;
+  --dark-edge:rgba(223,231,245,.09);
+  --dark-shadow:0 16px 32px -18px rgba(0,0,0,.6),0 0 0 1px var(--dark-edge);
+  --dark-raised:0 32px 68px -22px rgba(0,0,0,.65),0 0 0 1px rgba(223,231,245,.12);
+}
+[data-theme=dark] body{--nav-paper:#1d2025;--nav-current:#2b3038;--nav-hover:rgba(210,220,240,.05);--nav-shadow:0 12px 28px rgba(0,0,0,.32)}
+[data-theme=dark] ::selection{background:#385887;color:#f1f4fa}
+[data-theme=dark] .node{--c:color-mix(in srgb,var(--node-color) 62%,#dce4f0)}
+[data-theme=dark] .icon{background:color-mix(in srgb,var(--c) 12%,var(--paper))}
+[data-theme=dark] .slot{color:var(--c)}
+[data-theme=dark] .wire,[data-theme=dark] .tip{stroke:#687384}
+[data-theme=dark] .port{fill:#687384}
+[data-theme=dark] .wire.waiting{stroke:#464e5c}
+[data-theme=dark] .track-dot{fill:#515c6d}
+[data-theme=dark] #trackFade stop{stop-color:#657286}
+[data-theme=dark] .stop-mark{border-color:#7c8799}
+[data-theme=dark] .card,[data-theme=dark] .plan,[data-theme=dark] .bar form,[data-theme=dark] .canvas-controls{box-shadow:var(--dark-shadow)}
+[data-theme=dark] .card:hover,[data-theme=dark] .plan.mini:hover{box-shadow:0 20px 40px -20px rgba(0,0,0,.65),0 0 0 1px rgba(223,231,245,.16)}
+[data-theme=dark] .node.open .card{box-shadow:var(--dark-raised),0 0 0 4px color-mix(in srgb,var(--c) 13%,transparent)}
+[data-theme=dark] .node.dim .card{box-shadow:0 0 0 1px var(--dark-edge)}
+[data-theme=dark] .stop.open,[data-theme=dark] .panel,[data-theme=dark] .session-rename{box-shadow:var(--dark-raised)}
+[data-theme=dark] .session-actions{box-shadow:0 12px 28px rgba(0,0,0,.35),0 0 0 1px var(--dark-edge)}
+[data-theme=dark] .session-rename::backdrop{background:rgba(12,14,18,.56)}
+[data-theme=dark] .session-rename button[value=save]{color:#fff}
+[data-theme=dark] .session-rename button[value=save]:hover{color:#fff}
+[data-theme=dark] .field + .field,[data-theme=dark] .plan-table td{border-color:var(--line)}
+[data-theme=dark] .set:hover,[data-theme=dark] .fresh:hover,[data-theme=dark] .stop-talk,[data-theme=dark] .stop-plan{background:rgba(222,232,250,.06);box-shadow:none}
+[data-theme=dark] .stop-talk:hover,[data-theme=dark] .stop-plan:hover{background:rgba(222,232,250,.1)}
+[data-theme=dark] .prompt:hover{box-shadow:0 0 0 1px #525b6b}
+[data-theme=dark] .src-row:hover{background:#383e48;box-shadow:0 0 0 1px var(--dark-edge)}
+[data-theme=dark] .src-ico{background:var(--paper);box-shadow:0 0 0 1px var(--dark-edge)}
+[data-theme=dark] .src-row.drop{background:transparent;box-shadow:inset 0 0 0 1.5px #505969}
+[data-theme=dark] .src-row.drop .src-ico{box-shadow:0 0 0 1px var(--dark-edge)}
+[data-theme=dark] .src-row.drop:hover,[data-theme=dark] .panel-field:focus{box-shadow:inset 0 0 0 1.5px #7299e6}
+[data-theme=dark] .bar button:disabled{color:#737f91}
+[data-theme=dark] .bar button:hover:not(:disabled),[data-theme=dark] .stop-again:hover{background:#4072d9}
+[data-theme=dark] :is(.card-content,.plan-body,.prompt,.grow > textarea,.panel,textarea.panel-field,.session-list,.nc-input){scrollbar-color:#535e70 transparent}
+[data-theme=dark] .card-content:hover,[data-theme=dark] .card-content:focus-within{scrollbar-color:#728099 transparent}
+[data-theme=dark] .card-content::-webkit-scrollbar-thumb{background:#535e70}
+[data-theme=dark] .card-content:hover::-webkit-scrollbar-thumb{background:#728099}
+
+[data-theme=dark] .plan-go:hover,[data-theme=dark] .session-rename button[value=save]:hover{background:#4072d9;filter:none}
+[data-theme=dark] .session-rename button[value=save]:active{background:#395fbb}
+[data-theme=dark] .plan-ask .q{color:#fff}
+[data-theme=dark] .boot-notice a{color:#a6c2ff}

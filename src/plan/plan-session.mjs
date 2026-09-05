@@ -5,12 +5,16 @@ import { diffPlans } from "./plan-diff.mjs";
    这一轮跑没跑着。规则只有一条:当前方案只在新的一份过了闸门时才换。
    只说话的一轮、被停掉的一轮、几次都没过闸的一轮,都不碰它。
    回合制:一轮在跑的时候不收第二句;要插话先 stop()。 */
-export function createPlanSession({ callModel, systemPrompt = loadSystemPrompt("zh") }) {
-  const transcript = [];   // 不含 system 那条,每轮交给模型时再拼上
-  const versions = [];     // 过了闸门的每一份,按先后
+export function createPlanSession({ callModel, systemPrompt = loadSystemPrompt("zh"), savedState }) {
+  const transcript = structuredClone(savedState?.transcript ?? []);
+  const versions = structuredClone(savedState?.versions ?? []);
+  let pendingUser = null;
   let controller = null;   // 正在跑的那一轮
 
   return {
+    exportState() {
+      return structuredClone({ transcript: pendingUser ? [...transcript, pendingUser] : transcript, versions });
+    },
     get transcript() {
       return transcript.map((message) => structuredClone(message));
     },
@@ -30,6 +34,7 @@ export function createPlanSession({ callModel, systemPrompt = loadSystemPrompt("
     async say(text, { language, onDraft } = {}) {
       if (controller) throw new Error("上一轮还在跑,先停掉它再说下一句");
       const userMessage = { role: "user", content: text };
+      pendingUser = userMessage;
       controller = new AbortController();
       let result;
       try {
@@ -46,6 +51,7 @@ export function createPlanSession({ callModel, systemPrompt = loadSystemPrompt("
         throw error;
       } finally {
         controller = null;
+        pendingUser = null;
       }
       transcript.splice(0, transcript.length, ...result.transcript.slice(1));
       let diff = null;

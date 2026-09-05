@@ -1,0 +1,123 @@
+/* Hallmark · component: node conversation · existing Canvas theme
+ * pre-emit critique: P4 H4 E4 S5 R5 V3
+ * The input owns its DOM for its whole lifetime; canvas snapshots only update its surroundings. */
+const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+export const isEditing = (edit) => ["processing", "checking"].includes(edit?.status);
+const STATES = {
+  processing: ["正在修改", "正在结合整条工作流修改"],
+  checking: ["正在检查", "正在检查整条工作流的修改"],
+  applied: ["已修改", "修改已应用"],
+  unchanged: ["无需修改", "本次没有修改画布"],
+  needs_plan: ["需完善方案", "这次需要先完善整体方案"],
+  failed: ["修改未完成", "修改未完成，画布保持原样"],
+  stopped: ["已停止", "已停止修改，画布保持原样"],
+};
+export function editPresentation(edit) {
+  const [badge, title] = STATES[edit?.status] ?? ["", ""];
+  return { badge, title, working: isEditing(edit), error: edit?.status === "failed" };
+}
+export function editResultHtml(edit) {
+  if (!edit) return "";
+  const { title, working } = editPresentation(edit);
+  const changes = [...new Set(edit.changes ?? [])];
+  return `<details class="nc-history"><summary><span class="nc-status-mark" aria-hidden="true">${working ? "" : edit.status === "applied" ? "✓" : "·"}</span><span class="nc-result-title">${esc(title)}</span><span class="nc-result-hint">查看</span></summary><div class="nc-detail-body">`
+    + (edit.text ? `<p class="nc-request">${esc(edit.text)}</p>` : "")
+    + (edit.summary && !working ? `<p class="nc-summary">${esc(edit.summary)}</p>` : "")
+    + (edit.error ? `<p class="nc-error-text">${esc(edit.error)}</p>` : "")
+    + (edit.reasons?.length ? `<ul class="nc-reasons">${edit.reasons.map((r) => `<li>${esc(r)}</li>`).join("")}</ul>` : "")
+    + (changes.length ? `<p class="nc-changes"><span>实际变化</span>${changes.map(esc).join("、")}</p>` : "")
+    + (edit.review?.length ? `<div class="nc-review"><p>全部步骤的影响 · Agent 说明</p><dl>${edit.review.map((r) => `<div><dt>${esc(r.step)}</dt><dd>${esc(r.summary)}</dd></div>`).join("")}</dl></div>` : "")
+    + `</div></details>`;
+}
+let nextId = 0;
+export function createNodeConversation({ node, onSend, onStop, onResize = () => {}, initialDraft = "", onDraftChange = () => {} }) {
+  const id = `node-message-${++nextId}`;
+  const el = document.createElement("section");
+  el.className = "node-conversation";
+  el.innerHTML = `<div class="nc-results" aria-live="polite" aria-atomic="false"></div>
+    <form class="nc-form"><div class="nc-compose">
+    <textarea id="${id}" class="nc-input" rows="1" aria-label="修改这个节点" placeholder="说说这里想怎么改…" aria-describedby="${id}-help"></textarea>
+    <div class="nc-foot"><button class="nc-stop" type="button" aria-label="停止修改" title="停止修改" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button><button class="nc-send" type="submit" aria-label="发送修改"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15V5m-4 4 4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div><p class="nc-help" id="${id}-help" hidden></p></form>`;
+  const input = el.querySelector(".nc-input"), send = el.querySelector(".nc-send"), stop = el.querySelector(".nc-stop");
+  input.value = initialDraft;
+  const help = el.querySelector(".nc-help"), results = el.querySelector(".nc-results");
+  let state = { node, edits: [], busy: false, blockedReason: "" }, sending = false, stopping = false, localError = "", sent = null, resultKey = "";
+  const refresh = () => {
+    const latest = state.edits.at(-1);
+    const working = isEditing(latest);
+    const failed = Boolean(localError) || latest?.status === "failed";
+    el.dataset.state = working || sending ? "loading" : failed ? "error" : latest?.status === "applied" ? "success" : "default";
+    results.dataset.state = el.dataset.state;
+    send.disabled = sending || Boolean(state.busy) || Boolean(state.blockedReason) || !input.value.trim();
+    send.setAttribute("aria-disabled", String(send.disabled));
+    stop.hidden = !working;
+    stop.disabled = stopping;
+    stop.setAttribute("aria-label", stopping ? "正在停止修改" : "停止修改");
+    stop.title = stopping ? "正在停止…" : "停止修改";
+    send.hidden = working;
+    const reason = localError || state.blockedReason || "";
+    help.textContent = reason;
+    help.hidden = !reason;
+    help.classList.toggle("nc-error-text", Boolean(localError));
+    input.setAttribute("aria-invalid", String(Boolean(localError)));
+    send.title = state.blockedReason || (state.busy ? "等待当前操作完成后发送" : !input.value.trim() ? "写下修改后发送" : "发送工作流修改");
+  };
+  const fitInput = () => {
+    if (!input.style) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(120, Math.max(44, input.scrollHeight))}px`;
+  };
+  const submit = async () => {
+    if (send.disabled) return;
+    const text = input.value.trim();
+    const draft = input.value;
+    sending = true; localError = ""; sent = { text, draft, after: state.edits.at(-1)?.id }; refresh();
+    try { await onSend?.({ node: state.node, text }); }
+    catch (error) { localError = error.message || "发送失败，请重试。"; sent = null; }
+    finally { sending = false; refresh(); onResize(); }
+  };
+  el.addEventListener("click", (event) => event.stopPropagation());
+  results.addEventListener("click", (event) => event.stopPropagation());
+  results.addEventListener("pointerdown", (event) => event.stopPropagation());
+  results.addEventListener("keydown", (event) => event.stopPropagation());
+  el.addEventListener("pointerdown", (event) => event.stopPropagation());
+  el.addEventListener("wheel", (event) => event.stopPropagation(), { passive: true });
+  el.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.target === input && event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit(); }
+  });
+  el.querySelector("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
+  input.addEventListener("input", () => { localError = ""; onDraftChange(input.value); fitInput(); refresh(); onResize(); });
+  if (typeof ResizeObserver !== "undefined") new ResizeObserver(onResize).observe(input);
+  stop.addEventListener("click", async () => {
+    if (stopping) return;
+    stopping = true; localError = ""; refresh();
+    try { await onStop?.(); } catch (error) { localError = error.message || "未能停止，请重试。"; }
+    finally { stopping = false; refresh(); onResize(); }
+  });
+  refresh();
+  return {
+    el,
+    resultsEl: results,
+    update(next) {
+      state = { ...state, ...next };
+      const latest = state.edits.at(-1);
+      if (sent && latest?.id !== sent.after && latest?.text === sent.text && ["applied", "unchanged"].includes(latest.status)) {
+        if (input.value === sent.draft) { input.value = ""; onDraftChange(""); }
+        sent = null;
+      }
+      const key = JSON.stringify(state.edits);
+      if (key !== resultKey) {
+        const open = results.querySelector(".nc-history")?.open;
+        results.innerHTML = editResultHtml(latest);
+        if (open && results.querySelector(".nc-history")) results.querySelector(".nc-history").open = true;
+        results.querySelector("details")?.addEventListener("toggle", onResize);
+        results.hidden = !latest;
+        resultKey = key;
+      }
+      fitInput();
+      refresh();
+    },
+    get draft() { return input.value; },
+  };
+}
