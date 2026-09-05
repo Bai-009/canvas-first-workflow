@@ -25,6 +25,6 @@
       "kind": "body"
     }
   ],
-  "input": "Text",
-  "output": "JSON · Output Schema"
+  "input": { "needs": "Text" },
+  "output": { "adds": "JSON", "per": "same" }
 }

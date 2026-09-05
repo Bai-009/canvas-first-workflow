@@ -4,9 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>画布</title>
+<script src="./theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600&display=swap">
+<link rel="stylesheet" href="./node-conversation.css">
 <style>
   :root {
     --paper:#fff; --canvas:#eef0f3; --surface:#f4f5f7; --line:#e4e6ea;
@@ -25,7 +27,7 @@
   .viewport{position:absolute;inset:0;cursor:grab}
   .viewport.grabbing{cursor:grabbing}
   .world{position:absolute;top:0;left:0;transform-origin:0 0}
-  .world.gliding{transition:transform 620ms cubic-bezier(.25,1,.3,1)}
+  .world.gliding{transition:transform 520ms cubic-bezier(.25,1,.3,1)}
 
   /* 线是结构不是内容,报不出判断,所以零强调:中性灰、单一粗细。
      一条线三样:出发点一个小圆点、一段贝塞尔、末端一个描边的箭头。 */
@@ -35,10 +37,11 @@
   .port{fill:#aeb5c0}
   /* 线自己走一遍再接上卡片:箭头等线走到了才出现。
      出发点那个圆点是上游卡片的出口,线没走它也在。 */
-  .edge .tip,.edge .port-label{transition:opacity 240ms ease}
-  .edge.held .tip,.edge.held .port-label{opacity:0}
-  .port-label{font-family:var(--font);font-size:11px;font-weight:500;fill:var(--ink-3)}
-  .port-label rect{fill:var(--canvas)}
+  .edge .tip,.edge .wire-label{transition:opacity 240ms ease}
+  .edge.held .tip,.edge.held .wire-label{opacity:0}
+  /* 线上那行字压在线上,底下垫一圈画布色,字不跟线搅在一起。 */
+  .wire-label{font-family:var(--font);font-size:11px;font-weight:500;fill:var(--ink-3);
+    paint-order:stroke;stroke:var(--canvas);stroke-width:4px;stroke-linejoin:round}
 
   /* 进度长在链路自己的轨道上:头上那个点是下一张卡出现的地方,
      右边一条淡线带着几个点,是还没走到的几步。除此之外画布上不加东西。 */
@@ -53,19 +56,28 @@
   /* 停住的那一步:长在它本该出现的那一格上。是一张卡,但一眼看得出不是建好的卡——
      只有一圈描边,没有影子;哪一步、为什么、能做什么,都在同一个地方。 */
   .stop{position:absolute;width:300px;transform:translate(0,-50%);padding:14px 16px 13px;
-    border-radius:18px;background:var(--paper);box-shadow:0 0 0 1px var(--line);cursor:pointer}
+    border-radius:18px;background:var(--paper);box-shadow:0 0 0 1px var(--line);cursor:pointer;
+    transition:width 420ms var(--spring),padding 420ms var(--spring),border-radius 420ms var(--spring)}
+  /* 点开:跟一张卡撑开是同一个尺寸(540 / 22 / 18),原因不再截,三个选择都在。 */
+  .stop.open{width:540px;border-radius:22px;padding:18px;cursor:default;z-index:20;
+    box-shadow:0 22px 40px -18px rgba(20,26,38,.34),0 6px 14px -4px rgba(20,26,38,.10),0 0 0 1px var(--line)}
   .stop[hidden]{display:none}
   .stop-top{display:flex;align-items:center;gap:9px}
   .stop-mark{flex:0 0 auto;width:9px;height:9px;border-radius:50%;border:2px solid #c0c6d0}
   .stop-name{margin:0;font-size:14px;font-weight:550;line-height:20px;color:var(--ink)}
-  /* 理由再长也只给四行:出错的原文可能整段 JSON,全铺出来这张卡就成了一堵墙。
-     完整的在 .runs/ 里。 */
-  .stop-why{margin:8px 0 0;font-size:12.5px;line-height:19px;color:var(--ink-3);
+  /* 原因一条一行。收着的时候只给四行,点开看全——卡就是这么用的。 */
+  .stop-why{margin:8px 0 0;font-size:12.5px;line-height:19px;color:var(--ink-3);white-space:pre-line;
     display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .stop.open .stop-why{display:block;-webkit-line-clamp:unset;overflow:visible;color:var(--ink-2)}
   .stop-why[hidden]{display:none}
-  .stop-again{margin-top:12px;border:0;border-radius:9px;padding:6px 13px;background:var(--accent);
-    color:#fff;font:inherit;font-size:12.5px;cursor:pointer;transition:background 160ms ease}
+  .stop-acts{display:flex;gap:8px;margin-top:12px}
+  .stop-acts button{border:0;border-radius:9px;padding:6px 13px;font:inherit;font-size:12.5px;cursor:pointer;
+    transition:background 160ms ease,color 160ms ease}
+  .stop-again{background:var(--accent);color:#fff}
   .stop-again:hover{background:#2458c7}
+  .stop-talk,.stop-plan{background:rgba(20,26,38,.05);color:var(--ink)}
+  .stop-talk:hover,.stop-plan:hover{background:rgba(20,26,38,.09)}
+  .stop:not(.open) .stop-talk,.stop:not(.open) .stop-plan{display:none}
   /* 一行字,一行到底:再长也不许在画布上摊开成一段文章。 */
   .track-label{position:absolute;transform-origin:50% 0;white-space:nowrap;max-width:320px;
     overflow:hidden;text-overflow:ellipsis;
@@ -86,13 +98,13 @@
   .card:hover{box-shadow:0 22px 40px -18px rgba(20,26,38,.34),0 6px 14px -4px rgba(20,26,38,.10),
     0 0 0 1px rgba(20,26,38,.07)}
   .node.open{z-index:20}
-  .node.open .card{width:540px;border-radius:22px;padding:18px;
+  .node.open .card{width:540px;border-radius:22px;
     box-shadow:0 40px 80px -24px rgba(20,26,38,.32),0 12px 24px -8px rgba(20,26,38,.10),
       0 0 0 1px rgba(20,26,38,.06),0 0 0 4px color-mix(in srgb,var(--c) 12%,transparent)}
   /* 撑开:宽、高、位移必须同一条时长同一条曲线。位移是照着高度算出来的
      （卡片钉住上沿往下长）,两条跑得不一样快,上沿就会飘。 */
-  .node.morph .card{transition:width 560ms var(--spring),height 560ms var(--spring),
-    transform 560ms var(--spring),border-radius 560ms var(--spring),box-shadow 320ms ease}
+  .node.morph .card{transition:width 620ms var(--spring),height 620ms var(--spring),
+    transform 620ms var(--spring),border-radius 620ms var(--spring),box-shadow 320ms ease}
   /* 退到背景里的那几张只改透明度:聚焦的时候别的卡不许再跟着缩一下。 */
   .node.dim .card{opacity:.32;box-shadow:0 1px 2px rgba(20,26,38,.04),0 0 0 1px rgba(20,26,38,.04)}
   /* 量高度的那一帧不许有过渡,量完就恢复。 */
@@ -103,8 +115,9 @@
   .icon svg{width:17px;height:17px}
 
   /* 收起 */
+  .card-mini{position:absolute;inset:0;opacity:1;transition:opacity 220ms ease 300ms}
   .mini{padding:17px;display:flex;flex-direction:column;height:var(--tile)}
-  .node.open .mini{display:none}
+  .node.open .card-mini{opacity:0;pointer-events:none;transition:opacity 140ms ease}
   .mini-top{display:flex;align-items:center;gap:9px}
   .mini-kind{flex:1;min-width:0;color:var(--c);font-size:11.5px;font-weight:500;line-height:15px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -117,8 +130,37 @@
   .mini-evi.pending{color:var(--c)}
 
   /* 展开 */
-  .full{display:none}
-  .node.open .full{display:block}
+  /* 正文始终按展开宽度排版；外壳舒展时只揭示内容，不让文字逐帧重排。 */
+  .card-detail{width:540px;height:100%;padding:18px;display:flex;flex-direction:column;
+    opacity:0;visibility:hidden;pointer-events:none;
+    transition:opacity 140ms ease,visibility 0s linear 140ms}
+  .node.open .card-detail{opacity:1;visibility:visible;pointer-events:auto;
+    transition:opacity 260ms ease 60ms,visibility 0s}
+  .card-header{flex:0 0 auto;padding-bottom:14px}
+  .node .node-conversation{display:block;flex:0 0 auto}
+  .node.open .card{max-height:var(--node-room-height,calc(100vh - 180px));overflow:hidden}
+  .card-content{flex:1 1 auto;min-height:0;min-width:0;padding-right:8px;overflow-x:hidden;overflow-y:auto;
+    overflow-wrap:anywhere;scrollbar-width:thin;scrollbar-color:rgba(83,92,108,.18) transparent;overscroll-behavior:contain;
+    mask-image:linear-gradient(to bottom,transparent,var(--ink) var(--node-fade-top,0px),var(--ink) calc(100% - var(--node-fade-bottom,0px)),transparent)}
+  .card-content:hover,.card-content:focus-within{scrollbar-color:rgba(83,92,108,.32) transparent}
+  .card-content::-webkit-scrollbar{width:4px;height:0}
+  .card-content::-webkit-scrollbar-track{background:transparent}
+  .card-content::-webkit-scrollbar-thumb{border-radius:4px;background:rgba(83,92,108,.18)}
+  .card-content:hover::-webkit-scrollbar-thumb{background:rgba(83,92,108,.32)}
+  .node-inspect{display:block}
+  .node.open .full-top{margin-bottom:0}
+  .node.measuring{opacity:0;pointer-events:none}
+  .node.measuring .card-detail{height:auto;max-height:var(--node-room-height)}
+  @media(prefers-reduced-motion:reduce){
+    .world.gliding,.node.morph .card,.card-mini,.node.open .card-mini,.card-detail,.node.open .card-detail{transition:none}
+  }
+  .mini-evi.revision-evi{color:var(--ink-2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .node [data-key]:disabled{cursor:not-allowed;opacity:.55}
+  .bar-status{min-height:17px;margin:5px 10px 0;font-size:11px;line-height:17px;color:var(--ink-2)}
+  .bar-status:empty{display:none}
+  .plan-problems{margin:9px 0 0;padding-top:9px;border-top:1px solid var(--line);font-size:11.5px;line-height:18px;color:var(--nc-error);white-space:pre-line;max-height:112px;overflow-y:auto;scrollbar-width:thin}
+  .plan-problems[hidden]{display:none}
+  .plan-dot.has-problems.done::before{content:"!";color:var(--nc-error)}
   .full-top{display:flex;align-items:center;gap:11px;margin-bottom:12px}
   .full-name{margin:0;flex:1;font-size:15px;font-weight:550;line-height:22px}
   .full-kind{flex:0 0 auto;color:var(--c);font-size:11.5px;font-weight:600;letter-spacing:.02em}
@@ -143,10 +185,23 @@
   .prompt{display:block;width:100%;text-align:left;border:0;margin:0;padding:12px 15px;border-radius:12px;
     background:var(--surface);cursor:pointer;
     font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--ink-2);white-space:pre-wrap;
-    max-height:220px;overflow:auto;transition:box-shadow 140ms ease}
+    overflow-wrap:anywhere;transition:box-shadow 140ms ease}
   .prompt:hover{box-shadow:0 0 0 1px rgba(20,26,38,.09)}
+  .node-block{margin-top:16px}
+  .node-block>summary{display:grid;grid-template-columns:1fr auto;gap:8px 12px;list-style:none;cursor:pointer;font-size:12px;color:var(--ink-2);padding:4px 0}
+  .node-block>summary::-webkit-details-marker,.node-connections>summary::-webkit-details-marker{display:none}
+  .node-disclosure-hint{font-size:11px;color:var(--ink-2)}
+  .node-disclosure-hint::after{content:'›';display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:7px;font-size:14px;line-height:1;transition:transform 140ms ease}
+  details[open]>summary .node-disclosure-hint::after{transform:rotate(90deg)}
+  .node-preview{grid-column:1/-1;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;font-family:var(--mono);font-size:12px;line-height:20px;white-space:pre-wrap;padding:0 2px;color:var(--ink-2)}
+  .node-block[open] .node-preview{display:none}
+  .node-block[open]>summary{margin-bottom:6px}
+  .node-block>summary:focus-visible,.node-connections>summary:focus-visible{outline:2px solid var(--nc-focus);outline-offset:2px;border-radius:4px}
+  .node-connections{margin-top:16px}
+  .node-connections>summary{display:flex;align-items:center;justify-content:space-between;min-height:36px;list-style:none;cursor:pointer;font-size:12px;color:var(--ink-2)}
+  .node-connections .io{margin:0;padding:6px 0 12px;border:0}
   .io{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);display:grid;
-    grid-template-columns:auto 1fr;gap:3px 12px;font-size:11.5px;line-height:17px;color:var(--ink-3)}
+    grid-template-columns:auto minmax(0,1fr);gap:3px 12px;font-size:11.5px;line-height:17px;color:var(--ink-3)}
   .io b{font-weight:500;color:var(--ink-3);letter-spacing:.02em}
   .io span{color:var(--ink-2)}
   .io .name{color:var(--ink);font-weight:550}
@@ -182,11 +237,15 @@
   .plan{position:fixed;z-index:47;padding:18px 20px 16px;border-radius:16px;background:var(--paper);
     box-shadow:0 12px 32px -16px rgba(20,26,38,.26),0 0 0 1px rgba(20,26,38,.05)}
   .plan[hidden]{display:none}
+  .plan-content{display:flow-root;min-width:0}
+  .plan-motion-copy{position:absolute;pointer-events:none;user-select:none}
+  .plan-motion-copy,.plan-motion-copy *{animation:none!important;transition:none!important}
+  .plan-motion-copy .plan-body{overflow:hidden!important}
   .plan.mini{padding:13px 15px 12px;cursor:pointer}
   .plan.mini:hover{box-shadow:0 16px 40px -18px rgba(20,26,38,.32),0 0 0 1px rgba(20,26,38,.09)}
   /* 飞行只动位置、宽度、内边距和高度;高度显式写死,正文只跟着裁。 */
-  .plan.morph{overflow:hidden;transition:left 560ms var(--ease-out),top 560ms var(--ease-out),
-    width 560ms var(--ease-out),height 560ms var(--ease-out),padding 560ms var(--ease-out)}
+  .plan.morph{overflow:hidden;transition:left var(--mo,620ms) var(--ease-out),top var(--mo,620ms) var(--ease-out),
+    width var(--mo,620ms) var(--ease-out),height var(--mo,620ms) var(--ease-out),padding var(--mo,620ms) var(--ease-out)}
   .plan-label{display:block;margin-bottom:4px;color:var(--ink-3);font-size:11px;font-weight:500}
   /* 需求是一句话,不是原稿。方案没出来之前这里先摆着用户自己敲的那一段——
      那一段可能有两千字,不封顶它会把整张卡顶出屏幕,页脚的「开始生成」就点不到了。
@@ -195,10 +254,13 @@
     display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 
   .plan-body{overflow:hidden;max-height:0;opacity:0;
-    transition:max-height 560ms var(--ease-out),opacity 300ms ease,margin-top 560ms var(--ease-out)}
+    transition:max-height var(--mo,620ms) var(--ease-out),opacity calc(var(--mo,620ms) * .55) ease,margin-top var(--mo,620ms) var(--ease-out)}
   /* 封顶留的是「屏幕减去卡片自己的头尾和底下那条输入框」,不是一个拍出来的 vh:
      窗口矮下去的时候 vh 跟着缩,但头尾和输入框不缩,卡片照样会压到输入框上。 */
   .plan.open .plan-body{max-height:calc(100vh - 320px);opacity:1;margin-top:12px;overflow-y:auto}
+
+  .plan.morph .plan-body{overflow:hidden}
+  .plan.morph .plan-foot{transition:margin-top var(--mo,620ms) var(--ease-out),padding-top var(--mo,620ms) var(--ease-out)}
 
   /* 滚条只说明「下面还有」,不该自己占一条 15 像素的灰槽。一套形,四处一样。 */
   .plan-body,.prompt,.grow > textarea{
@@ -221,7 +283,7 @@
   .plan-turn.me{align-self:flex-end;max-width:84%;padding:6px 12px;border-radius:13px;
     background:var(--surface);color:var(--ink);font-size:12.5px;line-height:19px}
   .plan-turn.me > span{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;
-    overflow:hidden}
+    overflow:hidden;white-space:pre-line}
   .plan-says{font-size:12.5px;line-height:19px;color:var(--ink-2)}
   .plan-says p{margin:0 0 9px}
   .plan-says p:last-child{margin-bottom:0}
@@ -363,11 +425,27 @@
   .bar button svg{display:block}
   .bar button:hover{background:#2458c7}
   .bar button:disabled{background:transparent;color:#c2c7d0;cursor:default}
+  /* 画布视图控制沿用纸面与细线图标，比例本身也是恢复入口。 */
+  .canvas-controls{position:fixed;right:24px;bottom:32px;z-index:51;display:flex;align-items:center;gap:2px;
+    padding:3px;border-radius:12px;background:var(--paper);color:var(--ink-2);
+    box-shadow:0 4px 16px -8px rgba(20,26,38,.16),0 0 0 1px rgba(20,26,38,.05)}
+  .canvas-controls button{display:grid;place-items:center;min-width:32px;height:32px;padding:0;border:0;border-radius:8px;
+    background:transparent;color:inherit;font:inherit;font-size:11px;cursor:pointer;transition:background-color 140ms ease,color 140ms ease}
+  .canvas-controls button:hover:not(:disabled){background:var(--surface);color:var(--ink)}
+  .canvas-controls button:focus-visible{outline:2px solid var(--nc-focus);outline-offset:2px}
+  .canvas-controls button:disabled{opacity:.3;cursor:default}
+  .canvas-controls svg{width:16px;height:16px}
+  .canvas-controls #zoom-reset{min-width:48px;font-variant-numeric:tabular-nums}
+  .canvas-controls #zoom-fit{margin-left:4px;position:relative}
+  .canvas-controls #zoom-fit::before{content:'';position:absolute;left:-3px;top:8px;bottom:8px;width:1px;background:var(--line)}
+  @media(max-width:1100px){.canvas-controls{bottom:calc(var(--composer-height,48px) + 40px)}}
 </style>
+<link rel="stylesheet" href="./sessions.css">
+<link rel="stylesheet" href="./theme.css">
 </head>
 <body>
   <header class="top">
-    <span class="logo">
+    <div class="brand"><button id="sidebar-toggle" class="sidebar-toggle" aria-label="切换会话侧栏" aria-controls="sessions" aria-expanded="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2.5" y="3" width="15" height="14" rx="2"/><path d="M8 3v14"/></svg></button><span class="logo">
       <!-- 三张卡,越来越小、越来越淡:建好的、在建的、还没到的。
            从头到尾只有一种形——就是画布上那张卡。
            圆角比例比卡片大一倍(0.30 对 24/176):同一个形在这个尺度上要更软才看着一样,
@@ -379,8 +457,24 @@
       </svg>
       <span class="logo-t"><b>Canvas</b>Flow</span>
     </span>
-    <button class="fresh" id="fresh" hidden>新建</button>
+    </div>
   </header>
+  <aside class="sessions" id="sessions" aria-label="会话管理">
+    <div class="session-heading"><p class="session-label" id="session-list-title">工作流</p><button class="session-new" id="fresh" aria-label="新工作流" title="新工作流"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11"/></svg></button></div>
+    <nav class="session-list" id="session-list" aria-label="工作流会话"></nav>
+    <p class="session-error" id="session-error" role="alert" hidden></p>
+    <div class="session-footer"><span class="session-save" id="session-save" role="status">正在连接…</span><button class="session-trash" id="session-retry-save" hidden>重试保存</button><button class="session-trash" id="session-trash">已删除</button>
+      <details class="session-settings" id="session-settings">
+        <summary><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><path d="M3 6h6m4 0h4M3 14h2m4 0h8"/><circle cx="11" cy="6" r="2"/><circle cx="7" cy="14" r="2"/></svg><span>设置</span></summary>
+        <div class="settings-panel"><fieldset><legend>外观</legend><div class="theme-options">
+          <label class="theme-option"><input type="radio" name="theme" value="light"><span>浅色</span></label>
+          <label class="theme-option"><input type="radio" name="theme" value="dark"><span>暗色</span></label>
+        </div></fieldset></div>
+      </details>
+    </div>
+  </aside>
+  <dialog class="session-rename" id="session-rename" aria-labelledby="session-rename-title"><form><label for="session-name" id="session-rename-title">重命名工作流</label><input id="session-name" required maxlength="80" autocomplete="off" aria-describedby="session-name-error"><p id="session-name-error" role="alert" hidden></p><div class="dialog-actions"><button type="submit" value="cancel" formnovalidate>取消</button><button type="submit" value="save">保存</button></div></form></dialog>
+  <div class="boot-notice" id="boot-notice" role="alert" hidden></div>
   <div class="stage" id="stage">
     <div class="viewport" id="viewport"><div class="world" id="world">
       <svg class="wires" id="wires"></svg>
@@ -404,6 +498,7 @@
       <button class="plan-go" hidden>开始生成</button>
       <button class="plan-close" hidden>收起</button>
     </div>
+    <p class="plan-problems" id="plan-problems" hidden></p>
   </div>
 
   <div class="picker" id="picker" hidden><div class="panel" role="dialog" tabindex="-1"></div></div>
@@ -417,8 +512,29 @@
           fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </form>
+    <p class="bar-status" id="bar-status" role="status"></p>
   </div>
 
-  <script type="module" src="./main.mjs"></script>
+  <div class="canvas-controls" role="group" aria-label="画布缩放">
+    <button id="zoom-out" type="button" aria-label="缩小画布" title="缩小"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M5 10h10"/></svg></button>
+    <button id="zoom-reset" type="button" aria-label="恢复默认大小（100%）" title="恢复默认大小 · 100%">100%</button>
+    <button id="zoom-in" type="button" aria-label="放大画布" title="放大"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M5 10h10M10 5v10"/></svg></button>
+    <button id="zoom-fit" type="button" aria-label="适应画布" title="适应画布"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3.5H3.5V7M13 3.5h3.5V7M16.5 13v3.5H13M7 16.5H3.5V13"/></svg></button>
+  </div>
+  <script>
+    const notice = document.getElementById("boot-notice");
+    if (location.protocol === "file:") {
+      notice.hidden = false;
+      notice.innerHTML = '这是文件预览，无法发送或保存工作流。请使用 <a href="http://127.0.0.1:5174/">打开工作流服务</a>。';
+    } else {
+      import("./main.mjs").catch(() => {
+        notice.hidden = false;
+        notice.textContent = "未能连接工作流服务，输入的文字仍保留在这里。连接恢复后可以重试。";
+        const retry = document.createElement("button"); retry.textContent = "重新连接";
+        retry.onclick = () => { try { sessionStorage.setItem("canvasflow:boot-draft", document.getElementById("input").value); } catch {} location.reload(); };
+        notice.append(retry);
+      });
+    }
+  </script>
 </body>
 </html>

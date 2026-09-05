@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { createWorkflowSession, checkResult, wholeCanvasProblems } from "../../src/state-machine/workflow-session.mjs";
+import { createWorkflowSession, checkResult, wholeCanvasProblems, breakOf, handoffText } from "../../src/state-machine/workflow-session.mjs";
 import { stepWaves } from "../../src/state-machine/step-context.mjs";
 import fixedExecutor from "../../fixtures/doubles/fixed-executor.mjs";
 
@@ -422,4 +422,41 @@ test("固定答复插进状态机能走完整条链,再开始一次全是已经�
   assert.ok(canvas.edges.every((e) => typeof e.from === "string" && typeof e.to === "string"));
   const second = await session.start();
   assert.deepEqual(second.steps.map((s) => s.outcome), ["covered", "covered", "covered", "covered"]);
+});
+
+/* 闸门第三样也在状态机这一道:接不上的停在这一步,画布不动,原因一条一条留在记录里。 */
+test("接不上:s2 要 Vector 却接在只有 File 的线上,停在 s2,画布不动,原因写进记录", async () => {
+  const { executor } = byStep({
+    ...chain,
+    s1: () => patch([node("s1", "读", { type: "readFile", params: { pattern: "*" }, blanks: ["folder"] })]),
+    s2: () => patch([node("s2", "库", { type: "writeVectorStore", params: {}, blanks: ["connection", "collection"] })], [{ from: "读", to: "库" }]),
+  });
+  const session = await sessionWithPlan(executor);
+  const run = await session.start();
+  assert.equal(run.endedBy, "rejected");
+  assert.deepEqual(run.steps.map((s) => [s.ref, s.outcome]), [["s1", "done"], ["s2", "rejected"]]);
+  assert.deepEqual(run.steps.at(-1).reasons, ["节点 库 要 Vector,接进来的线上只有 File"]);
+  assert.equal(session.canvas.version, 1);
+  assert.deepEqual(breakOf(run, session.currentPlan), { ref: "s2", title: run8.steps[1].title, reasons: ["节点 库 要 Vector,接进来的线上只有 File"] });
+});
+
+test("交给设计者:停在哪儿、退了什么,原样作为一句话进设计者的对话;没停就没什么可交的", async () => {
+  const { executor } = byStep({ ...chain, s2: () => patch([node("s2", "n2", { type: "ocr", params: {}, blanks: [] })], [{ from: "n1", to: "n2" }]) });
+  /* n1 是没申报出口的写代码卡,不知道加了什么,第三样不拦;让 s2 死在第二样:ocr 没有 x 这一格 */
+  const session = await sessionWithPlan(executor);
+  await assert.rejects(session.escalate(), /没什么可交给设计者的/);
+  const { executor: bad } = byStep({ ...chain, s2: () => patch([node("s2", "n2", { type: "ocr", params: { x: 1 }, blanks: [] })], [{ from: "n1", to: "n2" }]) });
+  const session2 = createWorkflowSession({ callModel: submitting(run8), executor: bad });
+  await session2.say("每天定时把新增的合同 PDF 解析出关键字段,写进数据库");
+  const run = await session2.start();
+  assert.equal(run.endedBy, "rejected");
+  const said = [];
+  const turn = await session2.escalate({ onSaid: (text) => said.push(text) });
+  const expected = handoffText(breakOf(run, session2.currentPlan));
+  assert.deepEqual(said, [expected]);
+  assert.equal(turn.text, expected);
+  assert.match(expected, new RegExp(`^「${run8.steps[1].title}」（s2）在画布上没搭成，闸门退回：\\n- 节点 n2\\(ocr\\)没有 x 这一格`));
+  /* 这句话进了设计者的对话记录,跟人自己打的一句一样是 user */
+  assert.equal(session2.transcript.filter((m) => m.role === "user").at(-1).content, expected);
+  assert.equal(session2.revision, 2);
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { checkAgainstNodeTable } from "../../src/nodes/check-nodes.mjs";
+import { checkAgainstNodeTable, checkFlow } from "../../src/nodes/check-nodes.mjs";
 
 const node = (type, params = {}, blanks = [], name = "A") => ({ name, step: "s1", type, params, blanks });
 const reasons = (nodes, edges = [], canvas = []) => checkAgainstNodeTable(nodes, edges, canvas).join("\n");
@@ -52,4 +52,24 @@ test("多出口节点的线要写出口,单出口的不许写;线的源头在画
   const onCanvas = [node("condition", { condition: "input.x" }, [], "画布上的分岔")];
   assert.match(reasons([sink], [{ from: "画布上的分岔", to: "B" }], onCanvas), /要写出口/);
   assert.equal(reasons([sink], [{ from: "不认识的老节点", to: "B" }], [{ name: "不认识的老节点", type: "n8n-nodes-base.set", params: {}, blanks: [] }]), "");
+});
+
+/* 第三样:接得上。查的是整条上游一路加进来的全部,不是紧挨着那一个。 */
+test("接得上:要的东西在线上就放行;不在就退,并说线上只有什么;没线进来也退", () => {
+  const n = (name, type, params = {}) => ({ name, step: "s1", type, params, blanks: [] });
+  const canvas = (nodes, edges) => ({ nodes, edges });
+  const 读 = n("读", "readFile"), 识 = n("识", "ocr"), 抽 = n("抽", "llm", { prompt: "p" }), 库 = n("库", "writeVectorStore");
+  assert.deepEqual(checkFlow([识, 抽], canvas([读, 识, 抽], [{ from: "读", to: "识" }, { from: "识", to: "抽" }])), []);
+  assert.deepEqual(checkFlow([库], canvas([读, 库], [{ from: "读", to: "库" }])), ["节点 库 要 Vector,接进来的线上只有 File"]);
+  assert.deepEqual(checkFlow([识], canvas([读, 识], [])), ["节点 识 要 File,没有一根线进来"]);
+  /* 分岔原样带过去:false 路上的 OCR 照样拿得到文件 */
+  const 岔 = n("岔", "condition", { condition: "x" });
+  assert.deepEqual(checkFlow([识], canvas([读, 岔, 识], [{ from: "读", to: "岔" }, { from: "岔", to: "识", output: "false" }])), []);
+  /* 上游有一张没申报出口的写代码卡:不知道加了什么,不拦 */
+  const 算 = n("算", "code", { code: "//" });
+  assert.deepEqual(checkFlow([抽], canvas([读, 算, 抽], [{ from: "读", to: "算" }, { from: "算", to: "抽" }])), []);
+  算.params.outputKind = "File";
+  assert.deepEqual(checkFlow([抽], canvas([读, 算, 抽], [{ from: "读", to: "算" }, { from: "算", to: "抽" }])), ["节点 抽 要 Text,接进来的线上只有 File"]);
+  /* 什么都不要的(写代码、分岔)不查 */
+  assert.deepEqual(checkFlow([算, 岔], canvas([算, 岔], [])), []);
 });

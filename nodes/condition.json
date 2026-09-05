@@ -6,7 +6,7 @@
   "slots": [
     { "key": "condition", "label": "Condition", "kind": "conditions" }
   ],
-  "input": "Any",
-  "output": "Any · 原样",
+  "input": { "needs": null },
+  "output": { "adds": null, "per": "same" },
   "ports": ["true", "false"]
 }

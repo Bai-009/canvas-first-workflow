@@ -4,6 +4,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import Ajv from "ajv/dist/2020.js";
+import { KINDS } from "../../web/flow.mjs";
 
 const contractUrl = new URL("../../contracts/node-definition.schema.json", import.meta.url);
 const nodesDir = new URL("../../nodes/", import.meta.url);
@@ -35,6 +36,18 @@ export function checkNodeDefinition(definition) {
       reasons.push(`格子 ${slot.key} 的默认值 ${slot.default} 不在 options 里`);
     }
   }
+  /* 出口那两样也有契约写不出的:加的东西看某一格的,那一格得真有、得是挑一个、挑的得是流里的种类;
+     起点(不进数据)不能说「跟进来的一样」——它前面没有东西可跟。 */
+  const adds = definition?.output?.adds;
+  if (typeof adds === "string" && adds.startsWith("slot:")) {
+    const key = adds.slice(5);
+    const slot = (definition.slots ?? []).find((s) => s?.key === key);
+    if (!slot) reasons.push(`出口说看 ${key} 这一格,表里没有这一格`);
+    else if (slot.kind !== "pick" || !slot.options?.every((o) => KINDS.includes(o))) {
+      reasons.push(`出口看的那一格 ${key} 得是挑一个,挑的只能是:${KINDS.join("、")}`);
+    }
+  }
+  if (!definition?.input && definition?.output?.per === "same") reasons.push("起点不进数据,出去的得说按什么算一条,不能写 same");
   return reasons;
 }
 

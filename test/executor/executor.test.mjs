@@ -36,6 +36,14 @@ test("五样贴标签,画布上的节点原样发给模型,名字就叫 name", (
   assert.doesNotMatch(text, /"id":/);
 });
 
+test("已应用的局部要求全量交给初建执行者,不按当前步骤裁剪", () => {
+  const requirements = [{ target: { node: "远处的节点", step: "s5" }, text: "金额仍保留两位小数。" }];
+  const message = stepMessage(context({ requirements }));
+  const block = message.match(/<requirements>\n([\s\S]*?)\n<\/requirements>/);
+  assert.deepEqual(JSON.parse(block[1]), requirements);
+  assert.doesNotMatch(stepMessage(context()), /<requirements>/);
+});
+
 test("模型交的换成状态机认的:只补 step,其余原样带过去,出口留着", () => {
   const patch = toPatch({ kind: "patch", nodes: [{ name: "A", type: "t", params: {}, blanks: ["x"] }], edges: [{ from: "U", to: "A" }, { from: "A", to: "B", output: "false" }] }, "s2");
   assert.deepEqual(patch.nodes, [{ name: "A", step: "s2", type: "t", params: {}, blanks: ["x"] }]);
@@ -124,13 +132,17 @@ test("叫了没有的工具(搜、查都撤了),当答案退给模型,来回继�
 test("交回对不上节点表(类型不在表里、格子不存在),原因退给模型", async () => {
   const wrongType = { kind: "patch", nodes: [{ name: "A", type: "n8n-nodes-base.postgres", params: {}, blanks: [] }], edges: [] };
   const wrongSlot = { kind: "patch", nodes: [{ name: "A", type: "llm", params: { prompt: "p", temperature: 0.2 }, blanks: ["outputSchema"] }], edges: [] };
-  const good = { kind: "patch", nodes: [{ name: "A", type: "llm", params: { prompt: "p" }, blanks: ["outputSchema"] }], edges: [] };
-  const { callModel } = scripted([assistant([call("submit_step", wrongType)]), assistant([call("submit_step", wrongSlot, "c2")]), assistant([call("submit_step", good, "c3")])]);
+  /* 链的头上一个 LLM 没有线进来,它要的 Text 哪儿也拿不到——第三样(接得上)也退。 */
+  const unfed = { kind: "patch", nodes: [{ name: "A", type: "llm", params: { prompt: "p" }, blanks: ["outputSchema"] }], edges: [] };
+  const good = { kind: "patch", nodes: [{ name: "A", type: "readFile", params: { pattern: "*.pdf" }, blanks: ["folder"] }], edges: [] };
+  const { callModel } = scripted([assistant([call("submit_step", wrongType)]), assistant([call("submit_step", wrongSlot, "c2")]),
+    assistant([call("submit_step", unfed, "c3")]), assistant([call("submit_step", good, "c4")])]);
   const out = await runStep(context(), { callModel, systemPrompt: "P" });
-  assert.equal(out.rounds, 3);
+  assert.equal(out.rounds, 4);
   assert.match(JSON.parse(out.messages[3].content).rejected.join(";"), /不在节点表里/);
   assert.match(JSON.parse(out.messages[5].content).rejected.join(";"), /没有 temperature 这一格/);
-  assert.equal(out.result.nodes[0].type, "llm");
+  assert.match(JSON.parse(out.messages[7].content).rejected.join(";"), /节点 A 要 Text,没有一根线进来/);
+  assert.equal(out.result.nodes[0].type, "readFile");
 });
 
 /* 说话不交不算交,但也不至于就地作废——来回上限本来就是留给这种情况的。

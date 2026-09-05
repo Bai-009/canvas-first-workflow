@@ -36,7 +36,7 @@ test("AI 起草的 Output Schema 印成字段清单,不印那份 JSON", () => {
 test("正文那种格自己占一块,不挤在一行里", () => {
   const html = fullCard(def("llm"),
     { name: "抽取", type: "llm", params: { prompt: "抽出甲方乙方" }, blanks: ["outputSchema"] }, []);
-  assert.match(html, /class="sec">Prompt<\/div><button [^>]*class="prompt"[^>]*>抽出甲方乙方/);
+  assert.match(html, /<details class="node-block"[^>]*>[\s\S]*<button [^>]*class="prompt"[^>]*>抽出甲方乙方/);
 });
 
 test("分岔节点按出口印去哪儿;单出口的只印类型", () => {

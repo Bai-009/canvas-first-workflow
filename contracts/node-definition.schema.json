@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Bai-009/canvas-first-workflow/contracts/node-definition.schema.json",
   "title": "一个节点的定义",
-  "description": "我们自己定义的节点,一个节点一个文件(nodes/*.json)。一张表喂三处:执行者照它填,闸门照它查,卡照它画。写下来的只有卡上灰的那部分:卡类型、格子表、进来什么、出去什么;名字、旁白、格子里的值是执行者每次填的,不在这里。",
+  "description": "我们自己定义的节点,一个节点一个文件(nodes/*.json)。一张表喂三处:执行者照它填,闸门照它查,卡照它画。写下来的只有卡上灰的那部分:卡类型、格子表、进来什么(要什么)、出去什么(加什么、按什么算一条);名字、旁白、格子里的值是执行者每次填的,不在这里。",
   "type": "object",
   "properties": {
     "type": {
@@ -28,14 +28,62 @@
       "description": "格子表,按卡上从上到下的顺序"
     },
     "input": {
-      "type": "string",
-      "minLength": 1,
-      "description": "进来什么:类型词,卡的 Input 行印它(Text、File、JSON)。不写=不进数据,是链的起点,卡上印 —"
+      "type": "object",
+      "properties": {
+        "needs": {
+          "enum": [
+            "Event",
+            "File",
+            "Text",
+            "JSON",
+            "Vector",
+            "Result",
+            null
+          ],
+          "description": "进来的流里必须有什么(File、Text、JSON、Vector)。null 是什么都接(条件分岔、写代码)"
+        }
+      },
+      "required": [
+        "needs"
+      ],
+      "additionalProperties": false,
+      "description": "进来什么。不写=不进数据,是链的起点(定时触发、读文件);起点前面接一根触发的线也行,那根线上流的照样带过去"
     },
     "output": {
-      "type": "string",
-      "minLength": 1,
-      "description": "出去什么:类型词,卡的 Output 行印它,下一个节点从这儿接。例:JSON · Output Schema"
+      "type": "object",
+      "properties": {
+        "adds": {
+          "anyOf": [
+            {
+              "enum": [
+                "Event",
+                "File",
+                "Text",
+                "JSON",
+                "Vector",
+                "Result",
+                null
+              ]
+            },
+            {
+              "type": "string",
+              "pattern": "^slot:[a-z][a-zA-Z0-9]*$"
+            }
+          ],
+          "description": "往流里加什么。数据往下走前面的都带着,所以写的是这个节点加的那一样,不是流里的全部:OCR 加 Text,向量化加 Vector。null 是原样带过去(条件分岔)。slot:xxx 是看这个节点自己填的那一格(写代码)"
+        },
+        "per": {
+          "type": "string",
+          "minLength": 1,
+          "description": "出去的按什么算一条:same 是跟进来的一样;起点和改单位的写单位——文件、块、次"
+        }
+      },
+      "required": [
+        "adds",
+        "per"
+      ],
+      "additionalProperties": false,
+      "description": "出去什么。线上印的、闸门查的、改动往下传时比的,都从这儿推"
     },
     "ports": {
       "type": "array",

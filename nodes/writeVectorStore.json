@@ -7,6 +7,6 @@
     { "key": "connection", "label": "Connection", "kind": "credential", "empty": "选连接" },
     { "key": "collection", "label": "Collection", "kind": "source", "empty": "选集合" }
   ],
-  "input": "Vector",
-  "output": "Result"
+  "input": { "needs": "Vector" },
+  "output": { "adds": "Result", "per": "same" }
 }

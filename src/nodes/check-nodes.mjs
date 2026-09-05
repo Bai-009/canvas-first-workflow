@@ -3,6 +3,7 @@
    挑一个的值在能挑的里面;填个数的是数;多出口节点的线写了出口、单出口的没写。
    闸门只拦机器缺了转不动的:值对不对、旁白好不好,不归它。 */
 import { findNodeDefinition, nodeTable } from "./node-table.mjs";
+import { edgeKey, flows, join } from "../../web/flow.mjs";
 
 const isEmpty = (value) => value === undefined || value === null || value === "";
 
@@ -38,6 +39,25 @@ export function checkAgainstNodeTable(nodes, edges, canvasNodes = []) {
     const label = `线 ${edge.from}→${edge.to}`;
     if (def.ports && !def.ports.includes(edge.output)) reasons.push(`${label} 要写出口,${edge.from} 有:${def.ports.join("、")}`);
     if (!def.ports && edge.output !== undefined) reasons.push(`${label} 写了出口 ${edge.output},${edge.from} 只有一个出口`);
+  }
+  return reasons;
+}
+
+/* 接得上:每个节点要什么,接进来的线上得有。数据往下走前面的都带着,所以查的是上游一路
+   加进来的全部,不是紧挨着那一个——分岔 false 路上的 OCR 照样拿得到文件。
+   canvas 是这一步进去之后整张画布的样子(节点、线都换好了),线上流的从它推。
+   只拦能确定为假的:上游有一张不知道加了什么的卡(没申报出口的写代码卡),就不知道,不拦。 */
+export function checkFlow(mine, canvas) {
+  const reasons = [];
+  const f = flows(nodeTable(), canvas);
+  for (const node of mine) {
+    const needs = findNodeDefinition(node.type)?.input?.needs;
+    if (!needs) continue;
+    const ins = canvas.edges.filter((e) => e.to === node.name).map((e) => f.edges.get(edgeKey(e))).filter(Boolean);
+    if (!ins.length) { reasons.push(`节点 ${node.name} 要 ${needs},没有一根线进来`); continue; }
+    const into = join(ins);
+    if (into.unknown || into.carries.includes(needs)) continue;
+    reasons.push(`节点 ${node.name} 要 ${needs},接进来的线上只有 ${into.carries.join("、") || "空的"}`);
   }
   return reasons;
 }

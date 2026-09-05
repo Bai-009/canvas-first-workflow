@@ -9,6 +9,6 @@
     { "key": "mode", "label": "Mode", "kind": "pick", "options": ["Insert", "Upsert"], "default": "Insert" },
     { "key": "mapping", "label": "Mapping", "kind": "pick", "options": ["按字段名", "手动"], "default": "按字段名" }
   ],
-  "input": "JSON",
-  "output": "Result"
+  "input": { "needs": "JSON" },
+  "output": { "adds": "Result", "per": "same" }
 }

@@ -1,4 +1,5 @@
 import { icon, PLUS } from "./icons.mjs";
+import { edgeKey, join, label } from "./flow.mjs";
 
 /* 一张卡完全由两样东西画出来:节点表里那一行(有哪些格、格叫什么、进出是什么类型)
    和画布上这个节点(叫什么名、填了什么、留空了哪几格、旁白写了什么)。
@@ -33,17 +34,17 @@ function fieldValue(slot, node) {
   return `<button type="button" class="set ${cls}"${key}>${esc(filled)}</button>`;
 }
 
-/* 进:上游节点的名字 + 节点表说的进什么类型;没有上游就是起点,印一横。
-   出:分岔节点按出口一个一个印去哪儿,单出口的只印类型。 */
-function io(def, node, edges) {
+/* 进:上游节点的名字 + 那几根线上流的是什么;没有上游就是起点,印一横。
+   出:这个节点出口上流的是什么;分岔节点按出口一个一个印去哪儿。
+   流的是什么从整张画布推(flow.mjs),这里只印。没给 flows 的时候(只画一张卡)退回节点表
+   自己那一行:要什么、加什么——那是定义,不是这张卡真正接到的东西。 */
+function io(def, node, edges, flows) {
   const ins = edges.filter((e) => e.to === node.name);
-  const inLine = def.input
-    ? ins.length
-      ? `${ins.map((e) => `<span class="name">${esc(e.from)}</span>`).join(" · ")} · ${esc(def.input)}`
-      : esc(def.input)
-    : "—";
+  const into = flows ? label(join(ins.map((e) => flows.edges.get(edgeKey(e))).filter(Boolean))) : def.input?.needs ?? "";
+  const names = ins.map((e) => `<span class="name">${esc(e.from)}</span>`).join(" · ");
+  const inLine = ins.length ? [names, esc(into)].filter(Boolean).join(" · ") : def.input ? esc(into) || "—" : "—";
   const outs = edges.filter((e) => e.from === node.name);
-  let outLine = esc(def.output);
+  let outLine = esc(flows ? label(flows.out.get(node.name)) : def.output?.adds ?? "") || "—";
   if (def.ports) {
     const byPort = def.ports.map((p) => {
       const t = outs.filter((e) => e.output === p).map((e) => `<span class="name">${esc(e.to)}</span>`);
@@ -54,14 +55,14 @@ function io(def, node, edges) {
   return `<div class="io"><b>Input</b><span>${inLine}</span><b>Output</b><span>${outLine}</span></div>`;
 }
 
-export function fullCard(def, node, edges) {
+export function fullCard(def, node, edges, flows = null) {
   const rows = [];
   const blocks = [];
   for (const slot of def.slots) {
     if (BLOCK.has(slot.kind) && !node.blanks?.includes(slot.key)) {
       const body = node.params?.[slot.key];
-      if (body) blocks.push(`<div class="sec">${esc(slot.label)}</div>`
-        + `<button type="button" class="prompt" data-key="${esc(slot.key)}">${esc(body)}</button>`);
+      if (body) blocks.push(`<details class="node-block" data-disclosure="${esc(slot.key)}"><summary aria-label="展开 ${esc(slot.label)}"><span>${esc(slot.label)}</span><span class="node-disclosure-hint">全文</span><span class="node-preview">${esc(String(body).slice(0, 160))}${String(body).length > 160 ? "…" : ""}</span></summary>`
+        + `<button type="button" class="prompt" data-key="${esc(slot.key)}" title="编辑 ${esc(slot.label)}">${esc(body)}</button></details>`);
       continue;
     }
     const value = fieldValue(slot, node);
@@ -71,10 +72,12 @@ export function fullCard(def, node, edges) {
     `<div class="full">`,
     `<div class="full-top"><span class="icon">${icon(def.type)}</span>`,
     `<h3 class="full-name">${esc(node.name)}</h3><span class="full-kind">${esc(def.kind)}</span></div>`,
+    `<div class="node-inspect">`,
     node.note ? `<p class="note">${esc(node.note)}</p>` : "",
     rows.length ? `<div class="fields">${rows.join("")}</div>` : "",
     blocks.join(""),
-    io(def, node, edges),
+    `<details class="node-connections" data-disclosure="connections"><summary>数据连接<span class="node-disclosure-hint">查看</span></summary>${io(def, node, edges, flows)}</details>`,
+    `</div>`,
     `</div>`,
   ].join("");
 }

@@ -84,4 +84,6 @@ On a later pass, if "Fetch yesterday's orders" is unchanged and s3 carries no an
 
 Each row: type (card label) — what it does; in → out; then every slot with how it is filled.
 
+Data accumulates as it flows: whatever upstream nodes added is still there downstream (a file read in stays attached after parsing; the text stays attached after embedding). `in` is what a node needs to find in the flow; `out` is what it adds, and what one item is — "one item per 文件" means the node emits one item per file, "same unit as input" means it keeps the incoming unit.
+
 {{node_table}}

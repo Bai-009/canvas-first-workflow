@@ -6,6 +6,6 @@
   "slots": [
     { "key": "model", "label": "Model", "kind": "pick", "options": ["BGE-M3"], "default": "BGE-M3" }
   ],
-  "input": "Text",
-  "output": "Vector · 带原文"
+  "input": { "needs": "Text" },
+  "output": { "adds": "Vector", "per": "same" }
 }

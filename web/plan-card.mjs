@@ -1,19 +1,19 @@
-/* Plan 卡片。画布还空着的时候注意力本来就在中央,所以它占中央;
-   谈完按开始,同一张卡收窄、正文塌掉、再飞到右上角常驻报状态。
-   点它,它飞回中央,画布同时往后退——一进一出,读起来是一次交换。
-
-   两条规矩来自原型(prototype/修改本.md):
-   一、同一张卡上两个几何动画不叠:先塌正文,停一拍,再飞。
-   二、飞行途中高度是显式写死的,不然正文一重排就顶成一条又高又窄的白板。 */
+/* Plan 卡片：首次生成先收窄再飞走；右上角与中央的往返则沿用原型最终版，
+   位置、尺寸与正文在同一拍形变。两种动作不能共用先塌后飞的编排。 */
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 const MINI = { w: 320, right: 24, top: 68, pad: "13px 15px 12px" };
 const OPEN = { w: 560, pad: "18px 20px 16px" };
+const SWAP = 620;
 
-export function createPlanCard({ card, stage, onStart }) {
-  const $ = (sel) => card.querySelector(sel);
+export function createPlanCard({ card, stage, onStart, leftInset = () => 0 }) {
+  const content = document.createElement("div");
+  content.className = "plan-content";
+  content.append(...card.childNodes);
+  card.append(content);
+  const $ = (sel) => content.querySelector(sel);
   const body = $(".plan-body");
   const say = $(".plan-say");
   const dot = $(".plan-dot");
@@ -62,16 +62,123 @@ export function createPlanCard({ card, stage, onStart }) {
   }
 
   const place = () => {
+    if (moving) return;
     if (mini) {
-      card.style.left = `${innerWidth - MINI.right - MINI.w}px`;
+      card.style.left = `${Math.max(leftInset() + 16, innerWidth - MINI.right - MINI.w)}px`;
       card.style.top = `${MINI.top}px`;
-      card.style.width = `${MINI.w}px`;
+      card.style.width = `${Math.min(MINI.w, innerWidth - leftInset() - 32)}px`;
     } else {
-      card.style.width = `${Math.min(OPEN.w, innerWidth - 48)}px`;
-      card.style.left = `${(innerWidth - card.offsetWidth) / 2}px`;
-      card.style.top = `${Math.max(24, (innerHeight - card.offsetHeight) / 2 - 60)}px`;
+      card.style.width = `${Math.min(OPEN.w, innerWidth - leftInset() - 48)}px`;
+      card.style.left = `${leftInset() + (innerWidth - leftInset() - card.offsetWidth) / 2}px`;
+      card.style.top = `${centerTop(card.offsetHeight)}px`;
     }
   };
+
+  const centerTop = (height) => {
+    const top = 68;
+    const bottom = Math.max(128, innerHeight - (document.querySelector(".bar")?.getBoundingClientRect().top ?? innerHeight) + 24);
+    return Math.max(24, Math.round(top + (innerHeight - bottom - top - height) / 2));
+  };
+  const pin = ({ left, top, width, height }) => Object.assign(card.style, {
+    left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px`,
+  });
+
+  /* 在不可见副本上量终态，不把正在显示的卡片先变大再变回去。
+     正文也用真实像素：拿一个很大的 max-height 做动画会让正文晚半拍。 */
+  function measure(compact) {
+    const probe = card.cloneNode(true);
+    probe.removeAttribute("id");
+    for (const el of probe.querySelectorAll("[id]")) el.removeAttribute("id");
+    probe.hidden = false; probe.inert = true;
+    probe.setAttribute("aria-hidden", "true");
+    probe.classList.remove("morph");
+    probe.classList.toggle("mini", compact); probe.classList.toggle("open", !compact);
+    const width = Math.min(compact ? MINI.w : OPEN.w, innerWidth - leftInset() - (compact ? 32 : 48));
+    Object.assign(probe.style, { visibility: "hidden", pointerEvents: "none", left: "-10000px", top: "0px",
+      width: `${width}px`, height: "auto", transform: "none", transition: "none", padding: compact ? MINI.pad : OPEN.pad });
+    const pb = probe.querySelector(".plan-body");
+    Object.assign(pb.style, { maxHeight: compact ? "0px" : "", marginTop: compact ? "0px" : "12px", opacity: compact ? "0" : "1", transition: "none" });
+    probe.querySelector(".plan-close").hidden = compact;
+    probe.querySelector(".plan-go").hidden = true;
+    document.body.append(probe);
+    const height = probe.getBoundingClientRect().height, bodyHeight = pb.getBoundingClientRect().height;
+    const contentWidth = probe.querySelector(".plan-content").getBoundingClientRect().width;
+    probe.remove();
+    return { width, height, bodyHeight, contentWidth,
+      left: compact ? Math.max(leftInset() + 16, innerWidth - MINI.right - width) : Math.round(leftInset() + (innerWidth - leftInset() - width) / 2),
+      top: compact ? MINI.top : centerTop(height) };
+  }
+
+  /* 外壳连续形变，文字只在起点和终点排版。
+     原排版保留为短暂的视觉副本，淡出后移除；真实内容始终承接更新和交互。 */
+  function transitionText(target, duration) {
+    const copy = content.cloneNode(true);
+    copy.classList.add("plan-motion-copy");
+    copy.inert = true;
+    copy.setAttribute("aria-hidden", "true");
+    for (const el of copy.querySelectorAll("[id]")) el.removeAttribute("id");
+    const padding = getComputedStyle(card);
+    Object.assign(copy.style, { left: padding.paddingLeft, top: padding.paddingTop,
+      width: `${content.getBoundingClientRect().width}px` });
+    // 祖先从 open 变成 mini 时，副本的正文和页脚仍保持出发时的样子。
+    for (const selector of [".plan-body", ".plan-foot"]) {
+      const source = $(selector), frozen = copy.querySelector(selector), style = getComputedStyle(source);
+      for (const property of ["height", "maxHeight", "marginTop", "paddingTop", "opacity"])
+        frozen.style[property] = style[property];
+    }
+    card.append(copy);
+    copy.querySelector(".plan-body").scrollTop = body.scrollTop;
+    content.style.width = `${target.contentWidth}px`;
+    const outgoing = copy.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: duration * .22, easing: "ease-out", fill: "both",
+    });
+    const incoming = content.animate([
+      { opacity: 0, offset: 0 }, { opacity: 0, offset: .28 },
+      { opacity: 1, offset: .78 }, { opacity: 1, offset: 1 },
+    ], { duration, easing: "ease", fill: "both" });
+    return () => {
+      copy.remove(); outgoing.cancel(); incoming.cancel();
+      content.style.width = "";
+    };
+  }
+
+  async function settle() {
+    // 先触发布局，等待实际动画完成；不在“差不多到位”时直接补写终点。
+    void card.offsetHeight;
+    await Promise.all(card.getAnimations({ subtree: true }).filter((animation) => Number.isFinite(animation.effect.getComputedTiming().endTime)).map((animation) => animation.finished.catch(() => {})));
+  }
+
+  async function swap(compact) {
+    if (moving || mini === compact) return;
+    moving = true;
+    const target = measure(compact);
+    pin(card.getBoundingClientRect());
+    body.style.transition = "none";
+    body.style.maxHeight = `${body.getBoundingClientRect().height}px`;
+    void card.offsetHeight;
+    body.style.transition = "";
+    card.style.setProperty("--mo", `${SWAP}ms`);
+    const finishText = transitionText(target, SWAP);
+    card.classList.add("morph");
+    stage.classList.add("swap");
+    void card.offsetHeight;
+    stage.classList.toggle("recede", !compact);
+    mini = compact;
+    card.classList.toggle("mini", compact); card.classList.toggle("open", !compact);
+    card.style.padding = compact ? MINI.pad : OPEN.pad;
+    body.style.maxHeight = `${target.bodyHeight}px`;
+    body.style.opacity = compact ? "0" : "1";
+    body.style.marginTop = compact ? "0px" : "12px";
+    go.hidden = true; close.hidden = compact;
+    pin(target);
+    await settle();
+    finishText();
+    card.classList.remove("morph");
+    card.style.height = "auto";
+    body.style.maxHeight = compact ? "0px" : "";
+    if (compact) stage.classList.remove("swap");
+    moving = false;
+  }
 
   /* 一条一条落下来,不是一块一块闪出来。 */
   async function drop(nodes, gap = 90) {
@@ -96,7 +203,7 @@ export function createPlanCard({ card, stage, onStart }) {
     const want = plan?.goal || task;
     if (want) $(".plan-text").textContent = want;
     const secs = [];
-    for (const sec of card.querySelectorAll(".plan-sec")) sec.hidden = true;
+    for (const sec of content.querySelectorAll(".plan-sec")) sec.hidden = true;
     shown = { says: 0, understanding: 0, steps: 0, asks: 0 };
     /* 服务端交回来的 chat 已经把这一轮的回话接在末尾了,所以不再单独补 speech。
        只有还没接上的时候(刷新回来正好卡在中间)才拿 speech 当最后一条。 */
@@ -134,7 +241,7 @@ export function createPlanCard({ card, stage, onStart }) {
       card.classList.add("open");
       /* 第一句之后需求就归 goal 管了,这里只在还没有方案的时候顶上。 */
       if (!thread.length) $(".plan-text").textContent = text;
-      for (const sec of card.querySelectorAll(".plan-sec")) sec.hidden = true;
+      for (const sec of content.querySelectorAll(".plan-sec")) sec.hidden = true;
       for (const sel of [".plan-table tbody", ".plan-route", ".plan-asks"]) $(sel).innerHTML = "";
       shown = { says: 0, understanding: 0, steps: 0, asks: 0 };
       /* 按下发送这句话就上墙。模型要想三十秒,不能让它先消失三十秒。 */
@@ -204,7 +311,7 @@ export function createPlanCard({ card, stage, onStart }) {
 
     /* 刷新页面回来的那一下不重演:已经搭过了就直接是右上角那张。 */
     restore(state, status) {
-      fill(state);
+      for (const section of fill(state)) section.hidden = false;
       card.hidden = false;
       card.classList.remove("open");
       mini = true;
@@ -217,68 +324,48 @@ export function createPlanCard({ card, stage, onStart }) {
       setSay(status, true);
     },
 
-    /* 按开始:先塌正文,停一拍,再飞。落位之后它就是右上角那个需求框。 */
+    /* 首次生成：先在中央收成小卡，停一拍，再沿原型曲线飞到右上角。 */
     async toMini(status) {
       if (mini || moving) return;
       moving = true;
-      go.hidden = true;
-      close.hidden = true;
-      card.style.height = `${card.offsetHeight}px`;
+      go.hidden = true; close.hidden = true;
+      const target = measure(true);
+      pin(card.getBoundingClientRect());
+      body.style.transition = "none";
+      body.style.maxHeight = `${body.getBoundingClientRect().height}px`;
+      void card.offsetHeight;
+      body.style.transition = "";
+      card.style.setProperty("--mo", "420ms");
+      const finishText = transitionText(target, 420);
       card.classList.add("morph");
-      await wait(20);
-      body.style.maxHeight = "0px";
-      body.style.opacity = "0";
-      body.style.marginTop = "0px";
-      card.classList.remove("open");
-      card.style.height = `${card.scrollHeight}px`;
-      await wait(420);
-      mini = true;
-      card.classList.add("mini");
+      void card.offsetHeight;
+      card.classList.remove("open"); card.classList.add("mini");
       card.style.padding = MINI.pad;
-      place();
-      card.style.height = "auto";
-      const h = card.offsetHeight;
-      card.style.height = `${h}px`;
-      await wait(620);
-      card.style.height = "auto";
+      body.style.maxHeight = "0px"; body.style.opacity = "0"; body.style.marginTop = "0px";
+      pin({ ...target, left: leftInset() + (innerWidth - leftInset() - target.width) / 2, top: centerTop(target.height) });
+      await settle();
+      finishText();
       card.classList.remove("morph");
-      /* 落位后再关一次:这一趟里如果还有没跑完的内容渲染,别让它把入口又亮出来。 */
-      go.hidden = true;
+      await wait(40);
+      const from = card.getBoundingClientRect();
+      const dx = target.left - from.left, dy = target.top - from.top;
+      const frames = Array.from({ length: 41 }, (_, k) => {
+        const t = k / 40, m = 1 - t;
+        return { offset: t, transform: `translate(${2*m*t*dx*.30+t*t*dx}px, ${2*m*t*dy*.94+t*t*dy}px)` };
+      });
+      const flight = card.animate(frames, { duration: 780 * 1.05, fill: "both", easing: "cubic-bezier(.4,0,.2,1)" });
+      stage.classList.remove("recede");
+      await flight.finished.catch(() => {});
+      pin(target); flight.cancel();
+      mini = true;
+      card.style.height = "auto";
+      stage.classList.remove("swap");
       setSay(status, true);
       moving = false;
     },
 
-    /* 点需求框:卡片飞回中央,画布同时往后退。 */
-    async toCenter() {
-      if (!mini || moving) return;
-      moving = true;
-      stage.classList.add("swap", "recede");
-      card.style.height = `${card.offsetHeight}px`;
-      card.classList.add("morph");
-      mini = false;
-      card.classList.remove("mini");
-      card.style.padding = OPEN.pad;
-      place();
-      card.classList.add("open");
-      body.style.maxHeight = "";
-      body.style.opacity = "";
-      body.style.marginTop = "";
-      await wait(20);
-      card.style.height = `${card.scrollHeight}px`;
-      await wait(620);
-      card.style.height = "auto";
-      card.classList.remove("morph");
-      close.hidden = false;
-      place();
-      moving = false;
-    },
-
-    async back() {
-      if (mini || moving) return;
-      stage.classList.remove("recede");
-      await this.toMini(say.textContent);
-      stage.classList.remove("swap");
-    },
+    toCenter() { return swap(false); },
+    back() { return swap(true); },
 
     status(text) { if (mini) setSay(text, true); },
     reflow() { if (!moving) place(); },

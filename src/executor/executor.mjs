@@ -3,6 +3,7 @@
    它一交,交的东西先过状态机那道闸门(同一道,不另造:信封 + 对得上节点表),过了就还给状态机,没过就把原因退给它再来。
    来回有上限;说话不交也算没交。 */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { renderNodeTable } from "./node-catalog.mjs";
 import { submitStepTool } from "./submit-step-tool.mjs";
@@ -33,6 +34,7 @@ export function stepMessage(context) {
     block("canvas", { nodes: canvas.nodes, edges: canvas.edges }),
     block("open_questions", openQuestions),
     block("annotations", instructions),
+    ...(context.requirements === undefined ? [] : [block("requirements", context.requirements)]),
   ].join("\n\n");
 }
 
@@ -171,6 +173,9 @@ export default async function executor(context, options) {
      它关着的时候一趟跑完什么都没留下,人只看见「停在 s2」,谁也说不出原因。
      不想留就 EXECUTOR_SAVE=none。 */
   const where = process.env.EXECUTOR_SAVE ?? ".runs";
-  plugged ??= createExecutor({ callModel: callerFromEnv(), save: where === "none" ? undefined : where });
+  plugged ??= createExecutor({
+    callModel: callerFromEnv(),
+    save: where === "none" ? undefined : join(where, `execution-${Date.now()}-${process.pid}-${randomUUID()}`),
+  });
   return plugged(context, options);
 }
