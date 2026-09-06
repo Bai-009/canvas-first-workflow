@@ -70,18 +70,18 @@ Plan Agent 这一段是这么切的：
 | | 状态 |
 |---|---|
 | Plan 契约 `contracts/plan-proposal.schema.json` | 有 |
-| Plan Gate `src/plan/validate-plan-proposal.mjs` | 有，测试守着 |
+| Plan Gate `src/plan/validate-plan-proposal.mts` | 有，测试守着 |
 | Plan Agent 系统提示词 `prompts/plan-agent.md` | 有，中文原文加英文译本 |
-| 提交工具与调用循环 `src/plan/plan-agent.mjs` | 有。任何 OpenAI 兼容接口都能接，DeepSeek V4 和 Kimi K3 上都跑过。**一个已知的错位**：Kimi 这个接口原生是 Anthropic 形状的，我们走它的 OpenAI 兼容层，模型偶尔把工具调用当正文写出来，翻译层没东西可翻。两处都就地认出来让它重来了，根因和取舍记在 `docs/观察.md` |
-| Plan 阶段的多轮会话 `src/plan/plan-session.mjs` | 有。攒对话记录，方案只在过闸时换，回合制，能停 |
+| 提交工具与调用循环 `src/plan/plan-agent.mts` | 有。任何 OpenAI 兼容接口都能接，DeepSeek V4 和 Kimi K3 上都跑过。**一个已知的错位**：Kimi 这个接口原生是 Anthropic 形状的，我们走它的 OpenAI 兼容层，模型偶尔把工具调用当正文写出来，翻译层没东西可翻。两处都就地认出来让它重来了，根因和取舍记在 `docs/观察.md` |
+| Plan 阶段的多轮会话 `src/plan/plan-session.mts` | 有。攒对话记录，方案只在过闸时换，回合制，能停 |
 | 真模型验证 | 有。deepseek-v4-pro 上跑过三个场景、三次修订轮，原始输出和完整对话记录在 `fixtures/observed/`，行为记录在 `docs/观察.md` |
 | 画布原型 `prototype/` | 有。Plan 阶段的内容是真实模型输出，执行阶段是手写的愿景演示 |
-| 状态机 `src/state-machine/workflow-session.mjs` | 有。首次构建按依赖分波走步；完成后的节点请求走独立整图修订，保存要求、状态和结果，检查完整候选后原子提交。两条路径共用执行权，停止或过期结果不提交 |
+| 状态机 `src/state-machine/workflow-session.mts` | 有。首次构建按依赖分波走步；完成后的节点请求走独立整图修订，保存要求、状态和结果，检查完整候选后原子提交。两条路径共用执行权，停止或过期结果不提交 |
 | 画布侧 Gate | 两道有了：信封（节点标的是哪一步、名字不撞、线接在存在的节点上、走完整张画布查形状）和对得上节点表（类型在表里、格子存在、要填的填了或留空、挑一个的值在能挑的里、多出口的线写了出口）。第三道「接得上」有了：每个节点要什么，接进来的线上得有，从节点定义推；「能渲染」画得出来了，还没当成闸门 |
-| 画布 `web/` + `src/web/server.mjs` | 有。底部始终与方案设计者讨论全局；首次生成按步骤长出节点；完成后在展开节点内发送修改，原处显示处理、停止、结果与失败原因，收起后保留状态标记。断口卡保留重走和改方案入口。刷新与事件重连恢复当前服务会话，旧事件不能回滚画布。每次生成与修订实录默认写 `.runs/` |
-| 整图修订 `src/executor/reviser.mjs` | 有。完整计划、最新全画布、发起节点、当前及已确认要求、相关历史进入上下文；只用 `submit_revision` 提交必要差量或说明无需修改／需要改方案。共享门禁校验完整候选，真实跨步骤修改及连续修订已验证（run14） |
-| 我们自己的节点表 `nodes/` | 有，十一张收口：定时触发、读文件、解析文档、OCR、切块、向量化、写向量库、LLM、写数据库、条件分岔、写代码。契约 `contracts/node-definition.schema.json`，读表就校。执行者换到这张表上了：整张表常驻在提示词里，没有搜、没有查，只有交；闸门第二道按表查交回的格子。每张卡写要什么、加什么、按什么算一条——节点之间接的是这份契约，线上印「Text · 按文件」，卡的 Input / Output 行印同一份（`web/flow.mjs`，浏览器和服务端一份代码） |
-| Execution Agent 与它的输出契约 | 有。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、一个工具（交）、交回形状的契约（`contracts/step-submission.schema.json`）、让模型交、被退、再交的循环（`src/executor/executor.mjs`）；插进状态机，在真模型上走完过一整条链（`fixtures/observed/run11-执行者走完整条链/`），批注后重走碰到目录里没有的能力时停在那一步（`run12-批注重走/`）。怎么定的和还差什么见 `docs/执行者.md`。`fixtures/doubles/fixed-executor.mjs` 是测试用的固定答复，节点名明写「固定答复」，类型是写代码，正文一行注释，只为看状态机怎么动 |
+| 画布 `web/` + `src/web/server.mts` | 有。底部始终与方案设计者讨论全局；首次生成按步骤长出节点；完成后在展开节点内发送修改，原处显示处理、停止、结果与失败原因，收起后保留状态标记。断口卡保留重走和改方案入口。刷新与事件重连恢复当前服务会话，旧事件不能回滚画布。每次生成与修订实录默认写 `.runs/` |
+| 整图修订 `src/executor/reviser.mts` | 有。完整计划、最新全画布、发起节点、当前及已确认要求、相关历史进入上下文；只用 `submit_revision` 提交必要差量或说明无需修改／需要改方案。共享门禁校验完整候选，真实跨步骤修改及连续修订已验证（run14） |
+| 我们自己的节点表 `nodes/` | 有，十一张收口：定时触发、读文件、解析文档、OCR、切块、向量化、写向量库、LLM、写数据库、条件分岔、写代码。契约 `contracts/node-definition.schema.json`，读表就校。执行者换到这张表上了：整张表常驻在提示词里，没有搜、没有查，只有交；闸门第二道按表查交回的格子。每张卡写要什么、加什么、按什么算一条——节点之间接的是这份契约，线上印「Text · 按文件」，卡的 Input / Output 行印同一份（`shared/flow.mts`，浏览器和服务端一份代码） |
+| Execution Agent 与它的输出契约 | 有。提示词（`prompts/executor.en.md`，英文为主，中文副本待写）、一个工具（交）、交回形状的契约（`contracts/step-submission.schema.json`）、让模型交、被退、再交的循环（`src/executor/executor.mts`）；插进状态机，在真模型上走完过一整条链（`fixtures/observed/run11-执行者走完整条链/`），批注后重走碰到目录里没有的能力时停在那一步（`run12-批注重走/`）。怎么定的和还差什么见 `docs/执行者.md`。`fixtures/doubles/fixed-executor.mts` 是测试用的固定答复，节点名明写「固定答复」，类型是写代码，正文一行注释，只为看状态机怎么动 |
 
 所以现在这个仓库是：**设计者和执行者都做出来了，在真模型上走完过一整条链；状态机做出来了，测试守着；画布接上了——一句话进去，卡一张张长出来，中途停了能看见为什么、也能接着走。`prototype/` 那个演出版留着，它演的是节奏，不是数据。**
 
@@ -99,19 +99,23 @@ Plan Agent 这一段是这么切的：
 
 首次拉取或依赖变化后，先运行 `npm ci`。`npm run web`、`npm test` 和已有 Agent 命令会在启动前自动编译共用 TypeScript 模块，编译失败时不会继续启动。
 
-### TypeScript 渐进迁移
+### TypeScript 源码与构建
 
-后端 `src/`、共用类型与数据流 `shared/`、固定答复执行者已迁移为 TypeScript，严格检查后运行编译结果。应用前端也已迁移，包括画布、卡片、会话、消息入口与主题；测试也已全部迁移并统一运行编译结果；辅助程序和可执行原型也已迁移，最后的干净构建与全仓验收正在收尾。
+所有自有 JavaScript 程序已迁移为 TypeScript：后端、应用前端、共用代码、测试、构建工具和可执行原型。严格检查后运行编译结果。唯一保留的 `prototype/plan-data.js` 是生成器输出的演示数据；节点中的业务示例代码也是数据，不是应用实现。HTML 不再内嵌程序。
 
 外部模型消息、计划、HTTP 请求和会话文件先按未知数据检查，再交给内部代码。原存档格式与额外元数据保留；读取检查不要求工作流已完成，损坏存档留在原处并提示。命令行沿用原命令名称，单步入口先检查计划和画布。
 
-`npm run build` 先生成类型，再把源码编译到 `dist/` 并复制运行资源。`npm run web`、测试和 Agent 命令会先构建，统一运行编译结果；提示词、节点表和 Schema 位于编译目录对应层级。默认 `.sessions/` 仍保存在仓库根目录，不随 `dist/` 重建而删除；`EXECUTOR_MODULE=src/...mjs` 等原有内置路径映射至编译结果，外部自定义模块路径不变。
+模型接入层先适配兼容格式：函数调用缺省的 `type` 补为 `function`，完整对象参数转为 JSON 文本；坏 JSON 字符串保留给 Agent 的纠错循环处理。流式片段组装完成后与非流式共用完整消息检查；缺少编号、工具名或参数、未知调用类型，以及流式混用完整对象和非空参数片段仍报接口错误，不猜测缺失内容。
 
-运行 `npm run typecheck` 检查已迁移模块和 `test/types/` 中只编译、不执行的类型反例。后端执行上下文要求经过校验的计划，修订结果区分 patch 与无需修改，类型检查会拒绝缺少差量的 patch。生成声明不提交，也不手动维护第二份字段表。
+`npm run build` 先清理 `dist/` 与 `.build-tools/`，再生成类型、编译源码并复制运行资源，避免删除源码后继续运行旧产物。清理脚本由 Node 的类型擦除模式直接启动，不依赖已有编译结果。`npm run web`、测试和 Agent 命令会先构建，统一运行编译结果；提示词、节点表和 Schema 位于编译目录对应层级。默认 `.sessions/` 仍保存在仓库根目录，不随 `dist/` 重建而删除；`EXECUTOR_MODULE=src/...mjs` 等原有内置路径映射至编译结果，外部自定义模块路径不变。
 
-修改源码后重新运行 `npm run build` 并重启服务；`build:watch` 可持续编译源码，修改 Schema 或静态资源后仍需完整构建。直接使用 Node 时运行 `dist/src/` 下的入口。生成工具的一项第三方声明与严格可选属性不兼容，因此仅工具配置使用 `skipLibCheck`；项目源码的严格检查保持开启。
+浏览器与后端分别进行环境检查：`tsconfig.browser.json` 只提供浏览器能力，`tsconfig.server.json` 只提供 Node 能力。普通构建先通过这两道检查，再统一生成运行文件；监听模式同步检查两种环境。前端使用的方案草稿和差异类型放在 `shared/plan.d.mts`，不再从后端实现借用。回归测试通过真正的检查器验证前端不能读环境变量或导入文件模块、后端不能使用 DOM。
 
-当前阶段与后续验收见 [TypeScript 迁移记录](docs/TypeScript迁移.md)。
+运行 `npm run typecheck` 检查全部源码和 `test/types/` 中只编译、不执行的类型反例。后端执行上下文要求经过校验的计划，修订结果区分 patch 与无需修改，类型检查会拒绝缺少差量的 patch。生成声明不提交，也不手动维护第二份字段表。
+
+修改源码后重新运行 `npm run build` 并重启服务；`build:watch` 可持续编译源码，修改 Schema、静态资源或删除源码后仍需完整构建。直接使用 Node 时运行 `dist/src/` 下的入口。生成工具的一项第三方声明与严格可选属性不兼容，因此仅工具配置使用 `skipLibCheck`；项目源码的严格检查保持开启。
+
+分阶段 PR 与验收记录见 [TypeScript 迁移记录](docs/TypeScript迁移.md)。
 
 跑测试：
 
@@ -200,7 +204,7 @@ docs/
   词表.md      我们的说法和代码里、行业里说法的对照
   设计记录.md  建造过程的逐步记录，早期稿，以上面几份为准
   scenarios/   场景预演，早期稿
-web/         画布：卡照节点表画（card.mjs）、卡摆哪儿（layout.mjs）、镜头与长卡（canvas.mjs）、线上流的是什么（flow.mjs）
+web/         画布：卡照节点表画（card.mts）、卡摆哪儿（layout.mts）、镜头与长卡（canvas.mts）、线上流的是什么（shared/flow.mts）
 prototype/   画布原型，修改本.md 记着每一处改动
 scripts/     render-figures.sh 出图
 AGENTS.md    人和 Agent 在这个仓库里怎么协作

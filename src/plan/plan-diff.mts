@@ -4,8 +4,8 @@
 
 import type { PlanProposal } from '../../shared/contracts.mjs';
 const SECTIONS = ["understanding", "steps", "openQuestions"] as const;
-export interface SectionDiff { kept: string[]; changed: string[]; added: string[]; removed: string[] }
-export type PlanDiff = Record<typeof SECTIONS[number], SectionDiff>;
+import type { PlanDiff, SectionDiff } from "../../shared/plan.mjs";
+export type { PlanDiff, SectionDiff } from "../../shared/plan.mjs";
 
 /* 键的顺序不算差异:模型两轮之间可能把 goal 和 readiness 调个位置。 */
 function canonical(value: unknown): unknown {

@@ -1,7 +1,6 @@
 import type { Annotation, Canvas, PlanProposal } from './contracts.mjs';
 import type { Edit, Run, StepRecord, Turn, WorkflowState } from './workflow.mjs';
-import type { PlanDraft } from '../src/plan/plan-agent.mjs';
-import type { PlanDiff } from '../src/plan/plan-diff.mjs';
+import type { PlanDraft, PlanDiff } from './plan.mjs';
 
 export interface ChatLine { who: 'user' | 'agent'; text: string }
 export interface Presentation { task?: string; speech?: string; chat?: ChatLine[] }

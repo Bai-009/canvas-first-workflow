@@ -140,13 +140,16 @@
   .node .node-conversation{display:block;flex:0 0 auto}
   .node.open .card{max-height:var(--node-room-height,calc(100vh - 180px));overflow:hidden}
   .card-content{flex:1 1 auto;min-height:0;min-width:0;padding-right:8px;overflow-x:hidden;overflow-y:auto;
-    overflow-wrap:anywhere;scrollbar-width:thin;scrollbar-color:rgba(83,92,108,.18) transparent;overscroll-behavior:contain;
+    overflow-wrap:anywhere;scrollbar-width:thin;scrollbar-gutter:stable;scrollbar-color:rgba(83,92,108,.18) transparent;overscroll-behavior:contain;
     mask-image:linear-gradient(to bottom,transparent,var(--ink) var(--node-fade-top,0px),var(--ink) calc(100% - var(--node-fade-bottom,0px)),transparent)}
   .card-content:hover,.card-content:focus-within{scrollbar-color:rgba(83,92,108,.32) transparent}
   .card-content::-webkit-scrollbar{width:4px;height:0}
   .card-content::-webkit-scrollbar-track{background:transparent}
   .card-content::-webkit-scrollbar-thumb{border-radius:4px;background:rgba(83,92,108,.18)}
   .card-content:hover::-webkit-scrollbar-thumb{background:rgba(83,92,108,.32)}
+  /* 保留滚动能力和轨道宽度，只在外壳动画期间隐藏不断变长的滑块。 */
+  .node .card.resizing .card-content{scrollbar-color:transparent transparent}
+  .node .card.resizing .card-content::-webkit-scrollbar-thumb{background:transparent}
   .node-inspect{display:block}
   .node.open .full-top{margin-bottom:0}
   .node.measuring{opacity:0;pointer-events:none}

@@ -1,8 +1,8 @@
 import type { PlanProposal } from "../../shared/contracts.mjs";
 import type { ModelCaller, Message, ModelDelta } from "../../shared/model.mjs";
-import type { DraftPlan } from "./partial-plan.mjs";
+import type { PlanDraft } from "../../shared/plan.mjs";
 
-export interface PlanDraft { speech: string; plan: DraftPlan | null; phase: 'writing' | 'thinking' }
+export type { PlanDraft } from "../../shared/plan.mjs";
 export interface PlanAgentOptions {
   callModel: ModelCaller;
   messages: Message[];

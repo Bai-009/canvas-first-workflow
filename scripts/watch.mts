@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 
-// 两个编译目标一起监听；任一退出时结束其余子进程，不留下后台编译器。
+// 编译目标与前后端边界一起监听；任一退出时结束其余子进程，不留下后台编译器。
 const compiler = resolve('node_modules/typescript/bin/tsc');
-const children = ['tsconfig.json', 'tsconfig.classic.json'].map(project =>
+const children = ['tsconfig.json', 'tsconfig.classic.json', 'tsconfig.browser.json', 'tsconfig.server.json'].map(project =>
   spawn(process.execPath, [compiler, '--project', project, '--watch'], { stdio: 'inherit' }));
 let stopping = false;
 function stop(code: number) {

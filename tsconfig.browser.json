@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": [],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "noEmit": true
+  },
+  "include": [
+    "web/**/*.mts",
+    "web/classic/*.ts",
+    "prototype/**/*.mts",
+    "shared/**/*.mts"
+  ]
+}
