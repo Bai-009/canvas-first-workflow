@@ -640,19 +640,24 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     element(el, ".card").style.transform = `translate(-50%, calc(-50% + ${((h - TILE) / 2).toFixed(1)}px))`;
   };
 
-  /* 外壳变高或变矮时，镜头都跟随新的阅读中心；输入框和展开状态保留。
-     userMoved 只阻止全景自动取景，不能阻止正在阅读的卡片重新聚焦。 */
+  /* 外壳变高或变矮时镜头不动:正在读的那张卡就该待在原地,人打一行字画布跟着晃是在抢镜。
+     只有它顶出画面才追一下——正在写的那句话不能跑到看不见的地方去。
+     追的时候照人自己定的倍数来,不重设缩放。 */
   const remeasure = (el: HTMLElement) => {
     const h = measure(el);
     if (element(el, ".card").style.height === `${h}px`) return;
     box0(el, h); el.classList.add("open");
     const p = last.placed.find((placed) => nodes.get(placed.node.name) === el);
-    if (p) aim(p, h);
+    if (!p) return;
+    const { pad, h: roomHeight } = room();
+    const outOfView = ty + p.y * scale < pad - 32 || ty + (p.y + h) * scale > pad + roomHeight + 32;
+    if (outOfView) aim(p, h, userMoved);
   };
 
-  function aim(p: Point, h: number) {
+  /* keepScale:人自己缩放过之后,重新取景照人定的倍数来,只把卡片挪回阅读中心。 */
+  function aim(p: Point, h: number, keepScale = false) {
     const { pad, left, w, h: room_h } = room();
-    const s = Math.min(1, (w - 32) / OPEN_W, (room_h + 32) / h);
+    const s = keepScale ? scale : Math.min(1, (w - 32) / OPEN_W, (room_h + 32) / h);
     scale = s;
     tx = left + pad + w / 2 - (p.x + TILE / 2) * s;
     ty = pad + room_h / 2 - (p.y + h / 2) * s;
