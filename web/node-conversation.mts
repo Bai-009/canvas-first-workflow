@@ -1,9 +1,23 @@
+import type { Edit } from '../shared/workflow.mjs';
+import { errorMessage } from '../shared/errors.mjs';
+import { element } from './dom.mjs';
+export type EditView = Pick<Edit, 'status'> & Partial<Pick<Edit, 'id' | 'text' | 'summary' | 'error' | 'reasons' | 'changes' | 'review'>>;
+interface TargetNode { name: string; step: string }
+interface ConversationState<N> { node: N; edits: EditView[]; busy: boolean; blockedReason: string }
+interface ConversationOptions<N> {
+  node: N;
+  onSend?: (request: { node: N; text: string }) => void | Promise<unknown>;
+  onStop?: () => void | Promise<unknown>;
+  onResize?: () => void;
+  initialDraft?: string;
+  onDraftChange?: (text: string) => void;
+}
 /* Hallmark · component: node conversation · existing Canvas theme
  * pre-emit critique: P4 H4 E4 S5 R5 V3
  * The input owns its DOM for its whole lifetime; canvas snapshots only update its surroundings. */
-const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-export const isEditing = (edit) => ["processing", "checking"].includes(edit?.status);
-const STATES = {
+const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] ?? c));
+export const isEditing = (edit?: EditView | null) => edit?.status === "processing" || edit?.status === "checking";
+const STATES: Record<Edit["status"], readonly [string, string]> = {
   processing: ["正在修改", "正在结合整条工作流修改"],
   checking: ["正在检查", "正在检查整条工作流的修改"],
   applied: ["已修改", "修改已应用"],
@@ -12,11 +26,11 @@ const STATES = {
   failed: ["修改未完成", "修改未完成，画布保持原样"],
   stopped: ["已停止", "已停止修改，画布保持原样"],
 };
-export function editPresentation(edit) {
-  const [badge, title] = STATES[edit?.status] ?? ["", ""];
+export function editPresentation(edit?: EditView | null) {
+  const [badge, title] = (edit ? STATES[edit.status] : undefined) ?? ["", ""];
   return { badge, title, working: isEditing(edit), error: edit?.status === "failed" };
 }
-export function editResultHtml(edit) {
+export function editResultHtml(edit?: EditView | null) {
   if (!edit) return "";
   const { title, working } = editPresentation(edit);
   const changes = [...new Set(edit.changes ?? [])];
@@ -30,7 +44,7 @@ export function editResultHtml(edit) {
     + `</div></details>`;
 }
 let nextId = 0;
-export function createNodeConversation({ node, onSend, onStop, onResize = () => {}, initialDraft = "", onDraftChange = () => {} }) {
+export function createNodeConversation<N extends TargetNode>({ node, onSend, onStop, onResize = () => {}, initialDraft = "", onDraftChange = () => {} }: ConversationOptions<N>) {
   const id = `node-message-${++nextId}`;
   const el = document.createElement("section");
   el.className = "node-conversation";
@@ -38,10 +52,12 @@ export function createNodeConversation({ node, onSend, onStop, onResize = () => 
     <form class="nc-form"><div class="nc-compose">
     <textarea id="${id}" class="nc-input" rows="1" aria-label="修改这个节点" placeholder="说说这里想怎么改…" aria-describedby="${id}-help"></textarea>
     <div class="nc-foot"><button class="nc-stop" type="button" aria-label="停止修改" title="停止修改" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6" y="6" width="8" height="8" rx="1.5" fill="currentColor"/></svg></button><button class="nc-send" type="submit" aria-label="发送修改"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 15V5m-4 4 4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div></div><p class="nc-help" id="${id}-help" hidden></p></form>`;
-  const input = el.querySelector(".nc-input"), send = el.querySelector(".nc-send"), stop = el.querySelector(".nc-stop");
+  const input = element<HTMLTextAreaElement>(el, ".nc-input"), send = element<HTMLButtonElement>(el, ".nc-send"), stop = element<HTMLButtonElement>(el, ".nc-stop");
   input.value = initialDraft;
-  const help = el.querySelector(".nc-help"), results = el.querySelector(".nc-results");
-  let state = { node, edits: [], busy: false, blockedReason: "" }, sending = false, stopping = false, localError = "", sent = null, resultKey = "";
+  const help = element(el, ".nc-help"), results = element(el, ".nc-results");
+  let state: ConversationState<N> = { node, edits: [], busy: false, blockedReason: "" };
+  let sending = false, stopping = false, localError = "", resultKey = "";
+  let sent: { text: string; draft: string; after: string | undefined } | null = null;
   const refresh = () => {
     const latest = state.edits.at(-1);
     const working = isEditing(latest);
@@ -73,7 +89,7 @@ export function createNodeConversation({ node, onSend, onStop, onResize = () => 
     const draft = input.value;
     sending = true; localError = ""; sent = { text, draft, after: state.edits.at(-1)?.id }; refresh();
     try { await onSend?.({ node: state.node, text }); }
-    catch (error) { localError = error.message || "发送失败，请重试。"; sent = null; }
+    catch (error) { localError = errorMessage(error) || "发送失败，请重试。"; sent = null; }
     finally { sending = false; refresh(); onResize(); }
   };
   el.addEventListener("click", (event) => event.stopPropagation());
@@ -86,20 +102,20 @@ export function createNodeConversation({ node, onSend, onStop, onResize = () => 
     event.stopPropagation();
     if (event.target === input && event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit(); }
   });
-  el.querySelector("form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
+  element<HTMLFormElement>(el, "form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
   input.addEventListener("input", () => { localError = ""; onDraftChange(input.value); fitInput(); refresh(); onResize(); });
   if (typeof ResizeObserver !== "undefined") new ResizeObserver(onResize).observe(input);
   stop.addEventListener("click", async () => {
     if (stopping) return;
     stopping = true; localError = ""; refresh();
-    try { await onStop?.(); } catch (error) { localError = error.message || "未能停止，请重试。"; }
+    try { await onStop?.(); } catch (error) { localError = errorMessage(error) || "未能停止，请重试。"; }
     finally { stopping = false; refresh(); onResize(); }
   });
   refresh();
   return {
     el,
     resultsEl: results,
-    update(next) {
+    update(next: Partial<ConversationState<N>>) {
       state = { ...state, ...next };
       const latest = state.edits.at(-1);
       if (sent && latest?.id !== sent.after && latest?.text === sent.text && ["applied", "unchanged"].includes(latest.status)) {
@@ -108,9 +124,10 @@ export function createNodeConversation({ node, onSend, onStop, onResize = () => 
       }
       const key = JSON.stringify(state.edits);
       if (key !== resultKey) {
-        const open = results.querySelector(".nc-history")?.open;
+        const open = results.querySelector<HTMLDetailsElement>(".nc-history")?.open;
         results.innerHTML = editResultHtml(latest);
-        if (open && results.querySelector(".nc-history")) results.querySelector(".nc-history").open = true;
+        const history = results.querySelector<HTMLDetailsElement>(".nc-history");
+        if (open && history) history.open = true;
         results.querySelector("details")?.addEventListener("toggle", onResize);
         results.hidden = !latest;
         resultKey = key;
