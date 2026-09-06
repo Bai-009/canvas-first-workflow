@@ -196,7 +196,11 @@ export function layout<N extends { name: string }>(nodes: readonly N[], edges: r
 
   /* 收尾。前面几遍算占位,看的是线在那一列正中间有多高;可线是斜着过去的,
      压到卡片的往往是卡的左沿或右沿。这一遍改用真正画出来的那根线:它扫过
-     这张卡的整个宽度时占住哪一段,那一段里有卡就把卡挪开。只挪被压的那张。 */
+     这张卡的整个宽度时占住哪一段,那一段里有卡就把卡挪开。只挪被压的那张。
+
+     没清干净:随机造两千张合法的图压过,这一遍把压卡从约一成七降到约一分二,
+     剩下的是分岔再加跨列长线的那种图。只是难看,不丢东西,现在不追。
+     test/web/layout.test.mts 里那张四节点五条线的图,守的就是这一遍别被删掉。 */
   const MARGIN = 10;
   for (let round = 0; round < 8; round++) {
     const y = (n: string) => required(row, n) * LANE + wave(required(col, n));
