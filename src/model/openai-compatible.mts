@@ -91,12 +91,9 @@ async function readStream(response: Response, onDelta: (delta: ModelDelta) => vo
       }
     }
   }
-  if (calls.length) {
-    for (const [i] of calls.entries()) {
-      if (calls[i] && !argumentModes.has(i)) throw new Error('模型接口没有返回工具参数');
-    }
-    message.tool_calls = calls.filter(Boolean);
-  }
+  /* 一个参数片段都没来,参数就是空的,不在这儿拦:空参数机器转得动。
+     闸门会说这一交不合格、退回去让它再来一次;在传输层抛错等于那 30 个来回一次也不给用。 */
+  if (calls.length) message.tool_calls = calls.filter(Boolean);
   if (!message.content) delete message.content;
   // 片段可以暂缺编号和名称；完成后必须满足与非流式相同的最小调用约定。
   return normalizeAssistant(message);

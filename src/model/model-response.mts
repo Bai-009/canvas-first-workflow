@@ -42,9 +42,10 @@ export function normalizeAssistant(message: unknown): AssistantMessage {
       || typeof call.function.name !== 'string' || !call.function.name.trim()) throw invalid();
     const args = call.function.arguments;
     // 不解析字符串：坏 JSON 应进入工具纠错循环，不在传输层终止整轮。
-    if (typeof args !== 'string' && !isRecord(args)) throw invalid();
-    return { ...call, id: call.id, type: 'function', function: { ...call.function,
-      name: call.function.name, arguments: typeof args === 'string' ? args : JSON.stringify(args) } };
+    // 没带参数按空参数交，跟流式一条路：空参数机器转得动，由闸门退回重试。
+    if (args != null && typeof args !== 'string' && !isRecord(args)) throw invalid();
+    return { ...call, id: call.id, type: 'function', function: { ...call.function, name: call.function.name,
+      arguments: args == null ? '' : typeof args === 'string' ? args : JSON.stringify(args) } };
   });
   const normalized = { ...message, tool_calls };
   if (!isAssistant(normalized)) throw invalid();
