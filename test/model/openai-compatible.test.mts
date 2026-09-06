@@ -23,6 +23,20 @@ for (const streaming of [false, true]) {
     if (!streaming) assert.equal(record(reply).provider, 'kept');
   });
 
+  test(`${streaming ? '流式' : '非流式'}：工具调用没带参数时交空参数，留给闸门退回重试`, async t => {
+    let bare: Record<string, unknown> = {};
+    t.mock.method(globalThis, 'fetch', async () => streaming
+      ? streamResponse([{ tool_calls: [{ index: 0, ...bare }] }])
+      : Response.json({ choices: [{ message: { role: 'assistant', tool_calls: [bare] } }] }));
+    for (const argumentsValue of [undefined, null]) {
+      bare = { id: 'c1', function: { name: 'submit_step', arguments: argumentsValue } };
+      const reply = await openAiCompatibleCaller(settings)([], streaming ? { onDelta() {} } : {});
+      assert.deepEqual(reply.tool_calls?.[0], { id: 'c1', type: 'function', function: { name: 'submit_step', arguments: '' } });
+      // 下游按空对象读,交给闸门判不合格,不在传输层终止整轮。
+      assert.deepEqual(JSON.parse(reply.tool_calls?.[0]?.function.arguments || '{}'), {});
+    }
+  });
+
   test(`${streaming ? '流式' : '非流式'}：缺失调用信息和未知工具类型仍拒绝`, async t => {
     const good = { id: 'c1', function: { name: 'submit_step', arguments: '{}' } };
     let incoming: unknown;
@@ -31,7 +45,7 @@ for (const streaming of [false, true]) {
       : Response.json({ choices: [{ message: { role: 'assistant', tool_calls: [incoming] } }] }));
     for (const bad of [
       { function: good.function }, { ...good, id: '' }, { ...good, type: 'custom' },
-      { ...good, function: { arguments: '{}' } }, { ...good, function: { name: 'submit_step' } },
+      { ...good, function: { arguments: '{}' } },
       { ...good, function: { name: 'submit_step', arguments: 42 } },
     ]) {
       incoming = bad;
