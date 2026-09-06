@@ -1,6 +1,6 @@
 # PlanProposal 契约
 
-Schema 在 [contracts/plan-proposal.schema.json](../contracts/plan-proposal.schema.json)，Gate 在 [src/plan/validate-plan-proposal.mjs](../src/plan/validate-plan-proposal.mjs)，提示词在 [prompts/plan-agent.md](../prompts/plan-agent.md)。这份文件说的是各字段为什么长这样。每一刀背后放弃了什么，在 [取舍.md](取舍.md)；真模型实际填出来的样子，在 `fixtures/observed/` 和 [观察.md](观察.md)。
+Schema 在 [contracts/plan-proposal.schema.json](../contracts/plan-proposal.schema.json)，Gate 在 [src/plan/validate-plan-proposal.mjs](../src/plan/validate-plan-proposal.mts)，提示词在 [prompts/plan-agent.md](../prompts/plan-agent.md)。这份文件说的是各字段为什么长这样。每一刀背后放弃了什么，在 [取舍.md](取舍.md)；真模型实际填出来的样子，在 `fixtures/observed/` 和 [观察.md](观察.md)。
 
 角色边界见 [架构.md](架构.md)。
 

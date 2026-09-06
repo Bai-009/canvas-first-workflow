@@ -37,6 +37,7 @@
 
 ## 工程
 
-- Node 22.9 以上，ES 模块，零运行时依赖，没有构建步骤。`npm test` 跑全部测试。
+- Node 22.9 以上，ES 模块，自己的程序全是 TypeScript，第三方库只有闸门用的 ajv。
+- 有构建步骤：`npm test`、`npm run web` 这些命令会自己先编译一遍，编译不过就不往下走；程序跑的是 `dist/` 里那一份，改了源码不重新构建就不生效。`npm test` 跑全部测试。
 - 画图：写在 docs/assets/src/*.html，用 scripts/render-figures.sh 渲染成 PNG。按 C4 规矩，英文衬线，字只留名词，图例解释每种颜色和线型，零重叠。
 - 提交信息：`类型(范围): 中文一句`，正文说为什么。
