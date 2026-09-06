@@ -1,5 +1,11 @@
-import { element } from "../web/dom.mjs";
 (function () {
+    /* 跟 workflow-rebuild-v6.ts 一样:预览页不跟主体共用代码,自带这一个小工具。
+       两份原型脚本都编成普通脚本,全局是共用的,所以各自收在自己的括号里。 */
+    function element<E extends Element = HTMLElement>(root: ParentNode, selector: string): E {
+      const found = root.querySelector<E>(selector);
+      if (!found) throw new Error(`界面缺少元素：${selector}`);
+      return found;
+    }
     var stage  = element(document, '#stage');
     var world  = element(document, '#world');
     var picker = element(document, '#picker');

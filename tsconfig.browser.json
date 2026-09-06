@@ -12,7 +12,7 @@
   "include": [
     "web/**/*.mts",
     "web/classic/*.ts",
-    "prototype/**/*.mts",
+    "prototype/*.ts",
     "shared/**/*.mts"
   ]
 }

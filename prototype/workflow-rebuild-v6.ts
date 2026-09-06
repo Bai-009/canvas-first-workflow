@@ -1,5 +1,29 @@
-import { element } from "../web/dom.mjs";
-import { readDemoData } from "../shared/demo-data.mjs";
+/* 演出版是录下来的那一场,跟主体不共用一行代码:主体往前改,这一场还是当初的样子,
+   两边摆在一起才照得出差别。代价是下面这十几行跟 web/dom.mts、shared/demo-data.mts
+   长得很像——那是有意的,不是忘了合并。 */
+function element<E extends Element = HTMLElement>(root: ParentNode, selector: string): E {
+  const found = root.querySelector<E>(selector);
+  if (!found) throw new Error(`界面缺少元素：${selector}`);
+  return found;
+}
+interface DemoData {
+  task: string; wfName: string; understanding: [string, string][]; route: string[];
+  asks: [string, string][]; done: string; reply: string;
+  after: { understanding: [string, string][]; route: string[]; answeredAsks: number[]; done: string };
+}
+function readDemoData(value: unknown): DemoData {
+  const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
+  const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
+  const pairs = (v: unknown): v is [string, string][] => Array.isArray(v) && v.every((x) => strings(x) && x.length === 2);
+  const ok = record(value) && typeof value.task === "string" && typeof value.wfName === "string"
+    && pairs(value.understanding) && strings(value.route) && pairs(value.asks)
+    && typeof value.done === "string" && typeof value.reply === "string"
+    && record(value.after) && pairs(value.after.understanding) && strings(value.after.route)
+    && typeof value.after.done === "string" && Array.isArray(value.after.answeredAsks)
+    && value.after.answeredAsks.every((x) => Number.isInteger(x) && x >= 0);
+  if (!ok) throw new Error("原型演示数据缺失或格式不正确，请先生成 plan-data.js");
+  return value as unknown as DemoData;
+}
 
 // 这些数组由同一条生成流程建立；缺项意味着内部编排失配，不静默跳过动画。
 function present<T>(value: T | undefined | null): T {
