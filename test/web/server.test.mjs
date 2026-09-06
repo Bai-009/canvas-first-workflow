@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readEvent } from "../../dist/web/readers.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { once } from "node:events";
@@ -40,7 +41,7 @@ async function setup(t, overrides = {}) {
         const packet = buffer.slice(0, boundary);
         buffer = buffer.slice(boundary + 2);
         if (!packet.startsWith("data: ")) continue;
-        const event = JSON.parse(packet.slice(6));
+        const event = readEvent(JSON.parse(packet.slice(6)));
         events.push(event);
         for (const listener of listeners) listener(event);
       }

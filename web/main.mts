@@ -1,18 +1,45 @@
+import type { PlanProposal, Canvas, CanvasNode } from '../shared/contracts.mjs';
+import type { Run, Edit, Turn } from '../shared/workflow.mjs';
+import type { Snapshot, TransportEvent } from '../shared/http.mjs';
+import { isRecord } from '../shared/json.mjs';
+import { errorMessage } from '../shared/errors.mjs';
+import { readCanvas, readEvent, readNodeTable, readSnapshot } from './readers.mjs';
+import { element } from './dom.mjs';
 import { createCanvasView } from "./canvas.mjs";
 import { createPlanCard } from "./plan-card.mjs";
 import { isEditing } from "./node-conversation.mjs";
 import { createEventCursor } from "./event-cursor.mjs";
 import { chooseSession, createSessionSidebar, readLocal, writeLocal, draftKey } from "./sessions.mjs";
 
-const $ = (id) => document.getElementById(id);
+const ui = {
+  "bar-status": element<HTMLElement>(document, "#bar-status"),
+  "form": element<HTMLFormElement>(document, "#form"),
+  "grow": element<HTMLElement>(document, "#grow"),
+  "input": element<HTMLTextAreaElement>(document, "#input"),
+  "picker": element<HTMLElement>(document, "#picker"),
+  "plan": element<HTMLElement>(document, "#plan"),
+  "plan-problems": element<HTMLElement>(document, "#plan-problems"),
+  "send": element<HTMLButtonElement>(document, "#send"),
+  "stage": element<HTMLElement>(document, "#stage"),
+  "viewport": element<HTMLElement>(document, "#viewport"),
+  "wires": element<SVGSVGElement>(document, "#wires"),
+  "world": element<HTMLElement>(document, "#world"),
+  "zoom-fit": element<HTMLButtonElement>(document, "#zoom-fit"),
+  "zoom-in": element<HTMLButtonElement>(document, "#zoom-in"),
+  "zoom-out": element<HTMLButtonElement>(document, "#zoom-out"),
+  "zoom-reset": element<HTMLButtonElement>(document, "#zoom-reset"),
+};
+const $ = <K extends keyof typeof ui>(id: K) => ui[id];
 const { id: sessionId, listing } = await chooseSession();
-const sessionPath = (path) => path.replace("/api/", `/api/sessions/${sessionId}/`);
-let drafts;
-try { drafts = JSON.parse(readLocal(draftKey(sessionId), "{}")); } catch { drafts = {}; }
-if (!drafts || typeof drafts !== "object" || Array.isArray(drafts)) drafts = {};
+const sessionPath = (path: string) => path.replace("/api/", `/api/sessions/${sessionId}/`);
+let savedDrafts: unknown;
+try { savedDrafts = JSON.parse(readLocal(draftKey(sessionId), "{}")); } catch { savedDrafts = {}; }
+const rawDrafts = isRecord(savedDrafts) ? savedDrafts : {};
+const drafts = { ...rawDrafts, global: typeof rawDrafts.global === "string" ? rawDrafts.global : "",
+  nodes: Object.fromEntries(Object.entries(isRecord(rawDrafts.nodes) ? rawDrafts.nodes : {}).filter((entry): entry is [string, string] => typeof entry[1] === "string")) };
 const saveDrafts = () => writeLocal(draftKey(sessionId), JSON.stringify(drafts));
 const sidebar = createSessionSidebar({ id: sessionId, listing, onRetrySave: () => post("/api/save"), onResize: () => { view.refit(); card.reflow(); } });
-const table = await fetch("/api/node-table").then((r) => r.json());
+const table = readNodeTable(await fetch("/api/node-table").then((r) => r.json()));
 const view = createCanvasView({
   table, world: $("world"), wires: $("wires"), viewport: $("viewport"),
   stage: $("stage"), picker: $("picker"), onRevise: revise, onStopRevision: stopRevision, onFill: configure,
@@ -26,7 +53,7 @@ const view = createCanvasView({
   insets: () => ({
     left: sidebar.left(),
     right: card.isMini && innerWidth - sidebar.left() > 1000 ? 360 : 0,
-    bottom: innerHeight - document.querySelector(".bar").getBoundingClientRect().top + 24,
+    bottom: innerHeight - element(document, ".bar").getBoundingClientRect().top + 24,
   }),
 });
 const card = createPlanCard({ card: $("plan"), stage: $("stage"), leftInset: () => sidebar.left() });
@@ -35,27 +62,29 @@ $("zoom-in").addEventListener("click", () => view.zoomBy(1));
 $("zoom-reset").addEventListener("click", () => view.resetZoom());
 $("zoom-fit").addEventListener("click", () => view.fitAll());
 new ResizeObserver(([entry]) => {
+  if (!entry) return;
   document.body.style.setProperty("--composer-height", `${entry.target.getBoundingClientRect().height}px`);
-}).observe(document.querySelector(".bar"));
+}).observe(element(document, ".bar"));
 
-async function post(path, data) {
+async function post(path: string, data?: unknown) {
   let response;
   try { response = await fetch(sessionPath(path), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data ?? {}) }); }
   catch { throw new Error("连接中断，文字已保留。请检查连接后重试。"); }
-  let result;
+  let result: unknown;
   try { result = await response.json(); }
   catch { throw new Error("服务未能完成这次请求，文字已保留，请重试。"); }
-  if (!response.ok || result.error) throw new Error(result.error || "这次请求未被接受，请重试。");
+  if (!isRecord(result)) throw new Error("服务响应格式不正确，文字已保留，请重试。");
+  if (!response.ok || result.error) throw new Error(typeof result.error === "string" ? result.error : "这次请求未被接受，请重试。");
   return result;
 }
 
-let plan = null, revision = 0, busy = null, broke = null, started = false;
-let canvas = { nodes: [], edges: [], version: 0 }, edits = [], hasReviser = false;
-let canvasPlanRevision = null, lastRun = null, globalError = "", storageError = "", recoveryNotice = "";
-const done = new Set();
-const titleOf = (ref) => plan?.steps.find((s) => s.ref === ref)?.title ?? ref;
-const named = (text) => String(text ?? "").replace(/\bs\d+\b/g, (ref) => titleOf(ref));
-function stopAt(run) {
+let plan: PlanProposal | null = null, revision = 0, busy: Exclude<Turn, "user"> | "configuration" | null = null, broke: ReturnType<typeof stopAt> = null, started = false;
+let canvas: Canvas = { nodes: [], edges: [], version: 0 }, edits: Edit[] = [], hasReviser = false;
+let canvasPlanRevision: number | null = null, lastRun: Run | null = null, globalError = "", storageError = "", recoveryNotice = "";
+const done = new Set<string>();
+const titleOf = (ref: string): string => plan?.steps.find((s) => s.ref === ref)?.title ?? ref;
+const named = (text: unknown) => String(text ?? "").replace(/\bs\d+\b/g, (ref) => titleOf(ref));
+function stopAt(run: Run | null) {
   if (!run || run.endedBy === "finished") return null;
   const last = run.steps.at(-1);
   if (!last || last.outcome === "done" || last.outcome === "covered") return null;
@@ -63,9 +92,9 @@ function stopAt(run) {
   return { ref: last.ref, why: whys.map(named).join("\n") };
 }
 const canReset = () => {};
-function status(text) {
+function status(text: string) {
   card.status(text);
-  if (!card.isMini) $("plan").querySelector(".plan-say").textContent = text;
+  if (!card.isMini) element($("plan"), ".plan-say").textContent = text;
 }
 function placeholder() {
   const input = $("input");
@@ -76,7 +105,7 @@ function showBreak() {
   placeholder();
   if (broke) view.waiting({ title: titleOf(broke.ref), note: broke.why, remaining: 0, broken: true });
 }
-const waitingOn = (refs) => ({
+const waitingOn = (refs: string[]) => ({
   title: refs.map(titleOf).join("、"),
   remaining: plan ? plan.steps.filter((s) => !done.has(s.ref)).length : refs.length,
 });
@@ -91,7 +120,7 @@ const canSend = () => $("input").value.trim() !== "" && !busy;
 function refresh() {
   $("send").disabled = !canSend();
   $("send").title = busy ? "等待当前工作流操作完成；可以继续写草稿" : "发送给方案设计者";
-  const go = $("plan").querySelector(".plan-go");
+  const go = element<HTMLButtonElement>($("plan"), ".plan-go");
   go.disabled = Boolean(busy);
   go.title = busy ? "等待当前操作完成后生成" : "应用当前方案并生成工作流";
   $("bar-status").textContent = storageError || globalError || recoveryNotice || "";
@@ -99,7 +128,7 @@ function refresh() {
   const text = busy === "executor" ? "" : (lastRun?.problems ?? []).map(named).join("\n");
   problems.hidden = !text;
   if (problems.textContent !== text) problems.textContent = text;
-  $("plan").querySelector(".plan-dot").classList.toggle("has-problems", Boolean(text));
+  element($("plan"), ".plan-dot").classList.toggle("has-problems", Boolean(text));
   view.revisions({ edits, busy: Boolean(busy), blockedReason: revisionBlocked() });
 }
 const grow = () => { $("grow").dataset.value = $("input").value; };
@@ -113,11 +142,11 @@ async function send() {
   try {
     await post("/api/say", { text });
     if ($("input").value === draft) { $("input").value = ""; drafts.global = ""; saveDrafts(); grow(); }
-  } catch (error) { busy = null; globalError = error.message; status(error.message); }
+  } catch (error) { busy = null; globalError = errorMessage(error); status(errorMessage(error)); }
   refresh();
 }
 
-async function revise({ node, text }) {
+async function revise({ node, text }: { node: CanvasNode; text: string }) {
   if (busy) throw new Error("工作流正在处理，文字已保留，稍后可发送。");
   const blocked = revisionBlocked();
   if (blocked) throw new Error(blocked);
@@ -128,12 +157,12 @@ async function revise({ node, text }) {
   try { await post("/api/revise", { node: current.name, step: current.step, canvasVersion: canvas.version, text }); }
   catch (error) { busy = null; status("修改未开始，文字已保留"); refresh(); throw error; }
 }
-async function configure({ node, key, value }) {
+async function configure({ node, key, value }: { node: string; key: string; value: unknown }) {
   if (busy) throw new Error("工作流正在处理，请稍后保存参数。");
   busy = "configuration"; $("send").disabled = true;
   try {
     const result = await post("/api/configure", { node, key, value, canvasVersion: canvas.version });
-    canvas = result.canvas; view.draw(canvas, { instant: true });
+    canvas = readCanvas(result.canvas); view.draw(canvas, { instant: true });
   } finally { busy = null; refresh(); }
 }
 async function stopRevision() { await post("/api/stop"); }
@@ -149,7 +178,7 @@ async function startRun() {
     if (busy === "executor") status("正在生成");
     else status(canvasStatus());
     view.fit();
-  } catch (error) { busy = null; broke = previousBreak; globalError = error.message; status(error.message); showBreak(); refresh(); }
+  } catch (error) { busy = null; broke = previousBreak; globalError = errorMessage(error); status(errorMessage(error)); showBreak(); refresh(); }
 }
 $("input").addEventListener("input", () => { drafts.global = $("input").value; saveDrafts(); globalError = ""; grow(); refresh(); });
 $("input").addEventListener("keydown", (e) => {
@@ -165,7 +194,7 @@ view.onBreak({
     if (busy) return;
     busy = "plan"; globalError = ""; refresh();
     try { await post("/api/escalate"); }
-    catch (error) { busy = null; globalError = error.message; status(error.message); refresh(); }
+    catch (error) { busy = null; globalError = errorMessage(error); status(errorMessage(error)); refresh(); }
   },
 });
 $("plan").addEventListener("click", async () => {
@@ -173,15 +202,17 @@ $("plan").addEventListener("click", async () => {
   await card.toCenter(); placeholder(); refresh();
 });
 addEventListener("click", async (e) => {
+  if (!(e.target instanceof Element)) return;
   if (card.isMini || e.target.closest(".plan") || e.target.closest(".picker") || e.target.closest(".sessions") || e.target.closest("dialog") || e.target.closest(".top")) return;
-  if (e.target.closest(".bar") || $("plan").querySelector(".plan-close").hidden) return;
+  if (e.target.closest(".bar") || element($("plan"), ".plan-close").hidden) return;
   await card.back(); placeholder();
 });
 
-async function eventReceived(event) {
+const editTitles: Partial<Record<Edit["status"], string>> = { applied: "工作流已修改", unchanged: "无需修改，画布保持原样", failed: "修改未完成，画布保持原样", stopped: "已停止修改", needs_plan: "需要完善整体方案" };
+async function eventReceived(event: TransportEvent) {
   if (event.type === "sessions") return sidebar.update(event);
-  if (Object.hasOwn(event, "storageError")) storageError = event.storageError;
-  if (Object.hasOwn(event, "notice")) recoveryNotice = event.notice;
+  if (event.storageError !== undefined) storageError = event.storageError;
+  if (event.notice !== undefined) recoveryNotice = event.notice;
   if (event.savedAt || storageError) sidebar.saved(storageError ? "保存失败" : "已保存到本机", Boolean(storageError));
   if (event.type === "deleted") {
     const url = new URL(location.href); url.searchParams.delete("session"); location.assign(url); return;
@@ -220,7 +251,7 @@ async function eventReceived(event) {
       if (["applied", "unchanged"].includes(event.edit.status)) canvasPlanRevision = event.edit.planRevision;
       view.draw(canvas, { instant: true });
     }
-    const title = editing ? "正在结合整条工作流修改" : ({ applied: "工作流已修改", unchanged: "无需修改，画布保持原样", failed: "修改未完成，画布保持原样", stopped: "已停止修改", needs_plan: "需要完善整体方案" }[event.edit.status] ?? event.edit.summary);
+    const title = editing ? "正在结合整条工作流修改" : (editTitles[event.edit.status] ?? event.edit.summary);
     status(title);
   }
   if (event.type === "error") { busy = null; globalError = event.message; view.waiting(null); status(event.message); }
@@ -228,17 +259,21 @@ async function eventReceived(event) {
 }
 
 const still = new URLSearchParams(location.search).has("still");
-const feed = still ? {} : new EventSource(sessionPath("/api/events"));
-let initialising = true, buffered = [], chain = Promise.resolve(), cursor;
-const queueEvent = (event) => {
+const feed = still ? null : new EventSource(sessionPath("/api/events"));
+let initialising = true, buffered: TransportEvent[] = [], chain = Promise.resolve();
+let cursor: ReturnType<typeof createEventCursor>;
+const queueEvent = (event: TransportEvent) => {
   chain = chain.then(async () => {
     if (!cursor.accept(event)) return;
     await eventReceived(event);
-  }).catch((error) => { busy = null; globalError = error.message; refresh(); });
+  }).catch((error) => { busy = null; globalError = errorMessage(error); refresh(); });
 };
-feed.onmessage = (e) => { const event = JSON.parse(e.data); if (initialising) buffered.push(event); else queueEvent(event); };
-addEventListener("pagehide", () => feed.close?.());
-feed.onerror = () => { sidebar.saved("连接中断"); globalError = "连接暂时中断，正在重新连接；草稿已保留。"; refresh(); };
+if (feed) feed.onmessage = (e) => {
+  try { const event = readEvent(JSON.parse(String(e.data))); if (initialising) buffered.push(event); else queueEvent(event); }
+  catch (error) { globalError = errorMessage(error); refresh(); }
+};
+addEventListener("pagehide", () => feed?.close());
+if (feed) feed.onerror = () => { sidebar.saved("连接中断"); globalError = "连接暂时中断，正在重新连接；草稿已保留。"; refresh(); };
 
 function canvasStatus() {
   if (busy === "revision") return "正在结合整条工作流修改";
@@ -246,7 +281,7 @@ function canvasStatus() {
   if (lastRun?.problems?.length) return `构建还需处理 ${lastRun.problems.length} 处问题`;
   return broke ? `停在 ${titleOf(broke.ref)}` : `已生成 ${canvas.nodes.length} 个节点`;
 }
-async function restoreSnapshot(state, { initial = false } = {}) {
+async function restoreSnapshot(state: Snapshot, { initial = false } = {}) {
   sidebar.update(state);
   plan = state.plan; revision = state.revision ?? 0; canvas = state.canvas;
   edits = state.edits ?? []; hasReviser = Boolean(state.hasReviser); lastRun = state.run;
@@ -272,7 +307,7 @@ async function restoreSnapshot(state, { initial = false } = {}) {
   if (!state.hasExecutor) status("执行者未接入：暂时不能生成工作流。");
   refresh();
 }
-const state = await fetch(sessionPath("/api/state")).then((r) => r.json());
+const state = readSnapshot(await fetch(sessionPath("/api/state")).then((r) => r.json()));
 $("input").value = drafts.global || $("input").value;
 try { const boot = sessionStorage.getItem("canvasflow:boot-draft"); if (boot) { $("input").value = boot; drafts.global = boot; saveDrafts(); sessionStorage.removeItem("canvasflow:boot-draft"); } } catch {}
 grow();

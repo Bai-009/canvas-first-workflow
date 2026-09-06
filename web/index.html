@@ -474,7 +474,7 @@
     </div>
   </aside>
   <dialog class="session-rename" id="session-rename" aria-labelledby="session-rename-title"><form><label for="session-name" id="session-rename-title">重命名工作流</label><input id="session-name" required maxlength="80" autocomplete="off" aria-describedby="session-name-error"><p id="session-name-error" role="alert" hidden></p><div class="dialog-actions"><button type="submit" value="cancel" formnovalidate>取消</button><button type="submit" value="save">保存</button></div></form></dialog>
-  <div class="boot-notice" id="boot-notice" role="alert" hidden></div>
+  <div class="boot-notice" id="boot-notice" role="alert">请通过 <a href="http://127.0.0.1:5174/">工作流服务</a> 打开应用；源码文件不能直接发送或保存工作流。</div>
   <div class="stage" id="stage">
     <div class="viewport" id="viewport"><div class="world" id="world">
       <svg class="wires" id="wires"></svg>
@@ -521,20 +521,6 @@
     <button id="zoom-in" type="button" aria-label="放大画布" title="放大"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><path d="M5 10h10M10 5v10"/></svg></button>
     <button id="zoom-fit" type="button" aria-label="适应画布" title="适应画布"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3.5H3.5V7M13 3.5h3.5V7M16.5 13v3.5H13M7 16.5H3.5V13"/></svg></button>
   </div>
-  <script>
-    const notice = document.getElementById("boot-notice");
-    if (location.protocol === "file:") {
-      notice.hidden = false;
-      notice.innerHTML = '这是文件预览，无法发送或保存工作流。请使用 <a href="http://127.0.0.1:5174/">打开工作流服务</a>。';
-    } else {
-      import("./main.mjs").catch(() => {
-        notice.hidden = false;
-        notice.textContent = "未能连接工作流服务，输入的文字仍保留在这里。连接恢复后可以重试。";
-        const retry = document.createElement("button"); retry.textContent = "重新连接";
-        retry.onclick = () => { try { sessionStorage.setItem("canvasflow:boot-draft", document.getElementById("input").value); } catch {} location.reload(); };
-        notice.append(retry);
-      });
-    }
-  </script>
+  <script src="./bootstrap.js"></script>
 </body>
 </html>

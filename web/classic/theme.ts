@@ -3,13 +3,13 @@
   const key = 'canvasflow:theme';
   const root = document.documentElement;
   const system = matchMedia('(prefers-color-scheme: dark)');
-  let choice;
+  let choice: string | null = null;
   try { choice = localStorage.getItem(key); } catch {}
-  if (!['light', 'dark'].includes(choice)) choice = null;
+  if (choice !== 'light' && choice !== 'dark') choice = null;
   const apply = () => {
     const dark = (choice ?? (system.matches ? 'dark' : 'light')) === 'dark';
     root.dataset.theme = dark ? 'dark' : 'light';
-    for (const input of document.querySelectorAll('.theme-option input')) {
+    for (const input of document.querySelectorAll<HTMLInputElement>('.theme-option input')) {
       input.checked = input.value === root.dataset.theme;
     }
   };
@@ -17,25 +17,25 @@
   system.addEventListener('change', () => { if (!choice) apply(); });
   addEventListener('storage', (event) => {
     if (event.key !== key && event.key !== null) return;
-    choice = ['light', 'dark'].includes(event.newValue) ? event.newValue : null;
+    choice = event.newValue === 'light' || event.newValue === 'dark' ? event.newValue : null;
     apply();
   });
   document.addEventListener('DOMContentLoaded', () => {
     apply();
-    const settings = document.getElementById('session-settings');
+    const settings = document.querySelector<HTMLDetailsElement>('#session-settings');
     settings?.addEventListener('change', (event) => {
-      if (!event.target.matches('.theme-option input')) return;
+      if (!(event.target instanceof HTMLInputElement) || !event.target.matches('.theme-option input')) return;
       choice = event.target.value;
       try { localStorage.setItem(key, choice); } catch {}
       apply();
     });
     document.addEventListener('click', (event) => {
-      if (settings && !settings.contains(event.target)) settings.open = false;
+      if (settings && event.target instanceof Node && !settings.contains(event.target)) settings.open = false;
     });
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && settings?.open) {
         settings.open = false;
-        settings.querySelector('summary').focus();
+        settings.querySelector('summary')?.focus();
       }
     });
   });
