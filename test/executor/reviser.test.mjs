@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createReviser, runRevision, revisionMessage, reviserTools, loadRevisionPrompt } from "../../src/executor/reviser.mjs";
-import { inspectRevision } from "../../src/state-machine/workflow-revision.mjs";
+import { createReviser, runRevision, revisionMessage, reviserTools, loadRevisionPrompt } from "../../dist/src/executor/reviser.mjs";
+import { inspectRevision } from "../../dist/src/state-machine/workflow-revision.mjs";
 
 const node = (name, step, type, params, blanks = []) => ({ name, step, type, params, blanks, note: "已有选择。" });
 const context = () => {
@@ -238,6 +238,6 @@ test("校验后才收到停止也不能返回成功", async () => {
 });
 
 test("默认修订插口延迟读模型配置", async () => {
-  const mod = await import("../../src/executor/reviser.mjs");
+  const mod = await import("../../dist/src/executor/reviser.mjs");
   assert.equal(typeof mod.default, "function");
 });

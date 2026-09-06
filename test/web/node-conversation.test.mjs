@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createNodeConversation, editResultHtml, editPresentation } from "../../web/node-conversation.mjs";
+import { createNodeConversation, editResultHtml, editPresentation } from "../../dist/web/node-conversation.mjs";
 
 /* A small event surface, not a layout simulation. Browser QA covers focus/geometry;
    these checks exercise async acceptance, failure and composition boundaries. */

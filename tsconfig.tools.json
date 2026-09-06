@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "scripts",
+    "outDir": ".build-tools",
+    "types": [
+      "node"
+    ],
+    "declaration": false,
+    "skipLibCheck": true
+  },
+  "include": [
+    "scripts/**/*.mts"
+  ]
+}

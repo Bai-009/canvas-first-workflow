@@ -4,9 +4,9 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
-import { createWebServer } from '../../src/web/server.mjs';
-import { createSessionStore } from '../../src/storage/session-store.mjs';
-import { createWorkflowSession } from '../../src/state-machine/workflow-session.mjs';
+import { createWebServer } from '../../dist/src/web/server.mjs';
+import { createSessionStore } from '../../dist/src/storage/session-store.mjs';
+import { createWorkflowSession } from '../../dist/src/state-machine/workflow-session.mjs';
 
 const plan = JSON.parse(readFileSync(new URL('../../fixtures/observed/run8-原因版提示词/turn-2.plan.json', import.meta.url)));
 const reply = () => ({role:'assistant', content:'已规划', tool_calls:[{id:'saved-plan',type:'function',function:{name:'propose_plan',arguments:JSON.stringify(plan)}}]});

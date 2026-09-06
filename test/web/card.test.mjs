@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fullCard, miniCard } from "../../web/card.mjs";
-import { layout, wire, TILE } from "../../web/layout.mjs";
-import { findNodeDefinition } from "../../src/nodes/node-table.mjs";
+import { fullCard, miniCard } from "../../dist/web/card.mjs";
+import { layout, wire, TILE } from "../../dist/web/layout.mjs";
+import { findNodeDefinition } from "../../dist/src/nodes/node-table.mjs";
 
 /* 卡是照节点表画的:格叫什么、留空印什么、进出是什么类型,全从表里来。
    这几条守的是「加一个节点,画卡的地方一行不用改」。 */

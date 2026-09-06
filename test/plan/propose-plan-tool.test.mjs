@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { proposePlanTool } from "../../src/plan/propose-plan-tool.mjs";
+import { proposePlanTool } from "../../dist/src/plan/propose-plan-tool.mjs";
 
 const contractUrl = new URL("../../contracts/plan-proposal.schema.json", import.meta.url);
 const contract = JSON.parse(readFileSync(contractUrl, "utf8"));
