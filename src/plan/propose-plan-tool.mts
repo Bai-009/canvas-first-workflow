@@ -1,3 +1,5 @@
+import { isRecord } from "../../shared/json.mjs";
+import type { ModelTool } from "../../shared/model.mjs";
 import { readFileSync } from "node:fs";
 
 // 工具的参数定义直接来自契约文件,不手抄第二份。
@@ -7,11 +9,14 @@ import { readFileSync } from "node:fs";
 const contractUrl = new URL("../../contracts/plan-proposal.schema.json", import.meta.url);
 /* 契约文件顶层的 description 不进工具参数:真模型两次都把它当成一个字段填了进来
    (run5、run6 首轮各被闸门打回一次)。它说的"每一轮都是完整的一份"在工具说明里另有一句。 */
-const { $schema, $id, title, description: _contractNote, ...parameters } = JSON.parse(
+const schema: unknown = JSON.parse(
   readFileSync(contractUrl, "utf8")
 );
 
-export const proposePlanTool = {
+if (!isRecord(schema)) throw new Error("方案 Schema 必须是对象");
+const { $schema, $id, title, description: _contractNote, ...parameters } = schema;
+
+export const proposePlanTool: ModelTool["function"] = {
   name: "propose_plan",
   description:
     "提交一份完整的数据处理链路设计方案。只在链路画得出来的时候调用:" +

@@ -1,14 +1,16 @@
+import { isRecord } from "../../shared/json.mjs";
+
 /* 边写边看,就得能读一份还没写完的 JSON。
 
    模型是一个字一个字往外吐的,任何时刻手上那段都是断的:字符串没收口、
    数组没收口、最后一项才写了一半。做法是往回退到最近一个能收口的地方,
    把该补的括号补上再解析。退不到就返回空,这一拍不刷新。 */
 
-const CLOSERS = { "{": "}", "[": "]" };
+const CLOSERS: Record<string, string> = { "{": "}", "[": "]" };
 
 /* 从头扫一遍:这段文本停在哪儿、还欠哪几个括号。停在字符串里就不算数。 */
-function shape(src) {
-  const stack = [];
+function shape(src: string) {
+  const stack: string[] = [];
   let inString = false;
   let escaped = false;
   for (const c of src) {
@@ -25,7 +27,7 @@ function shape(src) {
   return { inString, stack };
 }
 
-export function parsePartial(src) {
+export function parsePartial(src: unknown): unknown {
   const text = String(src ?? "");
   /* 从尾巴往回找收口点:只在逗号和括号后面切,写了一半的那一项整个丢掉。 */
   for (let end = text.length; end > 0; end--) {
@@ -45,10 +47,11 @@ export function parsePartial(src) {
 
 /* 半份方案上,哪些字段现在可以拿来看。写了一半的那一条不算数——
    契约里每一条都得有几样东西齐了才成立,缺的那条先不露面。 */
-export function draftPlan(partial) {
-  if (!partial || typeof partial !== "object") return null;
-  const list = (rows, need) =>
-    (Array.isArray(rows) ? rows : []).filter((r) => r && need.every((k) => typeof r[k] === "string" && r[k]));
+export function draftPlan(partial: unknown) {
+  if (!isRecord(partial)) return null;
+  const list = <K extends string>(rows: unknown, need: K[]): (Record<string, unknown> & Record<K, string>)[] =>
+    (Array.isArray(rows) ? rows : []).filter((r: unknown): r is Record<string, unknown> & Record<K, string> =>
+      isRecord(r) && need.every((k) => typeof r[k] === "string" && r[k]));
   return {
     goal: typeof partial.goal === "string" ? partial.goal : "",
     readiness: partial.readiness ?? "",
@@ -57,3 +60,5 @@ export function draftPlan(partial) {
     openQuestions: list(partial.openQuestions, ["ref", "question"]),
   };
 }
+
+export type DraftPlan = NonNullable<ReturnType<typeof draftPlan>>;

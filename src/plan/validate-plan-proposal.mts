@@ -62,7 +62,10 @@ function findCycle(stepsByRef: Map<string, PlanStep>): string[] | null {
 
 /* 以下都是 JSON Schema 写不出来的：编号是否撞车、引用指向的东西存不存在、
    依赖会不会绕成环、readiness 跟 openQuestions 对不对得上。 */
-export function validatePlanProposal(value: unknown): { ok: boolean; errors: string[] } {
+export type PlanInspection = { ok: true; plan: PlanProposal; errors: string[] }
+  | { ok: false; errors: string[] };
+
+export function inspectPlanProposal(value: unknown): PlanInspection {
   if (!checkShape(value)) {
     return { ok: false, errors: (checkShape.errors ?? []).map(formatShapeError) };
   }
@@ -118,7 +121,13 @@ export function validatePlanProposal(value: unknown): { ok: boolean; errors: str
     errors.push("partial 的方案必须同时给出骨架和还缺什么");
   }
 
-  return { ok: errors.length === 0, errors };
+  return errors.length ? { ok: false, errors } : { ok: true, plan: value, errors };
+}
+
+// 原有公共校验结果保持形状不变；内部可直接取得同一次检查后的计划。
+export function validatePlanProposal(value: unknown): { ok: boolean; errors: string[] } {
+  const { ok, errors } = inspectPlanProposal(value);
+  return { ok, errors };
 }
 
 async function runCli() {
