@@ -1,5 +1,5 @@
 import type { AssistantMessage, ToolCall, ModelCaller, ModelSettings, ModelDelta } from "../../shared/model.mjs";
-import { assistantFromResponse, deltaFromResponse } from "./model-response.mjs";
+import { assistantFromResponse, deltaFromResponse, normalizeAssistant } from "./model-response.mjs";
 
 /* 通用插座:任何 OpenAI 兼容接口都能接(DeepSeek、Kimi、Ollama、vLLM……)。
    不引厂商 SDK,换模型只换地址、key、模型名。设计者和执行者共用这一个,各自带自己的工具进来。 */
@@ -43,6 +43,7 @@ async function readStream(response: Response, onDelta: (delta: ModelDelta) => vo
   if (!response.body) throw new Error("模型接口返回了空的响应流");
   const message: AssistantMessage = { role: "assistant", content: "" };
   const calls: ToolCall[] = [];
+  const argumentModes = new Map<number, 'text' | 'object'>();
   const decoder = new TextDecoder();
   let buffer = "";
   for await (const chunk of response.body) {
@@ -71,16 +72,34 @@ async function readStream(response: Response, onDelta: (delta: ModelDelta) => vo
         if (call.id) assembled.id = call.id;
         if (call.function?.name) assembled.function.name = call.function.name;
         const args = call.function?.arguments;
-        if (args) {
-          assembled.function.arguments += args;
-          onDelta({ kind: "args", index: i, text: args });
+        if (args != null) {
+          const mode = argumentModes.get(i);
+          if (typeof args === 'string') {
+            // 空占位片段可以出现在完整对象前后；不把对象与文本片段猜着合并。
+            if (mode === 'object' && args) throw new Error('模型接口混用了对象参数与文本片段');
+            if (mode !== 'object') argumentModes.set(i, 'text');
+            assembled.function.arguments += args;
+            if (args) onDelta({ kind: "args", index: i, text: args });
+          } else {
+            if (mode === 'object' || assembled.function.arguments) throw new Error('模型接口重复或混用了完整对象参数');
+            const text = JSON.stringify(args);
+            argumentModes.set(i, 'object');
+            assembled.function.arguments = text;
+            onDelta({ kind: "args", index: i, text });
+          }
         }
       }
     }
   }
-  if (calls.length) message.tool_calls = calls.filter(Boolean);
+  if (calls.length) {
+    for (const [i] of calls.entries()) {
+      if (calls[i] && !argumentModes.has(i)) throw new Error('模型接口没有返回工具参数');
+    }
+    message.tool_calls = calls.filter(Boolean);
+  }
   if (!message.content) delete message.content;
-  return message;
+  // 片段可以暂缺编号和名称；完成后必须满足与非流式相同的最小调用约定。
+  return normalizeAssistant(message);
 }
 
 /* 从 .env 组装调用器;三项缺一个就报错,不猜。 */
