@@ -251,6 +251,17 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
         const body = detail.appendChild(document.createElement("div"));
         body.className = "card-content";
         body.appendChild(document.createElement("div")).className = "card-node-content";
+        // 外壳收放时，滚动范围逐帧变化；等高度稳定后再显示滑块。
+        // 跟随真实 transition 生命周期，快速反向收放或减少动态效果时也不会卡住。
+        const card = element(el, ".card");
+        const scrollChrome = (event: TransitionEvent) => {
+          if (event.target === card && event.propertyName === "height") {
+            card.classList.toggle("resizing", event.type === "transitionrun");
+          }
+        };
+        card.addEventListener("transitionrun", scrollChrome);
+        card.addEventListener("transitionend", scrollChrome);
+        card.addEventListener("transitioncancel", scrollChrome);
         watchScrollFade(body);
         const conversation = conversations.get(p.node.name) ?? createNodeConversation({
           initialDraft: nodeDraft(p.node), onDraftChange: (value) => onNodeDraft(p.node, value),
@@ -629,14 +640,14 @@ export function createCanvasView({ table, world, wires, viewport, stage, picker,
     element(el, ".card").style.transform = `translate(-50%, calc(-50% + ${((h - TILE) / 2).toFixed(1)}px))`;
   };
 
-  /* 内容变高时只重测外壳，输入框和展开状态保留。 */
+  /* 外壳变高或变矮时，镜头都跟随新的阅读中心；输入框和展开状态保留。
+     userMoved 只阻止全景自动取景，不能阻止正在阅读的卡片重新聚焦。 */
   const remeasure = (el: HTMLElement) => {
     const h = measure(el);
     if (element(el, ".card").style.height === `${h}px`) return;
     box0(el, h); el.classList.add("open");
     const p = last.placed.find((placed) => nodes.get(placed.node.name) === el);
-    const { pad, h: roomHeight } = room();
-    if (p && !userMoved && (ty + p.y * scale < pad - 32 || ty + (p.y + h) * scale > pad + roomHeight + 32)) aim(p, h);
+    if (p) aim(p, h);
   };
 
   function aim(p: Point, h: number) {
