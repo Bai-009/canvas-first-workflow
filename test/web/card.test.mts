@@ -1,13 +1,14 @@
+import type { Edge } from '../../shared/contracts.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fullCard, miniCard } from "../../dist/web/card.mjs";
-import { layout, wire, TILE } from "../../dist/web/layout.mjs";
-import { findNodeDefinition } from "../../dist/src/nodes/node-table.mjs";
+import { fullCard, miniCard } from "../../web/card.mjs";
+import { layout, wire, TILE } from "../../web/layout.mjs";
+import { findNodeDefinition } from "../../src/nodes/node-table.mjs";
 
 /* 卡是照节点表画的:格叫什么、留空印什么、进出是什么类型,全从表里来。
    这几条守的是「加一个节点,画卡的地方一行不用改」。 */
 
-const def = (type) => findNodeDefinition(type);
+const def = (type: string) => { const value = findNodeDefinition(type); assert.ok(value); return value; };
 
 test("留空的格印成可点的空位,空位上的字是节点表给的", () => {
   const html = fullCard(def("writeVectorStore"),
@@ -80,10 +81,11 @@ test("跳列的线不从中间那一列的卡片上压过去", () => {
     { from: "OCR", to: "抽取" },
   ];
   const at = new Map(layout(nodes, edges).placed.map((p) => [p.node.name, p]));
-  const w = wire(at.get("岔"), at.get("抽取"));
-  const ocr = at.get("OCR");
+  const fork = at.get("岔"), extracted = at.get("抽取"), ocr = at.get("OCR");
+  assert.ok(fork && extracted && ocr);
+  const w = wire(fork, extracted);
   /* 沿着真正画出来的那根线走一遍,看它有没有落进 OCR 那张卡里。 */
-  const cub = (a, b, c, d, t) => { const u = 1 - t; return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d; };
+  const cub = (a: number, b: number, c: number, d: number, t: number) => { const u = 1 - t; return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d; };
   const s = (w.x1 - w.x0) * 0.52;
   for (let i = 0; i <= 200; i++) {
     const t = i / 200;
@@ -97,9 +99,9 @@ test("跳列的线不从中间那一列的卡片上压过去", () => {
 /* 一张图不管长成什么样,进来的地方和出去的地方都在一条水平线上。
    中间怎么起伏不管——起伏是好看,两端不平是「整张图是斜的」。 */
 test("头一列和末一列落在同一条水平线上", () => {
-  const N = (name) => ({ name });
-  const E = (from, to) => ({ from, to });
-  const 图 = {
+  const N = (name: string) => ({ name });
+  const E = (from: string, to: string) => ({ from, to });
+  const 图: Record<string, [{ name: string }[], Edge[]]> = {
     "一条直链": [["a", "b", "c", "d", "e"].map(N),
       [E("a", "b"), E("b", "c"), E("c", "d"), E("d", "e")]],
     "分岔再汇合": [["读", "岔", "A", "B", "合"].map(N),
@@ -113,7 +115,7 @@ test("头一列和末一列落在同一条水平线上", () => {
   for (const [名, [nodes, edges]] of Object.entries(图)) {
     const placed = layout(nodes, edges).placed;
     const 末列 = Math.max(...placed.map((p) => p.x));
-    const 高 = (x) => { const 这列 = placed.filter((p) => p.x === x).map((p) => p.y);
+    const 高 = (x: number) => { const 这列 = placed.filter((p) => p.x === x).map((p) => p.y);
       return 这列.reduce((s, y) => s + y, 0) / 这列.length; };
     assert.ok(Math.abs(高(末列) - 高(0)) < 0.5,
       `${名}:头 ${Math.round(高(0))},末 ${Math.round(高(末列))}`);
@@ -127,7 +129,9 @@ test("分岔两路各占一列,汇合的卡排在两路都走完之后", () => {
     { from: "A", to: "合" }, { from: "B", to: "合" },
   ];
   const at = new Map(layout(nodes, edges).placed.map((p) => [p.node.name, p]));
-  assert.ok(at.get("A").x === at.get("B").x, "两路同列");
-  assert.ok(at.get("合").x > at.get("A").x, "汇合在后");
-  assert.ok(at.get("A").y !== at.get("B").y, "两路不重叠");
+  const a = at.get("A"), b = at.get("B"), merged = at.get("合");
+  assert.ok(a && b && merged);
+  assert.ok(a.x === b.x, "两路同列");
+  assert.ok(merged.x > a.x, "汇合在后");
+  assert.ok(a.y !== b.y, "两路不重叠");
 });
