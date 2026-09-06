@@ -1,4 +1,4 @@
-/* 由 src/prototype/build-demo-data.mjs 生成,不要手改。
+/* 由 src/prototype/build-demo-data.mts 生成,不要手改。
    数据是真实模型输出(fixtures/observed/ 的修订轮一对),生成时已过闸门。 */
 window.PLAN_DATA = {
   "task": "每天定时把新增的合同 PDF 解析出关键字段,写进数据库",

@@ -1,4 +1,5 @@
 import type { PlanProposal } from "../../shared/contracts.mjs";
+import type { DemoData } from "../../shared/demo-data.mjs";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { projectRoot } from "../runtime-paths.mjs";
@@ -28,7 +29,7 @@ const after = read("../../fixtures/observed/run4-修订轮/turn-2.plan.json", "�
 const TASK = "每天定时把新增的合同 PDF 解析出关键字段,写进数据库";
 const REPLY = "PDF 都是扫描件。「新增」按文件落库时间算,每天处理昨天落库的。";
 
-const pairs = (plan: PlanProposal) => plan.understanding.map((r) => [r.quote, r.reading]);
+const pairs = (plan: PlanProposal) => plan.understanding.map((r): [string, string] => [r.quote, r.reading]);
 const route = (plan: PlanProposal) => plan.steps.map((s) => s.title);
 const doneLine = (plan: PlanProposal) =>
   `${plan.steps.length} 步 · ${
@@ -40,7 +41,7 @@ const answeredAsks = before.openQuestions
   .map((q, i) => (gone.has(q.ref) ? i : null))
   .filter((i) => i !== null);
 
-const data = {
+const data: DemoData = {
   task: TASK,
   wfName: "合同要素入库",
   understanding: pairs(before),
