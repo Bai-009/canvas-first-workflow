@@ -10,12 +10,22 @@
     "plan:chat": "node --env-file-if-exists=.env src/cli/plan-chat.mjs",
     "validate:fixture": "node src/plan/validate-plan-proposal.mjs fixtures/contract-processing.plan.json",
     "executor:step": "node --env-file-if-exists=.env src/cli/executor-step.mjs",
-    "web": "node --env-file-if-exists=.env src/web/server.mjs"
+    "web": "node --env-file-if-exists=.env src/web/server.mjs",
+    "build": "tsc -p tsconfig.json",
+    "build:watch": "tsc -p tsconfig.json --watch",
+    "typecheck": "npm run build && tsc -p tsconfig.check.json",
+    "pretest": "npm run build",
+    "preweb": "npm run build",
+    "preplan": "npm run build",
+    "preplan:chat": "npm run build",
+    "prevalidate:fixture": "npm run build",
+    "preexecutor:step": "npm run build"
   },
   "engines": {
     "node": ">=22.9"
   },
   "devDependencies": {
-    "ajv": "^8.20.0"
+    "ajv": "^8.20.0",
+    "typescript": "~6.0.0"
   }
 }

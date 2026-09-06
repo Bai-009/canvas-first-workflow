@@ -76,6 +76,21 @@ async function setup(t, overrides = {}) {
   return { server, base, post, state, events, waitFor, build };
 }
 
+test("浏览器可加载同一份 TypeScript 编译结果，默认 Agent 与契约资源路径仍有效", async (t) => {
+  const api = await setup(t, { executor: undefined, reviser: undefined });
+  const state = await api.state();
+  assert.equal(state.hasExecutor, true);
+  assert.equal(state.hasReviser, true);
+  const wrapper = await fetch(`${api.base}/flow.mjs`);
+  assert.equal(wrapper.status, 200);
+  assert.match(await wrapper.text(), /\.\/generated\/flow\.mjs/);
+  const generated = await fetch(`${api.base}/generated/flow.mjs`);
+  assert.equal(generated.status, 200);
+  assert.match(generated.headers.get("content-type"), /javascript/);
+  assert.equal(await generated.text(), readFileSync(new URL("../../web/generated/flow.mjs", import.meta.url), "utf8"));
+  assert.equal((await fetch(`${api.base}/api/node-table`)).status, 200);
+});
+
 test("HTTP 节点请求携完整上下文，SSE 与刷新同见一次原子修订", async (t) => {
   let received;
   const api = await setup(t, { reviser: async (context) => { received = context; return patch(context); } });
