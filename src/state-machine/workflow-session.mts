@@ -1,7 +1,13 @@
+import type { Canvas, CanvasNode, Edge, PlanStep, StepResult } from '../../shared/contracts.mjs';
+import type { WorkflowOptions, WorkflowState, Turn, Run, Edit, StepRecord, RevisionContext } from '../../shared/workflow.mjs';
+import type { createPlanSession as planFactory } from '../plan/plan-session.mjs';
+import { isRecord as isPlainObject } from '../../shared/json.mjs';
+import { errorMessage, errorName, errorDetails } from '../../shared/errors.mjs';
+type SayOptions = Parameters<ReturnType<typeof planFactory>['say']>[1];
 import { checkAgainstNodeTable, checkFlow } from "../nodes/check-nodes.mjs";
 import { createPlanSession } from "../plan/plan-session.mjs";
 import { stepWaves, assembleTable } from "./step-context.mjs";
-import { inspectCanvas, inspectRevision } from "./workflow-revision.mjs";
+import { inspectCanvas, readRevision } from "./workflow-revision.mjs";
 import { findNodeDefinition } from "../nodes/node-table.mjs";
 
 /* 整条链的会话:Plan 那一半原样用 createPlanSession,这里往下长一段。
@@ -14,7 +20,7 @@ import { findNodeDefinition } from "../nodes/node-table.mjs";
        —— 这一步的全部节点,整份重出;状态机换掉画布上这一步原有的节点
      { kind: "covered" } —— 画布上已经有了,不动
    结果好不好状态机不看;只查机器缺了转不动的那几条(见 checkResult),查不过就停在这一步。 */
-export function createWorkflowSession({ callModel, executor = null, reviser = null, systemPrompt, savedState }) {
+export function createWorkflowSession({ callModel, executor = null, reviser = null, systemPrompt, savedState }: WorkflowOptions) {
   if (savedState && savedState.formatVersion !== 1) throw new Error("不支持的会话存档版本");
   const plan = createPlanSession({ callModel, ...(systemPrompt ? { systemPrompt } : {}), savedState: savedState?.plan });
   const canvas = structuredClone(savedState?.canvas ?? { nodes: [], edges: [], version: 0 });
@@ -22,7 +28,7 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
   const runs = structuredClone(savedState?.runs ?? []);
   const edits = structuredClone(savedState?.edits ?? []);
   let canvasPlanRevision = savedState?.canvasPlanRevision ?? null;
-  let activeRun = null;
+  let activeRun: Run | null = null;
   // 恢复的是已提交的状态，不复活进程中的 Promise，也不自动重新调用模型。
   if (savedState?.activeRun) {
     runs.push({ ...structuredClone(savedState.activeRun), endedBy: "interrupted" });
@@ -33,11 +39,11 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
     edit.summary = "服务中断，未完成的修订没有应用；可以重新发送。";
     edit.completedAt = new Date().toISOString();
   }
-  let controller = null;
-  let operation = null;
+  let controller: AbortController | null = null;
+  let operation: "executor" | "revision" | null = null;
 
-  const turn = () => (plan.running ? "plan" : controller ? operation : "user");
-  const requireUserTurn = (action) => {
+  const turn = (): Turn => (plan.running ? "plan" : controller ? operation ?? "user" : "user");
+  const requireUserTurn = (action: string) => {
     const now = turn();
     if (now === "user") return;
     const runner = now === "plan" ? "Plan Agent 在跑" : now === "revision" ? "工作流修订在跑" : "执行者在跑";
@@ -47,7 +53,7 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
     .map((edit) => structuredClone({ target: edit.target, text: edit.text }));
 
   return {
-    exportState() {
+    exportState(): WorkflowState {
       return structuredClone({ formatVersion: 1, plan: plan.exportState(), canvas, annotations, runs, edits,
         canvasPlanRevision, activeRun, turn: turn() });
     },
@@ -66,12 +72,12 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
     get hasExecutor() { return typeof executor === "function"; },
     get hasReviser() { return typeof reviser === "function"; },
 
-    configure({ node: name, key, value, canvasVersion }) {
+    configure({ node: name, key, value, canvasVersion }: { node: string; key: string; value: unknown; canvasVersion: number }) {
       requireUserTurn("配置节点");
       if (canvasVersion !== canvas.version) throw new Error("画布已更新，请重新打开配置后保存");
       const node = canvas.nodes.find((item) => item.name === name);
       const slot = node && findNodeDefinition(node.type)?.slots.find((item) => item.key === key);
-      if (!slot) throw new Error("节点或参数已不存在");
+      if (!slot || !node) throw new Error("节点或参数已不存在");
       const parsed = slot.kind === "number" ? Number(value) : value;
       if (value === "" || value == null || (slot.kind === "number" && !Number.isFinite(parsed))) throw new Error("参数值无效");
       const candidate = { ...node, params: { ...node.params, [key]: parsed }, blanks: node.blanks.filter((item) => item !== key) };
@@ -87,13 +93,13 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
       return structuredClone(canvas);
     },
 
-    async say(text, options) {
+    async say(text: string, options?: SayOptions) {
       requireUserTurn("说话");
       return plan.say(text, options);
     },
 
     /* 批注挂在步骤号上,不挂在节点上:节点重建它还在。 */
-    annotate(step, text) {
+    annotate(step: string, text: unknown) {
       requireUserTurn("批注");
       const current = plan.currentPlan;
       if (!current) throw new Error("还没有方案,没有步骤可以批");
@@ -110,7 +116,7 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
        同一波里的步拿到的是这一波开始前的画布 —— 它们本来就互不依赖,看不见对方是对的。
        收回的改动按波内先后一条一条查、一条一条进画布,顺序是定的。
        每次开始都从头走;没变的步执行者会说已经有了。 */
-    async start({ onStep, onWave } = {}) {
+    async start({ onStep, onWave }: { onStep?: (event: { step: StepRecord; canvas: Canvas }) => void; onWave?: (wave: string[]) => void } = {}) {
       requireUserTurn("开始");
       const current = plan.currentPlan;
       if (!current) throw new Error("还没有方案,先在主输入框说一句");
@@ -120,10 +126,10 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
       operation = "executor";
       canvasPlanRevision = null;
       const { signal } = controller;
-      const run = { revision: plan.revision, steps: [], endedBy: null, problems: [] };
+      const run: Run = { revision: plan.revision, steps: [], endedBy: null, problems: [] };
       activeRun = run;
       /* 一步一个信号往外发,画布那头照着长。发不出去是画布的事,不能把这一趟带塌。 */
-      const record = (entry) => {
+      const record = (entry: StepRecord) => {
         run.steps.push(entry);
         try {
           onStep?.(structuredClone({ step: entry, canvas }));
@@ -139,19 +145,19 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
               const confirmed = requirements();
               if (confirmed.length) context.requirements = confirmed;
               try {
-                return { ref, result: await executor(context, { signal }) };
+                return { ref, result: await executor(context, { signal }), error: undefined };
               } catch (error) {
-                return { ref, error };
+                return { ref, error, result: undefined };
               }
             })
           );
           for (const { ref, result, error } of settled) {
             if (error) {
-              if (signal.aborted || error?.name === "AbortError") {
+              if (signal.aborted || errorName(error) === "AbortError") {
                 record({ ref, outcome: "stopped", canvasVersion: canvas.version });
                 run.endedBy = "stopped";
               } else {
-                record({ ref, outcome: "failed", canvasVersion: canvas.version, error: error.message });
+                record({ ref, outcome: "failed", canvasVersion: canvas.version, error: errorMessage(error) });
                 run.endedBy = "error";
               }
               break waves;
@@ -162,8 +168,10 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
               run.endedBy = "stopped";
               break waves;
             }
-            const reasons = checkResult(result, current.steps.find((step) => step.ref === ref), canvas);
-            if (reasons.length) {
+            const step = current.steps.find((step) => step.ref === ref);
+            if (!step) throw new Error(`方案里没有 ${ref} 这一步`);
+            if (!isStepResult(result, step, canvas)) {
+              const reasons = checkResult(result, step, canvas);
               record({ ref, outcome: "rejected", canvasVersion: canvas.version, reasons });
               run.endedBy = "rejected";
               break waves;
@@ -198,7 +206,7 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
     /* 节点是指令的发起点，修订对象是已构建的完整工作流。
        普通函数先同步查请求并占住执行权，服务器只有接受成功后才返回成功响应。
        模型只拿快照；整图候选过闸后才一次提交，Plan 会话不参与这次修改。 */
-    revise(request, { onEdit } = {}) {
+    revise(request: unknown, { onEdit }: { onEdit?: (edit: Edit) => void } = {}) {
       requireUserTurn("修订工作流");
       if (!isPlainObject(request)) throw new Error("修订请求不是对象");
       if (typeof reviser !== "function") throw new Error("工作流修订者未接入");
@@ -214,13 +222,13 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
       if (current.steps.some((step) => !canvas.nodes.some((node) => node.step === step.ref))) throw new Error("工作流尚未完成构建");
 
       const startedAt = Date.now();
-      const edit = {
+      const edit: Edit = {
         id: `edit-${edits.length + 1}`, target: { node: target.name, step: target.step },
         text: request.text.trim(), status: "processing", summary: "正在结合完整工作流处理指令",
         changes: [], review: [], baseVersion: canvas.version, canvasVersion: canvas.version,
         planRevision: plan.revision, createdAt: new Date(startedAt).toISOString(),
       };
-      const context = {
+      const context: RevisionContext = {
         plan: current, canvas: structuredClone(canvas), target: structuredClone(edit.target),
         instruction: { id: edit.id, text: edit.text }, requirements: requirements(),
         annotations: structuredClone(annotations),
@@ -244,8 +252,8 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
       emit();
 
       return (async () => {
-        let abort;
-        const stopped = new Promise((_, reject) => {
+        let abort = () => {};
+        const stopped = new Promise<never>((_, reject) => {
           abort = () => reject(new DOMException("修订已停止", "AbortError"));
           owned.signal.addEventListener("abort", abort, { once: true });
           if (owned.signal.aborted) abort();
@@ -263,8 +271,8 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
           edit.summary = "正在检查修订后的完整画布";
           emit();
           if (owned.signal.aborted) throw new DOMException("修订已停止", "AbortError");
-          const inspection = inspectRevision(result, context);
-          if (inspection.reasons.length) {
+          const inspection = readRevision(result, context);
+          if (!inspection.ok) {
             edit.status = "failed";
             edit.summary = "修订未通过检查，画布保持不变";
             edit.reasons = inspection.reasons;
@@ -273,24 +281,25 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
             if (canvas.version !== edit.baseVersion || plan.revision !== edit.planRevision || controller !== owned) {
               throw new Error("修订所依据的画布或方案已更新，结果未应用");
             }
-            edit.summary = result.summary;
-            edit.review = structuredClone(result.review);
-            if (result.kind === "patch") {
+            edit.summary = inspection.result.summary;
+            edit.review = structuredClone(inspection.result.review);
+            if (inspection.kind === "patch") {
               canvas.nodes = inspection.candidate.nodes;
               canvas.edges = inspection.candidate.edges;
               canvas.version += 1;
               edit.status = "applied";
               edit.changes = inspection.changes;
               edit.canvasVersion = canvas.version;
-            } else edit.status = result.kind;
+            } else edit.status = inspection.kind;
           }
         } catch (error) {
-          edit.status = owned.signal.aborted || error?.name === "AbortError" ? "stopped" : "failed";
+          edit.status = owned.signal.aborted || errorName(error) === "AbortError" ? "stopped" : "failed";
           edit.summary = edit.status === "stopped" ? "修订已停止，画布保持不变" : "修订失败，画布保持不变";
           if (edit.status === "failed") {
-            edit.error = error?.message ?? String(error);
-            const rejected = error?.events?.filter((event) => event.kind === "rejected").at(-1)?.reasons;
-            if (Array.isArray(rejected)) edit.reasons = structuredClone(rejected);
+            edit.error = errorMessage(error);
+            const events = errorDetails(error).events;
+            const rejected = Array.isArray(events) ? events.filter(isPlainObject).filter((event) => event.kind === "rejected").at(-1)?.reasons : undefined;
+            if (Array.isArray(rejected) && rejected.every((reason: unknown) => typeof reason === 'string')) edit.reasons = structuredClone(rejected);
           }
         } finally {
           owned.signal.removeEventListener("abort", abort);
@@ -308,7 +317,7 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
        停在哪儿、闸门退了什么,原样作为一句话交给设计者,让它出新方案。
        架构里这条路叫「执行者说不的出口」,执行者自己还没有这个口;现在是人替它说,走同一条路。
        onSaid 在话说出去之前喊一声:界面要把这句话先摆上墙,跟人自己打的一句一样。 */
-    async escalate({ onSaid, ...options } = {}) {
+    async escalate({ onSaid, ...options }: NonNullable<SayOptions> & { onSaid?: (text: string) => void } = {}) {
       requireUserTurn("交给设计者");
       const stop = breakOf(runs.at(-1), plan.currentPlan);
       if (!stop) throw new Error("上一趟没停在哪一步,没什么可交给设计者的");
@@ -330,29 +339,27 @@ export function createWorkflowSession({ callModel, executor = null, reviser = nu
   };
 }
 
-const isPlainObject = (value) =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /* 画布闸门:第一道是信封(形状对不对、名字撞不撞、线接没接上),第二道是对得上节点表(src/nodes/check-nodes.mjs)。
    两道在同一个函数里,执行者交回时和状态机提交前走的是同一道。 */
 /* 闸门。收的是方案里那一步本身,不是它的编号:这一道要看「接在谁后面」,
    而可选参数是会被忘的——执行者自己那一道就忘过,于是它查得比状态机松,
    自己那关过了、到状态机才被退,而它已经没有机会改了。 */
-export function checkResult(result, step, canvas) {
+export function checkResult(result: unknown, step: Pick<PlanStep, "ref" | "dependsOn">, canvas: Canvas): string[] {
   const { ref, dependsOn = [] } = step;
   if (!isPlainObject(result)) return ["交回的不是一个对象"];
   if (result.kind === "covered") return [];
   if (result.kind !== "patch") return [`交回的 kind 是 ${JSON.stringify(result.kind)},只认 patch 和 covered`];
 
-  const reasons = [];
-  const { nodes, edges = [] } = result;
-  if (!Array.isArray(nodes) || nodes.length === 0) return ["改动里没有节点;这一步不用做的话该交 covered"];
-  if (!Array.isArray(edges)) return ["edges 不是数组"];
+  const reasons: string[] = [];
+  const { nodes: rawNodes, edges: rawEdges = [] } = result;
+  if (!Array.isArray(rawNodes) || rawNodes.length === 0) return ["改动里没有节点;这一步不用做的话该交 covered"];
+  if (!Array.isArray(rawEdges)) return ["edges 不是数组"];
 
   const seen = new Set();
   const others = new Map(canvas.nodes.filter((node) => node.step !== ref).map((node) => [node.name, node.step]));
-  nodes.forEach((node, index) => {
-    const label = node?.name ? `节点 ${node.name}` : `第 ${index + 1} 个节点`;
+  rawNodes.forEach((node: unknown, index) => {
+    const label = isPlainObject(node) && node.name ? `节点 ${node.name}` : `第 ${index + 1} 个节点`;
     if (!isPlainObject(node)) return reasons.push(`${label} 不是对象`);
     if (typeof node.name !== "string" || !node.name) reasons.push(`${label} 缺 name`);
     if (typeof node.type !== "string" || !node.type) reasons.push(`${label} 缺 type`);
@@ -369,9 +376,11 @@ export function checkResult(result, step, canvas) {
   });
   if (reasons.length) return reasons;
 
+  // 机器字段已由上面的逐项检查验证；旁白继续作为不透明内容透传。
+  const nodes = rawNodes as CanvasNode[];
   const mine = new Set(nodes.map((node) => node.name));
   const all = new Set([...others.keys(), ...mine]);
-  for (const edge of edges) {
+  for (const edge of rawEdges as unknown[]) {
     if (!isPlainObject(edge) || typeof edge.from !== "string" || typeof edge.to !== "string") {
       reasons.push(`有一条线不是 { from, to }:${JSON.stringify(edge)}`);
       continue;
@@ -383,17 +392,18 @@ export function checkResult(result, step, canvas) {
   }
   if (reasons.length) return reasons;
 
+  const edges = rawEdges as Edge[];
   /* 一步交回好几个节点,这几个节点得连成一片——彼此相连,或者都挂在同一个上游节点上。
      连不成的话交回的不是一段流程,是几张并排的卡:下一步只有一个落点,接哪张都不对。
      只交回一个节点的不查:它的进线可能是上游那一步的,出线由下游那一步声明。 */
   if (nodes.length > 1) {
-    const near = new Map();
-    const link = (a, b) => { if (!near.has(a)) near.set(a, new Set()); near.get(a).add(b); };
+    const near = new Map<string, Set<string>>();
+    const link = (a: string, b: string) => { if (!near.has(a)) near.set(a, new Set()); near.get(a)?.add(b); };
     for (const edge of edges) { link(edge.from, edge.to); link(edge.to, edge.from); }
-    const reached = new Set([nodes[0].name]);
-    const stack = [nodes[0].name];
+    const reached = new Set(nodes.slice(0, 1).map((node) => node.name));
+    const stack = nodes.slice(0, 1).map((node) => node.name);
     while (stack.length) {
-      for (const next of near.get(stack.pop()) ?? []) if (!reached.has(next)) { reached.add(next); stack.push(next); }
+      for (const next of near.get(stack.pop() ?? "") ?? []) if (!reached.has(next)) { reached.add(next); stack.push(next); }
     }
     const cut = nodes.map((node) => node.name).filter((name) => !reached.has(name));
     if (cut.length) reasons.push(`这一步交回 ${nodes.length} 个节点,${cut.join("、")} 没跟其它几个连在一起,下一步只有一个落点`);
@@ -421,7 +431,7 @@ export function checkResult(result, step, canvas) {
 /* 换掉这一步原有的节点。线的归属:进这一步的线由这一步自己在改动里声明,所以老的进线全部去掉、
    换成改动里的;出这一步的线是下游声明的,只要这头的节点名还在(原地改),就留着;
    名字没了的,碰到它的线一起去掉,下游那一步重走时会看见自己没接上。版本加一。 */
-function merged(canvas, ref, patch) {
+function merged(canvas: Canvas, ref: string, patch: Omit<Extract<StepResult, { kind: "patch" }>, "kind">) {
   const oldIds = new Set(canvas.nodes.filter((node) => node.step === ref).map((node) => node.name));
   const nodes = [
     ...canvas.nodes.filter((node) => !oldIds.has(node.name)),
@@ -442,7 +452,7 @@ function merged(canvas, ref, patch) {
   return { nodes, edges };
 }
 
-function commit(canvas, ref, patch) {
+function commit(canvas: Canvas, ref: string, patch: Extract<StepResult, { kind: "patch" }>) {
   const next = merged(canvas, ref, patch);
   canvas.nodes = next.nodes;
   canvas.edges = next.edges;
@@ -451,7 +461,7 @@ function commit(canvas, ref, patch) {
 
 /* 上一趟停在哪儿、为什么。跑完了、或者最后一步是做完/已经有了,就是没停。
    原因是一条一条的:闸门退几条就是几条;出错是一条;按了停也是一条。 */
-export function breakOf(run, plan) {
+export function breakOf(run: Run | null | undefined, plan: { steps: Pick<PlanStep, "ref" | "title">[] } | null) {
   if (!run || run.endedBy === "finished") return null;
   const last = run.steps.at(-1);
   if (!last || last.outcome === "done" || last.outcome === "covered") return null;
@@ -461,15 +471,15 @@ export function breakOf(run, plan) {
 
 /* 交给设计者时说的话:停在哪儿、闸门退了什么,原样。不替设计者下结论该怎么改——
    它读到这些自己会问、会改;它看不见画布,这几行就是它眼前唯一的画布。 */
-export const handoffText = ({ ref, title, reasons }) =>
+export const handoffText = ({ ref, title, reasons }: { ref: string; title: string; reasons: string[] }) =>
   `「${title}」（${ref}）在画布上没搭成，闸门退回：\n${reasons.map((why) => `- ${why}`).join("\n")}`;
 
 /* 整轮走完,拿方案对着整张画布查一遍。查的是形状:每一步在画布上有没有节点,
    接在谁后面的有没有一条线真的从那一步接过来。查出来的只记在这一轮的记录里,先不自动发回。 */
-export function wholeCanvasProblems(plan, canvas) {
+export function wholeCanvasProblems(plan: { steps: PlanStep[] }, canvas: Canvas) {
   const problems = [];
   const ids = new Set(canvas.nodes.map((node) => node.name));
-  const nodesOf = (ref) => canvas.nodes.filter((node) => node.step === ref).map((node) => node.name);
+  const nodesOf = (ref: string) => canvas.nodes.filter((node) => node.step === ref).map((node) => node.name);
   for (const step of plan.steps) {
     const mine = nodesOf(step.ref);
     if (mine.length === 0) {
@@ -487,3 +497,8 @@ export function wholeCanvasProblems(plan, canvas) {
   }
   return problems;
 }
+
+export function isStepResult(value: unknown, step: Pick<PlanStep, 'ref' | 'dependsOn'>, canvas: Canvas): value is StepResult {
+  return checkResult(value, step, canvas).length === 0;
+}
+export type WorkflowSession = ReturnType<typeof createWorkflowSession>;

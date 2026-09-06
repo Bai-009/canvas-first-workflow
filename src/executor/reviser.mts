@@ -1,3 +1,28 @@
+import type { RevisionResult } from '../../shared/contracts.mjs';
+import type { ModelCaller, Message, ToolCall } from '../../shared/model.mjs';
+import type { RevisionContext, AgentEvent, AgentTiming, AgentOptions } from '../../shared/workflow.mjs';
+import { errorMessage, errorDetails } from '../../shared/errors.mjs';
+interface RevisionOptions {
+  callModel: ModelCaller;
+  systemPrompt?: string;
+  maxRounds?: number;
+  signal?: AbortSignal | undefined;
+  onEvent?: ((event: AgentEvent) => void) | undefined;
+}
+interface RevisionOutcome {
+  result: RevisionResult;
+  messages: Message[];
+  events: AgentEvent[];
+  rounds: number;
+  timing: AgentTiming;
+}
+interface FactoryOptions {
+  callModel: ModelCaller;
+  systemPrompt?: string;
+  maxRounds?: number;
+  onEvent?: ((event: AgentEvent, context: RevisionContext) => void) | undefined;
+  save?: string | undefined;
+}
 /* 一次用户要求,审查整张画布,只交必要 diff。调用循环不提交画布、不改方案。
    提交前和状态机提交时用同一道闸门,被退的候选不会成为下一轮的画布。 */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -5,7 +30,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { renderNodeTable } from "./node-catalog.mjs";
 import { submitRevisionTool } from "./submit-revision-tool.mjs";
-import { inspectRevision } from "../state-machine/workflow-revision.mjs";
+import { readRevision } from "../state-machine/workflow-revision.mjs";
 import { callerFromEnv } from "../model/openai-compatible.mjs";
 
 export const reviserTools = [submitRevisionTool];
@@ -16,8 +41,8 @@ export function loadRevisionPrompt() {
 }
 
 /* 不按 target 裁剪任何一项:目标卡是发起点,计划、画布和历史都是整份。 */
-export function revisionMessage(context) {
-  const block = (tag, value) => `<${tag}>\n${JSON.stringify(value, null, 2)}\n</${tag}>`;
+export function revisionMessage(context: RevisionContext) {
+  const block = (tag: string, value: unknown) => `<${tag}>\n${JSON.stringify(value, null, 2)}\n</${tag}>`;
   return [
     block("plan", context.plan),
     block("canvas", context.canvas),
@@ -29,29 +54,29 @@ export function revisionMessage(context) {
   ].join("\n\n");
 }
 
-function assertRunning(signal) {
+function assertRunning(signal?: AbortSignal) {
   if (!signal?.aborted) return;
   const error = new Error("整图修订已停止", { cause: signal.reason });
   error.name = "AbortError";
   throw error;
 }
 
-const toolReply = (call, answer) => ({ role: "tool", tool_call_id: call.id, content: JSON.stringify(answer) });
+const toolReply = (call: ToolCall, answer: unknown): Message => ({ role: "tool", tool_call_id: call.id, content: JSON.stringify(answer) });
 const WROTE_IT_OUT = /<(?:invoke|function_calls|antml:invoke)\b|\bsubmit_revision\s*\(/i;
 
-export async function runRevision(context, {
+export async function runRevision(context: RevisionContext, {
   callModel, systemPrompt = loadRevisionPrompt(), maxRounds = 8, signal, onEvent = () => {},
-}) {
+}: RevisionOptions): Promise<RevisionOutcome> {
   const snapshot = structuredClone(context);
-  const messages = [
+  const messages: Message[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: revisionMessage(snapshot) },
   ];
-  const events = [];
+  const events: AgentEvent[] = [];
   const startedAt = new Date().toISOString();
   const started = performance.now();
-  const timing = (status, rounds) => ({ startedAt, finishedAt: new Date().toISOString(), durationMs: performance.now() - started, status, rounds });
-  const note = (event) => { events.push(event); onEvent(event); };
+  const timing = (status: AgentTiming["status"], rounds: number): AgentTiming => ({ startedAt, finishedAt: new Date().toISOString(), durationMs: performance.now() - started, status, rounds });
+  const note = (event: AgentEvent) => { events.push(event); onEvent(event); };
   let round = 0;
 
   try {
@@ -83,6 +108,7 @@ export async function runRevision(context, {
         continue;
       }
       const call = calls[0];
+      if (!call) throw new Error("模型没有返回有效的工具调用");
       const name = call.function?.name;
       if (name !== "submit_revision") {
         const answer = { error: `unknown tool ${name}; the only tool is submit_revision. This request reviews the whole canvas, not submit_step.` };
@@ -90,27 +116,28 @@ export async function runRevision(context, {
         note({ round, kind: "tool", tool: name, answer });
         continue;
       }
-      let result;
+      let result: unknown;
       try {
         result = JSON.parse(call.function?.arguments ?? "");
       } catch (error) {
-        const answer = { error: `arguments is not valid JSON: ${error.message}; submit the complete candidate again` };
+        const answer = { error: `arguments is not valid JSON: ${errorMessage(error)}; submit the complete candidate again` };
         messages.push(toolReply(call, answer));
         note({ round, kind: "bad-args", tool: name, reason: answer.error });
         continue;
       }
       assertRunning(signal);
-      const { reasons } = inspectRevision(result, snapshot);
-      if (reasons.length) {
+      const inspection = readRevision(result, snapshot);
+      if (!inspection.ok) {
+        const reasons = inspection.reasons;
         messages.push(toolReply(call, { rejected: reasons }));
         note({ round, kind: "rejected", reasons });
         continue;
       }
       assertRunning(signal);
-      messages.push(toolReply(call, { accepted: true, committed: false, kind: result.kind }));
+      messages.push(toolReply(call, { accepted: true, committed: false, kind: inspection.result.kind }));
       note({ round, kind: "submitted", submission: result });
       assertRunning(signal);
-      return { result, messages, events, rounds: round, timing: timing("accepted", round) };
+      return { result: inspection.result, messages, events, rounds: round, timing: timing("accepted", round) };
     }
     assertRunning(signal);
     throw new Error(`整图修订来回 ${maxRounds} 次没有有效提交,画布未改变`);
@@ -123,18 +150,18 @@ export async function runRevision(context, {
   }
 }
 
-export function createReviser({ callModel, systemPrompt = loadRevisionPrompt(), maxRounds = 8, onEvent, save } = {}) {
+export function createReviser({ callModel, systemPrompt = loadRevisionPrompt(), maxRounds = 8, onEvent, save }: FactoryOptions) {
   let count = 0;
-  return async function revise(context, { signal } = {}) {
+  return async function revise(context: RevisionContext, { signal }: AgentOptions = {}) {
     const snapshot = structuredClone(context);
     const dir = save ? join(save, String(++count).padStart(2, "0")) : null;
-    const keep = (name, value) => {
+    const keep = (name: string, value: unknown) => {
       if (!dir || value === undefined) return;
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, name), typeof value === "string" ? value : `${JSON.stringify(value, null, 2)}\n`);
     };
     keep("context.json", snapshot);
-    let outcome;
+    let outcome: RevisionOutcome | undefined;
     try {
       outcome = await runRevision(snapshot, {
         callModel, systemPrompt, maxRounds, signal,
@@ -148,17 +175,17 @@ export function createReviser({ callModel, systemPrompt = loadRevisionPrompt(), 
       return outcome.result;
     } catch (error) {
       /* 取消可能发生在循环完成和外层恢复之间,这时仍保留刚收到的完整实录。 */
-      keep("messages.json", error.messages ?? outcome?.messages);
-      keep("events.json", error.events ?? outcome?.events);
-      keep("error.txt", `${error.message}\n`);
-      keep("timing.json", error.timing ?? (outcome && { ...outcome.timing, status: signal?.aborted ? "stopped" : "failed" }));
+      keep("messages.json", errorDetails(error).messages ?? outcome?.messages);
+      keep("events.json", errorDetails(error).events ?? outcome?.events);
+      keep("error.txt", `${errorMessage(error)}\n`);
+      keep("timing.json", errorDetails(error).timing ?? (outcome && { ...outcome.timing, status: signal?.aborted ? "stopped" : "failed" }));
       throw error;
     }
   };
 }
 
-let plugged = null;
-export default async function revise(context, options) {
+let plugged: ReturnType<typeof createReviser> | null = null;
+export default async function revise(context: RevisionContext, options?: AgentOptions) {
   if (!plugged) {
     const where = process.env.EXECUTOR_SAVE ?? ".runs";
     const save = where === "none" ? undefined : join(where, `revision-${Date.now()}-${process.pid}-${randomUUID()}`);
