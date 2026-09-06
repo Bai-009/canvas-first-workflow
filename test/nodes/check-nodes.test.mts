@@ -1,10 +1,11 @@
+import type { CanvasNode, Edge } from "../../shared/contracts.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { checkAgainstNodeTable, checkFlow } from "../../dist/src/nodes/check-nodes.mjs";
+import { checkAgainstNodeTable, checkFlow } from "../../src/nodes/check-nodes.mjs";
 
-const node = (type, params = {}, blanks = [], name = "A") => ({ name, step: "s1", type, params, blanks });
-const reasons = (nodes, edges = [], canvas = []) => checkAgainstNodeTable(nodes, edges, canvas).join("\n");
+const node = (type: string, params: Record<string, unknown> = {}, blanks: string[] = [], name = "A"): CanvasNode => ({ name, step: "s1", type, params, blanks });
+const reasons = (nodes: CanvasNode[], edges: Edge[] = [], canvas: CanvasNode[] = []) => checkAgainstNodeTable(nodes, edges, canvas).join("\n");
 
 test("对得上节点表的交回:一个字不退", () => {
   const nodes = [
@@ -51,13 +52,13 @@ test("多出口节点的线要写出口,单出口的不许写;线的源头在画
   assert.equal(reasons([cond, sink], [{ from: "分岔", to: "B", output: "false" }]), "");
   const onCanvas = [node("condition", { condition: "input.x" }, [], "画布上的分岔")];
   assert.match(reasons([sink], [{ from: "画布上的分岔", to: "B" }], onCanvas), /要写出口/);
-  assert.equal(reasons([sink], [{ from: "不认识的老节点", to: "B" }], [{ name: "不认识的老节点", type: "n8n-nodes-base.set", params: {}, blanks: [] }]), "");
+  assert.equal(reasons([sink], [{ from: "不认识的老节点", to: "B" }], [{ name: "不认识的老节点", step: "s1", type: "n8n-nodes-base.set", params: {}, blanks: [] }]), "");
 });
 
 /* 第三样:接得上。查的是整条上游一路加进来的全部,不是紧挨着那一个。 */
 test("接得上:要的东西在线上就放行;不在就退,并说线上只有什么;没线进来也退", () => {
-  const n = (name, type, params = {}) => ({ name, step: "s1", type, params, blanks: [] });
-  const canvas = (nodes, edges) => ({ nodes, edges });
+  const n = (name: string, type: string, params: Record<string, unknown> = {}) => ({ name, step: "s1", type, params, blanks: [] });
+  const canvas = (nodes: CanvasNode[], edges: Edge[]) => ({ nodes, edges });
   const 读 = n("读", "readFile"), 识 = n("识", "ocr"), 抽 = n("抽", "llm", { prompt: "p" }), 库 = n("库", "writeVectorStore");
   assert.deepEqual(checkFlow([识, 抽], canvas([读, 识, 抽], [{ from: "读", to: "识" }, { from: "识", to: "抽" }])), []);
   assert.deepEqual(checkFlow([库], canvas([读, 库], [{ from: "读", to: "库" }])), ["节点 库 要 Vector,接进来的线上只有 File"]);
