@@ -1,16 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { createWorkflowSession, checkResult, wholeCanvasProblems, breakOf, handoffText } from "../../dist/src/state-machine/workflow-session.mjs";
-import { stepWaves } from "../../dist/src/state-machine/step-context.mjs";
-import fixedExecutor from "../../dist/fixtures/doubles/fixed-executor.mjs";
+import { present, readPlan, planWithSteps, deferred } from "../helpers/fixtures.mjs";
+import type { CanvasNode, Edge, StepContext } from "../../shared/contracts.mjs";
+import type { AssistantMessage, Message, CallOptions } from "../../shared/model.mjs";
+import type { Executor } from "../../shared/workflow.mjs";
+import { createWorkflowSession, checkResult, wholeCanvasProblems, breakOf, handoffText } from "../../src/state-machine/workflow-session.mjs";
+import { stepWaves } from "../../src/state-machine/step-context.mjs";
+import fixedExecutor from "../../fixtures/doubles/fixed-executor.mjs";
 
-const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
+const read = (rel: string) => readPlan(new URL(rel, import.meta.url));
 const run8 = read("../../fixtures/observed/run8-原因版提示词/turn-2.plan.json");
 
 /* 假模型:每次都把 run8 那份方案提交上来,好让会话手里有方案。 */
 let callCounter = 0;
-const submitting = (plan) => async () => ({
+const submitting = (plan: unknown) => async (): Promise<AssistantMessage> => ({
   role: "assistant",
   content: "",
   tool_calls: [
@@ -23,8 +26,8 @@ const submitting = (plan) => async () => ({
 });
 
 /* 执行者的固定答复:按这一步的编号查表。 */
-const node = (step, name, extra = {}) => ({ name, step, type: "code", params: { code: `// ${step}` }, blanks: [], ...extra });
-const patch = (nodes, edges = []) => ({ kind: "patch", nodes, edges });
+const node = (step: string, name: string, extra: Partial<CanvasNode> = {}): CanvasNode => ({ name, step, type: "code", params: { code: `// ${step}` }, blanks: [], ...extra });
+const patch = (nodes: unknown[], edges: Edge[] = []) => ({ kind: "patch", nodes, edges });
 const covered = { kind: "covered" };
 const chain = {
   s1: () => patch([node("s1", "n1")]),
@@ -32,16 +35,16 @@ const chain = {
   s3: () => patch([node("s3", "n3", { type: "llm", params: { prompt: "抽字段" }, blanks: ["outputSchema"] })], [{ from: "n2", to: "n3" }]),
   s4: () => patch([node("s4", "n4", { type: "writeDatabase", params: {}, blanks: ["connection", "table"] })], [{ from: "n3", to: "n4" }]),
 };
-function byStep(handlers) {
-  const contexts = [];
-  const executor = async (context, { signal }) => {
+function byStep(handlers: Record<string, (context: StepContext, signal: AbortSignal) => unknown | Promise<unknown>>) {
+  const contexts: StepContext[] = [];
+  const executor: Executor = async (context, { signal } = {}) => {
     contexts.push(structuredClone(context));
-    return handlers[context.step.ref](context, signal);
+    return present(handlers[context.step.ref])(context, present(signal));
   };
   return { executor, contexts };
 }
 
-async function sessionWithPlan(executor) {
+async function sessionWithPlan(executor: Executor | null) {
   const session = createWorkflowSession({ callModel: submitting(run8), executor });
   await session.say("每天定时把新增的合同 PDF 解析出关键字段,写进数据库");
   return session;
@@ -70,29 +73,29 @@ test("分支的出口留在画布上:同一对节点之间,true 和 false 是两
 /* 计划从来就是个图不是条线:接在同一个前序后面、彼此不依赖的步,该同时走。 */
 test("走步排成波次:互不依赖的步凑一波", () => {
   assert.deepEqual(
-    stepWaves({ steps: [
+    stepWaves(planWithSteps([
       { ref: "s1", dependsOn: [] },
       { ref: "s2", dependsOn: ["s1"] },
       { ref: "s3", dependsOn: ["s1"] },
       { ref: "s4", dependsOn: ["s2", "s3"] },
-    ] }),
+    ])),
     [["s1"], ["s2", "s3"], ["s4"]]
   );
-  assert.throws(() => stepWaves({ steps: [
+  assert.throws(() => stepWaves(planWithSteps([
     { ref: "a", dependsOn: ["b"] }, { ref: "b", dependsOn: ["a"] },
-  ] }), /互相等着/);
+  ])), /互相等着/);
 });
 
 /* 同一波里的两步拿到同一版画布,说明它们真的一起走了,不是排队。
    看不见对方是对的 —— 它们本来就互不依赖。 */
 test("同一波的步同时走:两边拿到的是同一版画布", async () => {
   const forked = structuredClone(run8);
-  forked.steps[0].dependsOn = [];
-  forked.steps[1].dependsOn = ["s1"];
-  forked.steps[2].dependsOn = ["s1"];
-  forked.steps[3].dependsOn = ["s2", "s3"];
-  const seen = {};
-  const handlers = {
+  present(forked.steps[0]).dependsOn = [];
+  present(forked.steps[1]).dependsOn = ["s1"];
+  present(forked.steps[2]).dependsOn = ["s1"];
+  present(forked.steps[3]).dependsOn = ["s2", "s3"];
+  const seen: Record<string, number> = {};
+  const handlers: Parameters<typeof byStep>[0] = {
     s1: () => patch([node("s1", "n1")]),
     s2: (context) => { seen.s2 = context.canvas.version; return patch([node("s2", "n2")], [{ from: "n1", to: "n2" }]); },
     s3: (context) => { seen.s3 = context.canvas.version; return patch([node("s3", "n3")], [{ from: "n1", to: "n3" }]); },
@@ -140,7 +143,7 @@ test("每一步的上下文:整份方案、这一步、做到这步时的画布�
   const session = await sessionWithPlan(executor);
   session.annotate("s3", "金额字段要带币种");
   await session.start();
-  const [c1, , c3] = contexts;
+  const c1 = present(contexts[0]), c3 = present(contexts[2]);
   assert.deepEqual(Object.keys(c1), ["plan", "step", "canvas", "openQuestions", "instructions"]);
   assert.deepEqual(c1.plan, run8);
   assert.deepEqual(c1.canvas, { nodes: [], edges: [], version: 0 });
@@ -165,8 +168,7 @@ test("已经有了:画布不动、版本不加,记录里写 covered", async () =
 });
 
 test("跑着的时候不收话、不收批注、不收第二次开始", async () => {
-  let release;
-  const gate = new Promise((resolve) => { release = resolve; });
+  const { promise: gate, resolve: release } = deferred<void>();
   const { executor } = byStep({ ...chain, s2: async () => { await gate; return chain.s2(); } });
   const session = await sessionWithPlan(executor);
   const running = session.start();
@@ -182,9 +184,8 @@ test("跑着的时候不收话、不收批注、不收第二次开始", async ()
 });
 
 test("按停:正在做的这一步作废,画布停在上次提交;再开始从 s1 起,做过的说已经有了", async () => {
-  let startedS2;
-  const s2Started = new Promise((resolve) => { startedS2 = resolve; });
-  const hangUntilAborted = (signal) =>
+  const { promise: s2Started, resolve: startedS2 } = deferred<void>();
+  const hangUntilAborted = (signal: AbortSignal) =>
     new Promise((_, reject) => signal.addEventListener("abort", () => reject(new DOMException("停了", "AbortError"))));
   const first = byStep({ ...chain, s2: (_, signal) => { startedS2(); return hangUntilAborted(signal); } });
   const session = await sessionWithPlan(first.executor);
@@ -201,10 +202,8 @@ test("按停:正在做的这一步作废,画布停在上次提交;再开始从 s
 });
 
 test("执行者不理会停止信号、停了还交东西,一样不收", async () => {
-  let startedS2;
-  const s2Started = new Promise((resolve) => { startedS2 = resolve; });
-  let release;
-  const gate = new Promise((resolve) => { release = resolve; });
+  const { promise: s2Started, resolve: startedS2 } = deferred<void>();
+  const { promise: gate, resolve: release } = deferred<void>();
   const { executor } = byStep({ ...chain, s2: async () => { startedS2(); await gate; return chain.s2(); } });
   const session = await sessionWithPlan(executor);
   const running = session.start();
@@ -217,15 +216,15 @@ test("执行者不理会停止信号、停了还交东西,一样不收", async (
 });
 
 test("批注挂在步骤上;再开始从 s1 重走,s1 拿到批注,s2 看到新的 s1", async () => {
-  const seenByS1 = [];
-  const seenByS2 = [];
+  const seenByS1: string[][] = [];
+  const seenByS2: string[][] = [];
   let s1Version = 0;
   const { executor } = byStep({
     ...chain,
     s1: (context) => { seenByS1.push(context.instructions); s1Version += 1; return patch([node("s1", `n1-v${s1Version}`)]); },
     s2: (context) => {
       seenByS2.push(context.canvas.nodes.filter((n) => n.step === "s1").map((n) => n.name));
-      const upstream = context.canvas.nodes.find((n) => n.step === "s1").name;
+      const upstream = present(context.canvas.nodes.find((n) => n.step === "s1")).name;
       return patch([node("s2", "n2")], [{ from: upstream, to: "n2" }]);
     },
     s3: (context) => (context.canvas.nodes.some((n) => n.name === "n3") ? covered : chain.s3()),
@@ -268,8 +267,8 @@ test("执行者只能改自己这一步的节点;查不过就停在这一步,画
   const session = await sessionWithPlan(executor);
   const run = await session.start();
   assert.equal(run.endedBy, "rejected");
-  assert.deepEqual(run.steps.at(-1).ref, "s2");
-  assert.match(run.steps.at(-1).reasons[0], /标的是 "s1",这一轮做的是 s2/);
+  assert.deepEqual(present(run.steps.at(-1)).ref, "s2");
+  assert.match(present(present(run.steps.at(-1)).reasons?.[0]), /标的是 "s1",这一轮做的是 s2/);
   assert.equal(session.canvas.version, 1);
   assert.equal(session.turn, "user");
 });
@@ -282,8 +281,8 @@ test("一步交回好几个节点却不连在一起:停在这一步,画布不动
   const session = await sessionWithPlan(executor);
   const run = await session.start();
   assert.equal(run.endedBy, "rejected");
-  assert.equal(run.steps.at(-1).ref, "s1");
-  assert.match(run.steps.at(-1).reasons[0], /提取文字层、有文字层？ 没跟其它几个连在一起/);
+  assert.equal(present(run.steps.at(-1)).ref, "s1");
+  assert.match(present(present(run.steps.at(-1)).reasons?.[0]), /提取文字层、有文字层？ 没跟其它几个连在一起/);
   assert.deepEqual(session.canvas.nodes, []);
 });
 
@@ -312,8 +311,8 @@ test("接在上一步后面却不接线:停在这一步,画布不动", async () 
   const session = await sessionWithPlan(executor);
   const run = await session.start();
   assert.equal(run.endedBy, "rejected");
-  assert.equal(run.steps.at(-1).ref, "s3");
-  assert.match(run.steps.at(-1).reasons[0], /s3 接在 s2 后面,却没有一条线从那几步的节点接进来/);
+  assert.equal(present(run.steps.at(-1)).ref, "s3");
+  assert.match(present(present(run.steps.at(-1)).reasons?.[0]), /s3 接在 s2 后面,却没有一条线从那几步的节点接进来/);
   assert.equal(session.canvas.nodes.length, 2);
 });
 
@@ -323,7 +322,7 @@ test("链路的头不查上游:重走 s1 交回一个孤零零的节点是对的
     ...chain,
     s1: () => { version += 1; return patch([node("s1", `n1-v${version}`)]); },
     s2: (context) => patch([node("s2", "n2")],
-      [{ from: context.canvas.nodes.find((n) => n.step === "s1").name, to: "n2" }]),
+      [{ from: present(context.canvas.nodes.find((n) => n.step === "s1")).name, to: "n2" }]),
     s3: (context) => (context.canvas.nodes.some((n) => n.name === "n3") ? covered : chain.s3()),
     s4: (context) => (context.canvas.nodes.some((n) => n.name === "n4") ? covered : chain.s4()),
   });
@@ -354,14 +353,13 @@ test("方案换了版本,再开始走的是新方案的步", async () => {
   const run = await session.start();
   assert.equal(run.revision, 2);
   assert.deepEqual(run.steps.map((s) => s.ref), ["s1", "s2"]);
-  assert.deepEqual(contexts.at(-1).plan.steps.map((s) => s.ref), ["s1", "s2"]);
+  assert.deepEqual(present(contexts.at(-1)).plan.steps.map((s) => s.ref), ["s1", "s2"]);
 });
 
 test("Plan Agent 在跑的时候不能开始、不能批注;停掉的是 Plan Agent", async () => {
-  let release;
-  const gate = new Promise((resolve) => { release = resolve; });
-  const callModel = async (_, { signal } = {}) => {
-    await new Promise((resolve, reject) => {
+  const { promise: gate, resolve: release } = deferred<void>();
+  const callModel = async (_: Message[], { signal }: CallOptions = {}) => {
+    await new Promise<void>((resolve, reject) => {
       gate.then(resolve);
       signal?.addEventListener("abort", () => reject(new DOMException("停了", "AbortError")));
     });
@@ -387,14 +385,14 @@ test("画布闸门里机器能查的几条", () => {
   const s1 = { ref: "s1", dependsOn: [] };
   assert.deepEqual(checkResult(covered, s2, canvas), []);
   assert.deepEqual(checkResult(null, s2, canvas), ["交回的不是一个对象"]);
-  assert.match(checkResult({ kind: "done" }, s2, canvas)[0], /只认 patch 和 covered/);
-  assert.match(checkResult(patch([]), s2, canvas)[0], /没有节点/);
-  assert.match(checkResult(patch([node("s2", "n1")]), s2, canvas)[0], /n1 已被 s1 用了/);
-  assert.match(checkResult(patch([node("s2", "n2"), node("s2", "n2")]), s2, canvas)[0], /n2 重复/);
-  assert.match(checkResult(patch([node("s2", "n2")], [{ from: "n7", to: "n2" }]), s2, canvas)[0], /接了不存在的节点/);
-  assert.match(checkResult(patch([node("s2", "n2")], [{ from: "n2", to: "n2" }]), s2, canvas)[0], /接到了自己/);
+  assert.match(present(checkResult({ kind: "done" }, s2, canvas)[0]), /只认 patch 和 covered/);
+  assert.match(present(checkResult(patch([]), s2, canvas)[0]), /没有节点/);
+  assert.match(present(checkResult(patch([node("s2", "n1")]), s2, canvas)[0]), /n1 已被 s1 用了/);
+  assert.match(present(checkResult(patch([node("s2", "n2"), node("s2", "n2")]), s2, canvas)[0]), /n2 重复/);
+  assert.match(present(checkResult(patch([node("s2", "n2")], [{ from: "n7", to: "n2" }]), s2, canvas)[0]), /接了不存在的节点/);
+  assert.match(present(checkResult(patch([node("s2", "n2")], [{ from: "n2", to: "n2" }]), s2, canvas)[0]), /接到了自己/);
   assert.match(checkResult(patch([node("s2", "n2")], [{ from: "n1", to: "n1" }]), s2, canvas).join(), /两头都不是 s2 的节点|接到了自己/);
-  assert.match(checkResult(patch([{ ...node("s2", "n2"), blanks: [1] }]), s2, canvas)[0], /blanks 不是字符串数组/);
+  assert.match(present(checkResult(patch([{ ...node("s2", "n2"), blanks: [1] }]), s2, canvas)[0]), /blanks 不是字符串数组/);
   /* 同一步自己原来的编号可以再用:原地改 */
   assert.deepEqual(checkResult(patch([node("s1", "n1")]), s1, canvas), []);
 });
@@ -435,9 +433,9 @@ test("接不上:s2 要 Vector 却接在只有 File 的线上,停在 s2,画布不
   const run = await session.start();
   assert.equal(run.endedBy, "rejected");
   assert.deepEqual(run.steps.map((s) => [s.ref, s.outcome]), [["s1", "done"], ["s2", "rejected"]]);
-  assert.deepEqual(run.steps.at(-1).reasons, ["节点 库 要 Vector,接进来的线上只有 File"]);
+  assert.deepEqual(present(run.steps.at(-1)).reasons, ["节点 库 要 Vector,接进来的线上只有 File"]);
   assert.equal(session.canvas.version, 1);
-  assert.deepEqual(breakOf(run, session.currentPlan), { ref: "s2", title: run8.steps[1].title, reasons: ["节点 库 要 Vector,接进来的线上只有 File"] });
+  assert.deepEqual(breakOf(run, session.currentPlan), { ref: "s2", title: present(run8.steps[1]).title, reasons: ["节点 库 要 Vector,接进来的线上只有 File"] });
 });
 
 test("交给设计者:停在哪儿、退了什么,原样作为一句话进设计者的对话;没停就没什么可交的", async () => {
@@ -450,13 +448,13 @@ test("交给设计者:停在哪儿、退了什么,原样作为一句话进设计
   await session2.say("每天定时把新增的合同 PDF 解析出关键字段,写进数据库");
   const run = await session2.start();
   assert.equal(run.endedBy, "rejected");
-  const said = [];
+  const said: string[] = [];
   const turn = await session2.escalate({ onSaid: (text) => said.push(text) });
-  const expected = handoffText(breakOf(run, session2.currentPlan));
+  const expected = handoffText(present(breakOf(run, session2.currentPlan)));
   assert.deepEqual(said, [expected]);
   assert.equal(turn.text, expected);
-  assert.match(expected, new RegExp(`^「${run8.steps[1].title}」（s2）在画布上没搭成，闸门退回：\\n- 节点 n2\\(ocr\\)没有 x 这一格`));
+  assert.match(expected, new RegExp(`^「${present(run8.steps[1]).title}」（s2）在画布上没搭成，闸门退回：\\n- 节点 n2\\(ocr\\)没有 x 这一格`));
   /* 这句话进了设计者的对话记录,跟人自己打的一句一样是 user */
-  assert.equal(session2.transcript.filter((m) => m.role === "user").at(-1).content, expected);
+  assert.equal(present(session2.transcript.filter((m) => m.role === "user").at(-1)).content, expected);
   assert.equal(session2.revision, 2);
 });

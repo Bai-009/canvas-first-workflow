@@ -1,13 +1,19 @@
+import type { TestContext } from "node:test";
+import type { RevisionResult } from "../../shared/contracts.mjs";
+import type { RevisionContext } from "../../shared/workflow.mjs";
+import type { AssistantMessage, ToolCall, Message, CallOptions } from "../../shared/model.mjs";
+import { present, record, list, text as string, jsonObject, revisionNode } from "../helpers/fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createReviser, runRevision, revisionMessage, reviserTools, loadRevisionPrompt } from "../../dist/src/executor/reviser.mjs";
-import { inspectRevision } from "../../dist/src/state-machine/workflow-revision.mjs";
+import { createReviser, runRevision, revisionMessage, reviserTools, loadRevisionPrompt } from "../../src/executor/reviser.mjs";
+import { inspectRevision } from "../../src/state-machine/workflow-revision.mjs";
 
-const node = (name, step, type, params, blanks = []) => ({ name, step, type, params, blanks, note: "已有选择。" });
-const context = () => {
+const runCode = (code: unknown, items: unknown[]): unknown => new Function("items", string(code))(items);
+const node = (name: string, step: string, type: string, params: Record<string, unknown>, blanks: string[] = []) => ({ name, step, type, params, blanks, note: "已有选择。" });
+const context = (): RevisionContext => {
   const steps = [
     { ref: "s1", title: "读文件", intent: "读取合同", input: "目录", output: "文件", dependsOn: [] },
     { ref: "s2", title: "提取文本", intent: "读取文字", input: "文件", output: "文本", dependsOn: ["s1"] },
@@ -38,40 +44,40 @@ const context = () => {
     history: { runs: [{ id: "run-1", status: "finished" }], edits: [{ id: "edit-1", summary: "确认报表精度。" }] },
   };
 };
-const review = (ctx) => ctx.plan.steps.map((step) => ({ step: step.ref, summary: ["s3", "s5"].includes(step.ref) ? "更新金额字段的生产或读取。" : "当前要求不改变本步的数据与连接。" }));
-const patch = (ctx) => ({
+const review = (ctx: RevisionContext) => ctx.plan.steps.map((step) => ({ step: step.ref, summary: ["s3", "s5"].includes(step.ref) ? "更新金额字段的生产或读取。" : "当前要求不改变本步的数据与连接。" }));
+const patch = (ctx: RevisionContext): Extract<RevisionResult, { kind: "patch" }> => ({
   kind: "patch", summary: "S3 改为整数分，S5 读取新字段并转换为元；S4 保持原样。", review: review(ctx),
   upsertNodes: [
-    { ...ctx.canvas.nodes[2], params: { prompt: "抽取以整数分计的 amountCents: {{ input.text }}", outputSchema: { type: "object", properties: { amountCents: { type: "integer" } } } } },
-    { ...ctx.canvas.nodes[4], params: { code: "return items.map(item => ({ ...item, total: (item.amountCents / 100).toFixed(2) }));", outputKind: "JSON" } },
+    { ...revisionNode(ctx.canvas.nodes[2]), params: { prompt: "抽取以整数分计的 amountCents: {{ input.text }}", outputSchema: { type: "object", properties: { amountCents: { type: "integer" } } } } },
+    { ...revisionNode(ctx.canvas.nodes[4]), params: { code: "return items.map(item => ({ ...item, total: (item.amountCents / 100).toFixed(2) }));", outputKind: "JSON" } },
   ],
   removeNodes: [], addEdges: [], removeEdges: [],
 });
-const call = (name, args, id = "r1") => ({ id, type: "function", function: { name, arguments: JSON.stringify(args) } });
-const assistant = (...calls) => ({ role: "assistant", content: null, tool_calls: calls });
-const scripted = (replies) => {
-  const seen = [];
-  const callModel = async (messages, options) => {
+const call = (name: string, args: unknown, id = "r1"): ToolCall => ({ id, type: "function", function: { name, arguments: JSON.stringify(args) } });
+const assistant = (...calls: ToolCall[]): AssistantMessage => ({ role: "assistant", content: null, tool_calls: calls });
+const scripted = (replies: AssistantMessage[]) => {
+  const seen: { messages: Message[]; tools: CallOptions["tools"]; signal: CallOptions["signal"] }[] = [];
+  const callModel = async (messages: Message[], options: CallOptions = {}) => {
     seen.push({ messages: structuredClone(messages), tools: options.tools, signal: options.signal });
     assert.ok(replies.length, "模型剧本不能提前耗尽");
-    return structuredClone(replies.shift());
+    return structuredClone(present(replies.shift()));
   };
   return { callModel, seen };
 };
-const tempSave = (t) => {
+const tempSave = (t: TestContext) => {
   const dir = mkdtempSync(join(tmpdir(), "reviser-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return dir;
 };
-const readJson = (dir, file) => JSON.parse(readFileSync(join(dir, "01", file), "utf8"));
+const readJson = (dir: string, file: string): unknown => JSON.parse(readFileSync(join(dir, "01", file), "utf8"));
 
 test("修订上下文完整序列化:目标是 S3,仍包括所有步骤、最新全图、已有要求和历史", () => {
   const ctx = context();
   const text = revisionMessage(ctx);
-  for (const key of ["plan", "canvas", "target", "instruction", "requirements", "annotations", "history"]) {
+  for (const key of ["plan", "canvas", "target", "instruction", "requirements", "annotations", "history"] as const) {
     const block = text.match(new RegExp(`<${key}>\\n([\\s\\S]*?)\\n</${key}>`));
     assert.ok(block, key);
-    assert.deepEqual(JSON.parse(block[1]), ctx[key]);
+    assert.deepEqual(JSON.parse(present(block[1])), ctx[key]);
   }
 });
 
@@ -91,23 +97,24 @@ test("方案仍写 amount 元时也可按指令改为整数分并连带改 S5,�
   const { callModel, seen } = scripted([assistant(call("submit_revision", wanted))]);
   const out = await runRevision(ctx, { callModel });
   assert.deepEqual(out.result, wanted);
-  assert.deepEqual(out.result.upsertNodes.map((node) => node.step), ["s3", "s5"]);
-  assert.deepEqual(seen[0].tools, reviserTools);
+  assert.equal(out.result.kind, "patch");
+  assert.deepEqual(present(out.result.upsertNodes).map((node) => node.step), ["s3", "s5"]);
+  assert.deepEqual(present(seen[0]).tools, reviserTools);
   assert.deepEqual(ctx, before);
   assert.equal(out.rounds, 1);
   assert.equal(out.timing.status, "accepted");
   assert.ok(out.timing.durationMs >= 0);
   const checked = inspectRevision(out.result, ctx);
   assert.deepEqual(checked.reasons, []);
-  assert.deepEqual(checked.candidate.nodes[0], before.canvas.nodes[0]);
-  assert.deepEqual(checked.candidate.nodes[3], before.canvas.nodes[3]);
+  assert.deepEqual(present(checked.candidate).nodes[0], before.canvas.nodes[0]);
+  assert.deepEqual(present(checked.candidate).nodes[3], before.canvas.nodes[3]);
   assert.deepEqual(ctx.plan, before.plan, "更改中间字段与单位不修改计划结构或旧措辞");
   // 在合成数据上比较最终展示:中间单位可以变,用户要的报表单位和精度保持不变。
-  const previousRows = new Function("items", before.canvas.nodes[4].params.code)([{ amount: 123.45 }]);
-  const revisedRows = new Function("items", checked.candidate.nodes[4].params.code)([{ amountCents: 12345 }]);
-  assert.equal(revisedRows[0].total, previousRows[0].total);
-  assert.equal(revisedRows[0].total, "123.45");
-  assert.deepEqual(JSON.parse(out.messages.at(-1).content), { accepted: true, committed: false, kind: "patch" });
+  const previousRows = runCode(present(before.canvas.nodes[4]).params.code, [{ amount: 123.45 }]);
+  const revisedRows = runCode(present(present(checked.candidate).nodes[4]).params.code, [{ amountCents: 12345 }]);
+  assert.equal(record(list(revisedRows)[0]).total, record(list(previousRows)[0]).total);
+  assert.equal(record(list(revisedRows)[0]).total, "123.45");
+  assert.deepEqual(jsonObject(present(out.messages.at(-1)).content), { accepted: true, committed: false, kind: "patch" });
 });
 
 test("同一闸门退回具体原因,重试仍以原始全图为基础且需覆盖全计划 review", async () => {
@@ -115,7 +122,7 @@ test("同一闸门退回具体原因,重试仍以原始全图为基础且需覆�
   const invalid = patch(ctx);
   invalid.review = invalid.review.slice(0, 3);
   const badSlot = patch(ctx);
-  badSlot.upsertNodes[0].params.temperature = 0.2;
+  present(badSlot.upsertNodes[0]).params.temperature = 0.2;
   const { callModel, seen } = scripted([
     assistant(call("submit_revision", invalid)),
     assistant(call("submit_revision", badSlot, "r2")),
@@ -123,9 +130,9 @@ test("同一闸门退回具体原因,重试仍以原始全图为基础且需覆�
   ]);
   const out = await runRevision(ctx, { callModel });
   assert.equal(out.rounds, 3);
-  assert.match(JSON.parse(seen[1].messages.at(-1).content).rejected.join(";"), /s5/);
-  assert.match(JSON.parse(seen[2].messages.at(-1).content).rejected.join(";"), /temperature/);
-  assert.equal(seen[2].messages[1].content, revisionMessage(ctx));
+  assert.match(list(jsonObject(present(present(seen[1]).messages.at(-1)).content).rejected).join(";"), /s5/);
+  assert.match(list(jsonObject(present(present(seen[2]).messages.at(-1)).content).rejected).join(";"), /temperature/);
+  assert.equal(present(present(seen[2]).messages[1]).content, revisionMessage(ctx));
   assert.equal(ctx.canvas.version, 9);
 });
 
@@ -143,11 +150,11 @@ test("无调用、正文假调用、错工具、坏 JSON、多调用均明确退
   ]);
   const out = await runRevision(ctx, { callModel });
   assert.equal(out.rounds, 6);
-  assert.match(seen[1].messages.at(-1).content, /没有调用工具/);
-  assert.match(seen[2].messages.at(-1).content, /写在正文里.*没有被收到/);
-  assert.match(JSON.parse(seen[3].messages.at(-1).content).error, /unknown tool submit_step/);
-  assert.match(JSON.parse(seen[4].messages.at(-1).content).error, /not valid JSON/);
-  assert.deepEqual(seen[5].messages.slice(-2).map((m) => m.tool_call_id), ["r5", "r6"]);
+  assert.match(string(present(present(seen[1]).messages.at(-1)).content), /没有调用工具/);
+  assert.match(string(present(present(seen[2]).messages.at(-1)).content), /写在正文里.*没有被收到/);
+  assert.match(string(jsonObject(present(present(seen[3]).messages.at(-1)).content).error), /unknown tool submit_step/);
+  assert.match(string(jsonObject(present(present(seen[4]).messages.at(-1)).content).error), /not valid JSON/);
+  assert.deepEqual(present(seen[5]).messages.slice(-2).map((m) => { assert.equal(m.role, "tool"); return m.tool_call_id; }), ["r5", "r6"]);
   assert.equal(out.events.filter((event) => event.kind === "submitted").length, 1);
 });
 
@@ -169,29 +176,30 @@ test("成功实录保留完整上下文、消息、用时;多个请求目录彼�
   const ctx = context();
   const wanted = patch(ctx);
   const { callModel } = scripted([assistant(call("submit_revision", wanted)), assistant(call("submit_revision", wanted))]);
-  const events = [];
+  const events: unknown[] = [];
   const revise = createReviser({ callModel, save, onEvent: (event, on) => events.push([event.kind, on.target, on.requirements]) });
   await revise(ctx);
   await revise(ctx);
   assert.deepEqual(readdirSync(save), ["01", "02"]);
   assert.deepEqual(readJson(save, "context.json"), ctx);
   assert.deepEqual(readJson(save, "submission.json"), wanted);
-  assert.equal(readJson(save, "timing.json").status, "accepted");
-  assert.ok(readJson(save, "timing.json").durationMs >= 0);
+  assert.equal(record(readJson(save, "timing.json")).status, "accepted");
+  assert.ok(Number(record(readJson(save, "timing.json")).durationMs) >= 0);
   assert.deepEqual(events[0], ["submitted", ctx.target, ctx.requirements]);
 });
 
 test("接口错误也保留上下文、消息、错误和用时", async (t) => {
   const save = tempSave(t);
   const revise = createReviser({ save, callModel: async () => { throw new Error("模型接口返回 503"); } });
-  await assert.rejects(revise(context()), (error) => {
-    assert.match(error.message, /503/);
-    assert.equal(error.messages.length, 2);
-    assert.equal(error.timing.status, "failed");
+  await assert.rejects(revise(context()), (error: unknown) => {
+    const details = record(error);
+    assert.match(string(details.message), /503/);
+    assert.equal(list(details.messages).length, 2);
+    assert.equal(record(details.timing).status, "failed");
     return true;
   });
-  assert.equal(readJson(save, "messages.json").length, 2);
-  assert.equal(readJson(save, "timing.json").status, "failed");
+  assert.equal(list(readJson(save, "messages.json")).length, 2);
+  assert.equal(record(readJson(save, "timing.json")).status, "failed");
   assert.match(readFileSync(join(save, "01", "error.txt"), "utf8"), /503/);
 });
 
@@ -199,11 +207,12 @@ test("达到重试上限仍保留具体拒绝原因,没有成功候选", async (
   const ctx = context();
   const invalid = { ...patch(ctx), review: [] };
   const { callModel } = scripted([assistant(call("submit_revision", invalid)), assistant(call("submit_revision", invalid, "r2"))]);
-  await assert.rejects(runRevision(ctx, { callModel, maxRounds: 2 }), (error) => {
-    assert.match(error.message, /来回 2 次.*画布未改变/);
-    assert.equal(error.events.filter((event) => event.kind === "rejected").length, 2);
-    assert.equal(error.timing.rounds, 2);
-    assert.equal(error.timing.status, "failed");
+  await assert.rejects(runRevision(ctx, { callModel, maxRounds: 2 }), (error: unknown) => {
+    const details = record(error);
+    assert.match(string(details.message), /来回 2 次.*画布未改变/);
+    assert.equal(list(details.events).filter((event) => record(event).kind === "rejected").length, 2);
+    assert.equal(record(details.timing).rounds, 2);
+    assert.equal(record(details.timing).status, "failed");
     return true;
   });
 });
@@ -223,9 +232,9 @@ test("模型忽略停止而晚到成功候选,仍拒绝返回并保存停止实�
     callModel: async () => { controller.abort("用户停止"); return assistant(call("submit_revision", patch(ctx))); },
   });
   await assert.rejects(revise(ctx, { signal: controller.signal }), { name: "AbortError" });
-  assert.equal(readJson(save, "messages.json").length, 3);
-  assert.equal(readJson(save, "events.json").some((event) => event.kind === "submitted"), false);
-  assert.equal(readJson(save, "timing.json").status, "stopped");
+  assert.equal(list(readJson(save, "messages.json")).length, 3);
+  assert.equal(list(readJson(save, "events.json")).some((event) => record(event).kind === "submitted"), false);
+  assert.equal(record(readJson(save, "timing.json")).status, "stopped");
   assert.ok(!readdirSync(join(save, "01")).includes("submission.json"));
 });
 
@@ -238,6 +247,6 @@ test("校验后才收到停止也不能返回成功", async () => {
 });
 
 test("默认修订插口延迟读模型配置", async () => {
-  const mod = await import("../../dist/src/executor/reviser.mjs");
+  const mod = await import("../../src/executor/reviser.mjs");
   assert.equal(typeof mod.default, "function");
 });
