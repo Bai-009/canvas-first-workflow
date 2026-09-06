@@ -20,7 +20,9 @@
     "preplan:chat": "npm run build",
     "prevalidate:fixture": "npm run build",
     "preexecutor:step": "npm run build",
-    "contracts": "tsc -p tsconfig.tools.json && node .build-tools/generate-contracts.mjs"
+    "contracts": "tsc -p tsconfig.tools.json && node .build-tools/generate-contracts.mjs",
+    "dump:n8n": "node .build-tools/dump-n8n-nodes.mjs",
+    "predump:n8n": "npm run contracts"
   },
   "engines": {
     "node": ">=22.9"
