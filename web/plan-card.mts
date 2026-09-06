@@ -1,6 +1,6 @@
 import type { ChatLine } from '../shared/http.mjs';
 import type { PlanProposal } from '../shared/contracts.mjs';
-import type { PlanDraft } from '../src/plan/plan-agent.mjs';
+import type { PlanDraft } from '../shared/plan.mjs';
 import { element } from './dom.mjs';
 interface PlanView { task?: string; speech?: string; chat?: ChatLine[]; plan?: PlanProposal | null }
 interface PlanCardOptions { card: HTMLElement; stage: HTMLElement; leftInset?: () => number }

@@ -1,8 +1,8 @@
 import type { Canvas, PlanProposal, NodeDefinition } from '../shared/contracts.mjs';
 import type { ChatLine, SessionListing, SessionSummary, Snapshot, TransportEvent } from '../shared/http.mjs';
 import type { Turn } from '../shared/workflow.mjs';
-import type { PlanDraft } from '../src/plan/plan-agent.mjs';
-import type { PlanDiff } from '../src/plan/plan-diff.mjs';
+import type { PlanDraft } from '../shared/plan.mjs';
+import type { PlanDiff } from '../shared/plan.mjs';
 import { isRecord } from '../shared/json.mjs';
 import { string, integer, optional, array, strings, oneOf, isCanvas, isRun, isEdit, isAnnotation, isStepRecord } from '../shared/workflow-shape.mjs';
 import { KINDS } from './flow.mjs';

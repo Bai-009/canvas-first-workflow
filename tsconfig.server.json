@@ -1,18 +1,17 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": "scripts",
-    "outDir": ".build-tools",
     "types": [
       "node"
     ],
-    "declaration": false,
-    "skipLibCheck": true,
     "lib": [
       "ES2022"
-    ]
+    ],
+    "noEmit": true
   },
   "include": [
-    "scripts/**/*.mts"
+    "src/**/*.mts",
+    "shared/**/*.mts",
+    "fixtures/doubles/**/*.mts"
   ]
 }

@@ -1,3 +1,4 @@
+import type { DraftPlan } from "../../shared/plan.mjs";
 import { isRecord } from "../../shared/json.mjs";
 
 /* 边写边看,就得能读一份还没写完的 JSON。
@@ -47,7 +48,7 @@ export function parsePartial(src: unknown): unknown {
 
 /* 半份方案上,哪些字段现在可以拿来看。写了一半的那一条不算数——
    契约里每一条都得有几样东西齐了才成立,缺的那条先不露面。 */
-export function draftPlan(partial: unknown) {
+export function draftPlan(partial: unknown): DraftPlan | null {
   if (!isRecord(partial)) return null;
   const list = <K extends string>(rows: unknown, need: K[]): (Record<string, unknown> & Record<K, string>)[] =>
     (Array.isArray(rows) ? rows : []).filter((r: unknown): r is Record<string, unknown> & Record<K, string> =>
@@ -61,4 +62,4 @@ export function draftPlan(partial: unknown) {
   };
 }
 
-export type DraftPlan = NonNullable<ReturnType<typeof draftPlan>>;
+export type { DraftPlan } from "../../shared/plan.mjs";
