@@ -159,7 +159,7 @@ EXECUTOR_MODULE=fixtures/doubles/fixed-executor.mjs npm run plan:chat
 node dist/src/plan/validate-plan-proposal.mjs fixtures/observed/run1-合同场景/turn-1.plan.json
 ```
 
-看原型：先运行 `npm run build`，再用任意静态服务器打开 `dist/prototype/index.html`。改了 `fixtures/observed/` 里的修订轮方案之后，重新生成演示数据：
+看原型：先运行 `npm run build`，再双击打开 `dist/prototype/index.html` 就行——演出版不跟主体共用代码，也不需要服务，整个 `dist/prototype/` 文件夹拿走就能演。改了 `fixtures/observed/` 里的修订轮方案之后，重新生成演示数据：
 
 ```bash
 node dist/src/prototype/build-demo-data.mjs
@@ -211,4 +211,4 @@ AGENTS.md    人和 Agent 在这个仓库里怎么协作
 CLAUDE.md    Claude Code 每个会话先读的规矩，指向 AGENTS.md
 ```
 
-预览页也从编译结果加载：`dist/prototype/node-card.html`、`dist/web/node-conversation.preview.html`、`dist/web/sessions.preview.html`。现有 n8n 描述导出工具使用 `npm run dump:n8n -- <已安装的节点包目录> <输出 JSON>`；它只导出描述，不为应用接入 n8n 或执行工作流。
+预览页也从编译结果加载：`dist/prototype/node-card.html` 同样双击可开；`dist/web/node-conversation.preview.html`、`dist/web/sessions.preview.html` 用的是应用自己的模块，要从工作流服务打开。现有 n8n 描述导出工具使用 `npm run dump:n8n -- <已安装的节点包目录> <输出 JSON>`；它只导出描述，不为应用接入 n8n 或执行工作流。

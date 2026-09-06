@@ -26,7 +26,6 @@
     "shared/**/*.mts",
     "src/**/*.mts",
     "web/*.mts",
-    "prototype/*.mts",
     "fixtures/doubles/*.mts",
     "test/**/*.test.mts"
   ],

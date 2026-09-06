@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "legacy",
+    "rootDir": "prototype",
+    "outDir": "dist/prototype",
+    "types": [],
+    "declaration": false,
+    "allowJs": false
+  },
+  "include": [
+    "prototype/*.ts"
+  ],
+  "exclude": []
+}
