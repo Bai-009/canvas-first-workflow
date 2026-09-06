@@ -1,5 +1,5 @@
 import { isRecord } from '../../shared/json.mjs';
-import type { AssistantMessage, ToolCall } from '../../shared/model.mjs';
+import type { AssistantMessage, Message, ToolCall } from '../../shared/model.mjs';
 
 function isToolCall(value: unknown): value is ToolCall {
   return isRecord(value) && typeof value.id === 'string' && value.type === 'function'
@@ -11,6 +11,13 @@ function isAssistant(value: unknown): value is AssistantMessage {
   return isRecord(value) && value.role === 'assistant'
     && (value.content == null || typeof value.content === 'string')
     && (value.tool_calls == null || (Array.isArray(value.tool_calls) && value.tool_calls.every(isToolCall)));
+}
+
+export function isMessage(value: unknown): value is Message {
+  if (isAssistant(value)) return true;
+  if (!isRecord(value) || typeof value.content !== 'string') return false;
+  return value.role === 'user' || value.role === 'system'
+    || (value.role === 'tool' && typeof value.tool_call_id === 'string');
 }
 
 export function assistantFromResponse(value: unknown): AssistantMessage {

@@ -1,7 +1,13 @@
+import type { Canvas, PlanProposal, StepContext } from '../../shared/contracts.mjs';
+import type { AgentEvent, Executor, Run, StepRecord } from '../../shared/workflow.mjs';
+import type { WorkflowSession } from '../state-machine/workflow-session.mjs';
+import type { PlanDiff } from '../plan/plan-diff.mjs';
+import { isRecord } from '../../shared/json.mjs';
+import { errorMessage, errorName } from '../../shared/errors.mjs';
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { callerFromEnv, loadSystemPrompt } from "../plan/plan-agent.mjs";
 import { createWorkflowSession } from "../state-machine/workflow-session.mjs";
@@ -18,16 +24,16 @@ import { resolveRuntimeModule } from "../runtime-paths.mjs";
    执行者每一步自己的对话记录存在 <目录>/executor/ 下(EXECUTOR_SAVE 没另设的话)。
    --lang en 用英文提示词。 */
 
-function parseArgs(argv) {
-  const args = { save: null, lang: process.env.PLAN_PROMPT_LANG || "zh" };
+function parseArgs(argv: string[]) {
+  const args: { save?: string | undefined; lang: string } = { lang: process.env.PLAN_PROMPT_LANG || "zh" };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--save") args.save = argv[++i];
-    else if (argv[i] === "--lang") args.lang = argv[++i];
+    else if (argv[i] === "--lang") args.lang = argv[++i] ?? "zh";
   }
   return args;
 }
 
-function mark(diff, section, ref) {
+function mark(diff: PlanDiff | null, section: keyof PlanDiff, ref: string) {
   if (!diff) return "";
   const d = diff[section];
   if (d.added.includes(ref)) return "  ← 新增";
@@ -35,7 +41,7 @@ function mark(diff, section, ref) {
   return "";
 }
 
-function render(plan, diff, revision) {
+function render(plan: PlanProposal, diff: PlanDiff | null, revision: number) {
   const open = plan.openQuestions.length;
   const lines = [
     `方案 v${revision} · ${plan.readiness} · ${plan.steps.length} 步 · ${open ? `${open} 项待确认` : "待确认已清"}`,
@@ -70,24 +76,24 @@ function render(plan, diff, revision) {
   return lines.join("\n");
 }
 
-const OUTCOME = {
-  done: (s) => `做完 → 画布 v${s.canvasVersion} · 节点 ${s.nodes.join("、")}`,
+const OUTCOME: Record<StepRecord["outcome"], (step: StepRecord) => string> = {
+  done: (s) => `做完 → 画布 v${s.canvasVersion} · 节点 ${(s.nodes ?? []).join("、")}`,
   covered: (s) => `已经有了 · 画布还是 v${s.canvasVersion}`,
   stopped: (s) => `停了,这一步作废 · 画布停在 v${s.canvasVersion}`,
-  rejected: (s) => `没收,停在这一步 · ${s.reasons.join(";")}`,
+  rejected: (s) => `没收,停在这一步 · ${(s.reasons ?? []).join(";")}`,
   failed: (s) => `出错,停在这一步 · ${s.error}`,
 };
-const ENDED = {
+const ENDED: Partial<Record<NonNullable<Run["endedBy"]>, string>> = {
   finished: "跑完,轮到你",
   stopped: "被你停了,轮到你",
   rejected: "执行者交的东西查不过,轮到你",
   error: "执行者出错,轮到你",
 };
 
-function renderRun(run, index) {
+function renderRun(run: Run, index: number) {
   const lines = [`第 ${index} 次走步 · 按的是方案 v${run.revision}`];
   for (const s of run.steps) lines.push(`  ${s.ref.padEnd(4)}${OUTCOME[s.outcome](s)}`);
-  lines.push(`  ${ENDED[run.endedBy]}`);
+  lines.push(`  ${run.endedBy ? ENDED[run.endedBy] : undefined}`);
   if (run.endedBy === "finished") {
     lines.push(
       run.problems.length
@@ -98,7 +104,7 @@ function renderRun(run, index) {
   return lines.join("\n");
 }
 
-function renderCanvas(canvas) {
+function renderCanvas(canvas: Canvas) {
   if (canvas.nodes.length === 0) return `画布 v${canvas.version} · 空的`;
   const lines = [`画布 v${canvas.version} · ${canvas.nodes.length} 个节点 · ${canvas.edges.length} 条线`];
   for (const n of canvas.nodes) {
@@ -110,7 +116,7 @@ function renderCanvas(canvas) {
   return lines.join("\n");
 }
 
-function save(dir, session, turnNumber, turn) {
+function save(dir: string, session: WorkflowSession, turnNumber: number, turn: { plan: PlanProposal | null; speech: string }) {
   writeFileSync(join(dir, "transcript.json"), `${JSON.stringify(session.transcript, null, 2)}\n`);
   if (turn.plan) {
     writeFileSync(join(dir, `turn-${turnNumber}.plan.json`), `${JSON.stringify(turn.plan, null, 2)}\n`);
@@ -118,25 +124,26 @@ function save(dir, session, turnNumber, turn) {
   if (turn.speech) writeFileSync(join(dir, `turn-${turnNumber}.speech.txt`), `${turn.speech}\n`);
 }
 
-function saveRun(dir, session, run, index) {
+function saveRun(dir: string, session: WorkflowSession, run: Run, index: number) {
   writeFileSync(join(dir, `run-${index}.json`), `${JSON.stringify(run, null, 2)}\n`);
   writeFileSync(join(dir, "canvas.json"), `${JSON.stringify(session.canvas, null, 2)}\n`);
   writeFileSync(join(dir, "annotations.json"), `${JSON.stringify(session.annotations, null, 2)}\n`);
 }
 
-const printEvent = (event, context) => console.log(`  [${context.step.ref} ${event.round}] ${describe(event)}`);
+const printEvent = (event: AgentEvent, context: StepContext) => console.log(`  [${context.step.ref} ${event.round}] ${describe(event)}`);
 
-async function loadExecutor(env = process.env) {
+async function loadExecutor(env = process.env): Promise<{ executor: Executor | null; label: string | null }> {
   if (!env.EXECUTOR_MODULE) return { executor: null, label: null };
   const url = pathToFileURL(resolveRuntimeModule(env.EXECUTOR_MODULE)).href;
-  const mod = await import(url);
-  if (typeof mod.default !== "function") throw new Error(`${env.EXECUTOR_MODULE} 没有默认导出一个函数`);
-  return { executor: mod.default, label: env.EXECUTOR_MODULE };
+  const mod: unknown = await import(url);
+  if (!isRecord(mod) || typeof mod.default !== "function") throw new Error(`${env.EXECUTOR_MODULE} 没有默认导出一个函数`);
+  const call = mod.default;
+  return { executor: async (context, options) => call(context, options), label: env.EXECUTOR_MODULE };
 }
 
 /* 终端里一问一答;管道进来的(比如脚本喂几行)先整个读完再逐行跑,
    否则模型在推的时候到达的那几行没人接,会被 readline 丢掉。 */
-async function* lines(rl) {
+async function* lines(rl: readline.Interface) {
   if (input.isTTY) {
     for (;;) {
       try {
@@ -146,7 +153,7 @@ async function* lines(rl) {
       }
     }
   }
-  const queued = [];
+  const queued: string[] = [];
   for await (const line of rl) queued.push(line);
   for (const line of queued) {
     output.write(`\n你:${line}\n`);
@@ -173,13 +180,14 @@ async function main() {
     callModel = callerFromEnv();
     plug = await loadExecutor();
   } catch (error) {
-    console.error(error.message);
+    console.error(errorMessage(error));
     process.exitCode = 2;
     return;
   }
+  const executor = plug.executor;
   const session = createWorkflowSession({
     callModel,
-    executor: plug.executor && ((context, options) => plug.executor(context, { ...options, onEvent: printEvent })),
+    executor: executor && ((context, options) => executor(context, { ...options, onEvent: printEvent })),
     systemPrompt: loadSystemPrompt(args.lang),
   });
   if (args.save) mkdirSync(args.save, { recursive: true });
@@ -224,10 +232,10 @@ async function main() {
     if (text.startsWith("/note")) {
       const [, step, ...rest] = text.split(/\s+/);
       try {
-        const notes = session.annotate(step, rest.join(" "));
+        const notes = session.annotate(step ?? "", rest.join(" "));
         console.log(`批注挂在 ${step} 上了。现在挂着的:\n${notes.map((n) => `  ${n.step}  ${n.text}`).join("\n")}`);
       } catch (error) {
-        console.error(error.message);
+        console.error(errorMessage(error));
       }
       continue;
     }
@@ -237,7 +245,7 @@ async function main() {
       try {
         run = await session.start();
       } catch (error) {
-        console.error(error.message);
+        console.error(errorMessage(error));
         continue;
       }
       runNumber += 1;
@@ -258,7 +266,7 @@ async function main() {
     try {
       turn = await (handoff ? session.escalate({ onSaid: (said) => output.write(`${said}\n`) }) : session.say(text));
     } catch (error) {
-      if (error.name !== "AbortError") console.error(`这轮失败:${error.message}`);
+      if (errorName(error) !== "AbortError") console.error(`这轮失败:${errorMessage(error)}`);
       if (args.save) save(args.save, session, turnNumber, { speech: "", plan: null });
       continue;
     }
