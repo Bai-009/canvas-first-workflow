@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="960" viewBox="0 0 1520 960" role="img" aria-labelledby="title desc">
+<title id="title">CanvasFlow architecture</title><desc id="desc">The browser canvas sends global and node-local requests to the state machine. The state machine assembles context for planning or execution agents. Each agent submits to a validator; rejected proposals return to the agent. Accepted results return to the state machine, which commits them and sends updates to the canvas. Session storage preserves committed state. Agents call an external model API; data processing nodes are not executed in this demo.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1 L8 5 L2 9" fill="none" stroke="#3872a5" stroke-width="1.3"/></marker><pattern id="paper" width="9" height="9" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r=".5" fill="#928b7e" opacity=".05"/><circle cx="6" cy="7" r=".4" fill="#fff" opacity=".65"/></pattern></defs>
+<rect width="1520" height="960" fill="#f5f3ed"/><rect width="1520" height="960" fill="url(#paper)"/>
+<text x="70" y="64" font-family="PingFang SC" font-size="12" font-weight="normal" fill="#68665f" letter-spacing="2">CANVASFLOW  /  系统笔记</text>
+<text x="70" y="129" font-family="Songti SC" font-size="45" font-weight="normal" fill="#262824">画布背后的架构</text>
+<text x="70" y="168" font-family="PingFang SC" font-size="18" font-weight="normal" fill="#68665f">让意图、行动与下一轮交流，在同一张画布上发生。</text>
+<path d="M70 207 h1380" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="70" y="250" font-family="PingFang SC" font-size="12" font-weight="normal" fill="#68665f" letter-spacing="1.5">01   浏览器</text>
+<text x="550" y="250" font-family="PingFang SC" font-size="12" font-weight="normal" fill="#68665f" letter-spacing="1.5">02   调度与状态 · NODE.JS</text>
+<text x="1030" y="250" font-family="PingFang SC" font-size="12" font-weight="normal" fill="#68665f" letter-spacing="1.5">03   AGENT 与校验</text>
+<rect x="70" y="294" width="320" height="410" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="70" y="290" width="320" height="410" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="99" y="337" font-family="Songti SC" font-size="27" font-weight="normal" fill="#262824">画布与交流</text>
+<text x="99" y="372" font-family="PingFang SC" font-size="16" font-weight="normal" fill="#68665f">全局输入，讨论整条方案。</text>
+<text x="99" y="400" font-family="PingFang SC" font-size="16" font-weight="normal" fill="#68665f">节点输入，发起工作流修订。</text>
+<path d="M135 475 H195 Q205 475 205 485 V508 Q205 518 215 518 H287" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="99" y="448" width="66" height="56" rx="9" fill="#fffefa" stroke="#c8d4dc"/>
+<circle cx="114" cy="463" r="3" fill="#3872a5"/>
+<path d="M111 481 h40" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="258" y="492" width="66" height="56" rx="9" fill="#fffefa" stroke="#c8d4dc"/>
+<circle cx="273" cy="507" r="3" fill="#3872a5"/>
+<path d="M270 525 h40" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M99 584 h262" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="99" y="618" font-family="PingFang SC" font-size="16" font-weight="normal" fill="#343630">进度、结果与待确认的问题，</text>
+<text x="99" y="645" font-family="PingFang SC" font-size="16" font-weight="normal" fill="#343630">留在相关的工作位置。</text>
+<rect x="550" y="294" width="310" height="330" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="550" y="290" width="310" height="330" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="579" y="337" font-family="Songti SC" font-size="29" font-weight="normal" fill="#262824">状态机</text>
+<text x="579" y="378" font-family="PingFang SC" font-size="17" font-weight="normal" fill="#343630">组装上下文</text>
+<text x="579" y="408" font-family="PingFang SC" font-size="15" font-weight="normal" fill="#68665f">管理回合、执行权与取消</text>
+<path d="M579 435 h252" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="579" y="468" font-family="PingFang SC" font-size="16" font-weight="normal" fill="#68665f">按依赖分批构建</text>
+<text x="579" y="498" font-family="PingFang SC" font-size="16" font-weight="normal" fill="#68665f">以完整工作流审视修订</text>
+<path d="M579 525 h252" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="579" y="566" font-family="PingFang SC" font-size="17" font-weight="normal" fill="#343630">提交通过校验的改动</text>
+<text x="579" y="593" font-family="PingFang SC" font-size="15" font-weight="normal" fill="#68665f">将更新传回画布</text>
+<rect x="1030" y="294" width="340" height="150" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="1030" y="290" width="340" height="150" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="1058" y="329" font-family="Songti SC" font-size="27" font-weight="normal" fill="#262824">规划 Agent</text>
+<text x="1058" y="359" font-family="PingFang SC" font-size="15" font-weight="normal" fill="#68665f">梳理需求，形成完整方案</text>
+<path d="M1058 378 h284" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1062" cy="408" r="3" fill="#3872a5"/>
+<text x="1075" y="414" font-family="PingFang SC" font-size="16" font-weight="normal" fill="#343630">方案校验</text>
+<text x="1312" y="413" font-family="PingFang SC" font-size="10" font-weight="normal" fill="#68665f" letter-spacing=".7">程序</text>
+<path d="M1370 408 H1400 Q1412 408 1412 396 V331 Q1412 319 1400 319 H1373" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 6" marker-end="url(#arrow)"/>
+<rect x="1030" y="484" width="340" height="150" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="1030" y="480" width="340" height="150" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="1058" y="519" font-family="Songti SC" font-size="27" font-weight="normal" fill="#262824">执行 Agent</text>
+<text x="1058" y="549" font-family="PingFang SC" font-size="15" font-weight="normal" fill="#68665f">构建步骤 · 修订整条工作流</text>
+<path d="M1058 568 h284" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1062" cy="598" r="3" fill="#3872a5"/>
+<text x="1075" y="604" font-family="PingFang SC" font-size="16" font-weight="normal" fill="#343630">画布与修订校验</text>
+<text x="1312" y="603" font-family="PingFang SC" font-size="10" font-weight="normal" fill="#68665f" letter-spacing=".7">程序</text>
+<path d="M1370 598 H1400 Q1412 598 1412 586 V521 Q1412 509 1400 509 H1373" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 6" marker-end="url(#arrow)"/>
+<text x="1390" y="463" font-family="PingFang SC" font-size="12" font-weight="normal" fill="#68665f">重试</text>
+<text x="1390" y="653" font-family="PingFang SC" font-size="12" font-weight="normal" fill="#68665f">重试</text>
+<path d="M390 365 H550" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="411" y="350" font-family="PingFang SC" font-size="14" font-weight="normal" fill="#68665f">用户要求</text>
+<path d="M550 578 H475 Q459 578 459 594 V650 Q459 666 443 666 H392" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="402" y="694" font-family="PingFang SC" font-size="14" font-weight="normal" fill="#68665f">状态与结果</text>
+<path d="M860 320 H1030" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="884" y="307" font-family="PingFang SC" font-size="13" font-weight="normal" fill="#68665f">对话上下文</text>
+<path d="M1030 408 H860" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="884" y="396" font-family="PingFang SC" font-size="13" font-weight="normal" fill="#68665f">已通过的方案</text>
+<path d="M860 497 H1030" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="876" y="481" font-family="PingFang SC" font-size="13" font-weight="normal" fill="#68665f">任务上下文</text>
+<path d="M1030 598 H860" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="880" y="585" font-family="PingFang SC" font-size="13" font-weight="normal" fill="#68665f">已通过的结果</text>
+<rect x="550" y="731" width="310" height="99" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="550" y="727" width="310" height="99" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="579" y="766" font-family="Songti SC" font-size="24" font-weight="normal" fill="#262824">会话存储</text>
+<text x="579" y="797" font-family="PingFang SC" font-size="14" font-weight="normal" fill="#68665f">方案 · 画布 · 对话 · 历史记录</text>
+<path d="M705 620 V727" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M701 627 L705 621 L709 627" fill="none" stroke="#3872a5" stroke-width="1.4"/>
+<text x="722" y="680" font-family="PingFang SC" font-size="13" font-weight="normal" fill="#68665f">保存与恢复</text>
+<text x="1030" y="687" font-family="PingFang SC" font-size="11" font-weight="normal" fill="#68665f" letter-spacing="1.2">整条工作流的修订</text>
+<text x="1030" y="717" font-family="PingFang SC" font-size="14" font-weight="normal" fill="#68665f">完整方案、画布、要求与相关历史</text>
+<text x="1030" y="743" font-family="PingFang SC" font-size="14" font-weight="normal" fill="#68665f">只改必要部分，一次性提交。</text>
+<text x="1030" y="794" font-family="PingFang SC" font-size="14" font-weight="normal" fill="#68665f">两个 Agent 均调用外部模型服务。</text>
+<text x="1030" y="818" font-family="PingFang SC" font-size="14" font-weight="normal" fill="#68665f">执行 Agent 从节点目录中选择能力。</text>
+<path d="M70 869 h1380" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="70" y="909" font-family="Songti SC" font-size="17" font-weight="normal" fill="#343630">模型提出方案，程序校验与提交，你决定下一步。</text>
+<text x="70" y="937" font-family="PingFang SC" font-size="13" font-weight="normal" fill="#68665f">当前 Demo 实现工作流生成与修订；真实数据处理有待接入可执行节点能力。</text>
+</svg>

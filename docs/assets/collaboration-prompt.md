@@ -1,0 +1,12 @@
+# 当前宣传图编辑提示词
+
+输入参考：[纸面版本](canvasflow-hero.png)。输出：[当前宣传图](canvasflow-collaboration.png)。使用内置 image_gen 工具。
+
+```text
+Use case: ads-marketing, editing an existing conceptual product banner.
+Edit the attached CanvasFlow image. Preserve the refined photographic paper-maquette aesthetic, pale matte tabletop, tactile thin ivory sheets, cobalt-blue connective line, precise shadows, the CanvasFlow wordmark and its three small squares. Preserve the wide 2:1 composition and high quality. This is conceptual art, not a real application screenshot.
+Mandatory: completely remove the tagline "让想法，在画布上生长。" and leave no substitute slogan. Keep "CanvasFlow" as the only headline.
+Make the image portray an ONGOING collaboration with an AI agent through a data workflow. The main foreground card becomes the clear focal point: slightly larger and facing the viewer more directly for legibility. Give this card the small title "切分". Inside this card, place a clean restrained blue user input with exact text "跨页表格不要切断". Directly beneath, an understated agent status line with a tiny amber activity dot and exact text "正在调整切分策略". These two elements belong visibly INSIDE the workflow card, not in a separate chat window. Make the typography natural Chinese sans serif, clearly legible at banner size, with generous spacing. Include a tiny insertion caret in the input to signal active participation. Do not draw any browser frame, mouse cursor, hand, or robot.
+The earlier left paper strip should still unfold from linear conversation into spatial nodes. One upstream paper card has the small title "解析". One downstream card has the small title "向量化", a lighter unfinished appearance and a short faint dashed connection. Show a precise thin blue accent tracing the active card and its outgoing connection, creating a sense of a revision propagating. No glowing effects or bright borders. The visual sequence is: something exists, the user intervenes at a specific node, the system is responding, the workflow is still taking shape.
+Simplify any unnecessary decorative small cards if needed so the central local interaction is the main subject. Keep the attractive asymmetry and sophisticated paper depth. Do not introduce any additional readable text, marketing claims, AI-ready slogans, flags, badges, or timelines. Do not turn the image into a generic flowchart. The text must be exact, with no garbled Chinese. Preserve the original distinctive craft and brand feel.
+```

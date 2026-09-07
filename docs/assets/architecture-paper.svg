@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1520" height="960" viewBox="0 0 1520 960" role="img" aria-labelledby="title desc">
+<title id="title">CanvasFlow architecture</title><desc id="desc">The browser canvas sends global and node-local requests to the state machine. The state machine assembles context for planning or execution agents. Each agent submits to a validator; rejected proposals return to the agent. Accepted results return to the state machine, which commits them and sends updates to the canvas. Session storage preserves committed state. Agents call an external model API; data processing nodes are not executed in this demo.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1 L8 5 L2 9" fill="none" stroke="#3872a5" stroke-width="1.3"/></marker><pattern id="paper" width="9" height="9" patternUnits="userSpaceOnUse"><circle cx="1" cy="2" r=".5" fill="#928b7e" opacity=".05"/><circle cx="6" cy="7" r=".4" fill="#fff" opacity=".65"/></pattern></defs>
+<rect width="1520" height="960" fill="#f5f3ed"/><rect width="1520" height="960" fill="url(#paper)"/>
+<text x="70" y="64" font-family="Avenir Next" font-size="12" font-weight="normal" fill="#68665f" letter-spacing="2">CANVASFLOW  /  SYSTEM NOTES</text>
+<text x="70" y="129" font-family="Baskerville" font-size="45" font-weight="normal" fill="#262824">The architecture behind the canvas</text>
+<text x="70" y="168" font-family="Avenir Next" font-size="18" font-weight="normal" fill="#68665f">A shared surface for intent, action, and the next conversation.</text>
+<path d="M70 207 h1380" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="70" y="250" font-family="Avenir Next" font-size="12" font-weight="normal" fill="#68665f" letter-spacing="1.5">01   BROWSER</text>
+<text x="550" y="250" font-family="Avenir Next" font-size="12" font-weight="normal" fill="#68665f" letter-spacing="1.5">02   ORCHESTRATION · NODE.JS</text>
+<text x="1030" y="250" font-family="Avenir Next" font-size="12" font-weight="normal" fill="#68665f" letter-spacing="1.5">03   AGENTS &amp; VALIDATION</text>
+<rect x="70" y="294" width="320" height="410" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="70" y="290" width="320" height="410" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="99" y="337" font-family="Baskerville" font-size="27" font-weight="normal" fill="#262824">Canvas &amp; conversation</text>
+<text x="99" y="372" font-family="Avenir Next" font-size="16" font-weight="normal" fill="#68665f">Global input shapes the plan.</text>
+<text x="99" y="400" font-family="Avenir Next" font-size="16" font-weight="normal" fill="#68665f">Node input starts a revision.</text>
+<path d="M135 475 H195 Q205 475 205 485 V508 Q205 518 215 518 H287" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="99" y="448" width="66" height="56" rx="9" fill="#fffefa" stroke="#c8d4dc"/>
+<circle cx="114" cy="463" r="3" fill="#3872a5"/>
+<path d="M111 481 h40" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="258" y="492" width="66" height="56" rx="9" fill="#fffefa" stroke="#c8d4dc"/>
+<circle cx="273" cy="507" r="3" fill="#3872a5"/>
+<path d="M270 525 h40" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M99 584 h262" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="99" y="618" font-family="Avenir Next" font-size="16" font-weight="normal" fill="#343630">Progress, results, questions</text>
+<text x="99" y="645" font-family="Avenir Next" font-size="16" font-weight="normal" fill="#343630">stay close to the work.</text>
+<rect x="550" y="294" width="310" height="330" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="550" y="290" width="310" height="330" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="579" y="337" font-family="Baskerville" font-size="29" font-weight="normal" fill="#262824">State machine</text>
+<text x="579" y="378" font-family="Avenir Next" font-size="17" font-weight="normal" fill="#343630">Assemble context</text>
+<text x="579" y="408" font-family="Avenir Next" font-size="15" font-weight="normal" fill="#68665f">Coordinate turns &amp; cancellation</text>
+<path d="M579 435 h252" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="579" y="468" font-family="Avenir Next" font-size="16" font-weight="normal" fill="#68665f">Build in dependency waves</text>
+<text x="579" y="498" font-family="Avenir Next" font-size="16" font-weight="normal" fill="#68665f">Review revisions as a whole</text>
+<path d="M579 525 h252" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="579" y="566" font-family="Avenir Next" font-size="17" font-weight="normal" fill="#343630">Commit accepted changes</text>
+<text x="579" y="593" font-family="Avenir Next" font-size="15" font-weight="normal" fill="#68665f">Publish updates to the canvas</text>
+<rect x="1030" y="294" width="340" height="150" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="1030" y="290" width="340" height="150" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="1058" y="329" font-family="Baskerville" font-size="27" font-weight="normal" fill="#262824">Plan Agent</text>
+<text x="1058" y="359" font-family="Avenir Next" font-size="15" font-weight="normal" fill="#68665f">Shape a complete plan</text>
+<path d="M1058 378 h284" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1062" cy="408" r="3" fill="#3872a5"/>
+<text x="1075" y="414" font-family="Avenir Next" font-size="16" font-weight="normal" fill="#343630">Plan gate</text>
+<text x="1312" y="413" font-family="Avenir Next" font-size="10" font-weight="normal" fill="#68665f" letter-spacing=".7">CODE</text>
+<path d="M1370 408 H1400 Q1412 408 1412 396 V331 Q1412 319 1400 319 H1373" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 6" marker-end="url(#arrow)"/>
+<rect x="1030" y="484" width="340" height="150" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="1030" y="480" width="340" height="150" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="1058" y="519" font-family="Baskerville" font-size="27" font-weight="normal" fill="#262824">Execution Agent</text>
+<text x="1058" y="549" font-family="Avenir Next" font-size="15" font-weight="normal" fill="#68665f">Build steps · revise the workflow</text>
+<path d="M1058 568 h284" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="1062" cy="598" r="3" fill="#3872a5"/>
+<text x="1075" y="604" font-family="Avenir Next" font-size="16" font-weight="normal" fill="#343630">Canvas / revision gate</text>
+<text x="1312" y="603" font-family="Avenir Next" font-size="10" font-weight="normal" fill="#68665f" letter-spacing=".7">CODE</text>
+<path d="M1370 598 H1400 Q1412 598 1412 586 V521 Q1412 509 1400 509 H1373" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 6" marker-end="url(#arrow)"/>
+<text x="1390" y="463" font-family="Avenir Next" font-size="12" font-weight="normal" fill="#68665f">retry</text>
+<text x="1390" y="653" font-family="Avenir Next" font-size="12" font-weight="normal" fill="#68665f">retry</text>
+<path d="M390 365 H550" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="411" y="350" font-family="Avenir Next" font-size="14" font-weight="normal" fill="#68665f">requests</text>
+<path d="M550 578 H475 Q459 578 459 594 V650 Q459 666 443 666 H392" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="402" y="694" font-family="Avenir Next" font-size="14" font-weight="normal" fill="#68665f">updates</text>
+<path d="M860 320 H1030" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="884" y="307" font-family="Avenir Next" font-size="13" font-weight="normal" fill="#68665f">conversation</text>
+<path d="M1030 408 H860" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="884" y="396" font-family="Avenir Next" font-size="13" font-weight="normal" fill="#68665f">accepted plan</text>
+<path d="M860 497 H1030" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="876" y="481" font-family="Avenir Next" font-size="13" font-weight="normal" fill="#68665f">task context</text>
+<path d="M1030 598 H860" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="880" y="585" font-family="Avenir Next" font-size="13" font-weight="normal" fill="#68665f">accepted result</text>
+<rect x="550" y="731" width="310" height="99" rx="15" fill="#dedbd3" opacity=".30"/>
+<rect x="550" y="727" width="310" height="99" rx="15" fill="#fcfbf7" stroke="#dcd8ce"/>
+<text x="579" y="766" font-family="Baskerville" font-size="24" font-weight="normal" fill="#262824">Session store</text>
+<text x="579" y="797" font-family="Avenir Next" font-size="14" font-weight="normal" fill="#68665f">Plan · canvas · conversation · history</text>
+<path d="M705 620 V727" fill="none" stroke="#3872a5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M701 627 L705 621 L709 627" fill="none" stroke="#3872a5" stroke-width="1.4"/>
+<text x="722" y="680" font-family="Avenir Next" font-size="13" font-weight="normal" fill="#68665f">save / restore</text>
+<text x="1030" y="687" font-family="Avenir Next" font-size="11" font-weight="normal" fill="#68665f" letter-spacing="1.2">WHOLE-WORKFLOW REVISION</text>
+<text x="1030" y="717" font-family="Avenir Next" font-size="14" font-weight="normal" fill="#68665f">Plan + canvas + request + relevant history</text>
+<text x="1030" y="743" font-family="Avenir Next" font-size="14" font-weight="normal" fill="#68665f">Necessary changes, one atomic commit.</text>
+<text x="1030" y="794" font-family="Avenir Next" font-size="14" font-weight="normal" fill="#68665f">Both agents use an external Model API.</text>
+<text x="1030" y="818" font-family="Avenir Next" font-size="14" font-weight="normal" fill="#68665f">Execution selects from the node catalog.</text>
+<path d="M70 869 h1380" fill="none" stroke="#e3dfd5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="70" y="909" font-family="Baskerville" font-size="17" font-weight="normal" fill="#343630">Models propose. Code validates and commits. You direct the next move.</text>
+<text x="70" y="937" font-family="Avenir Next" font-size="13" font-weight="normal" fill="#68665f">Current demo: workflow generation and revision. Real data processing awaits executable node integrations.</text>
+</svg>
