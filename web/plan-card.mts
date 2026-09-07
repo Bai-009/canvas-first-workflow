@@ -256,6 +256,9 @@ export function createPlanCard({ card, stage, leftInset = () => 0 }: PlanCardOpt
       /* 按下发送这句话就上墙。模型要想三十秒,不能让它先消失三十秒。 */
       thread = [...thread, { who: "user", text }];
       paintChat();
+      /* 刚说的这句是从下面的框飞上来的,得落一下,不能凭空出现。
+         用卡片其他段落同一个落法,一张卡上不出现第二种动。 */
+      chatBox().lastElementChild?.classList.add("drop");
       followChat();
       go.hidden = true;
       close.hidden = true;

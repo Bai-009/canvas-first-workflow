@@ -18,6 +18,8 @@
     --tile:176px;
     --spring:cubic-bezier(.22,1.28,.32,1);
     --ease-out:cubic-bezier(.16,1,.3,1);
+    /* 发出去的那一下:字先淡掉,再收框。两个输入框、样式和代码,都读这两个数。 */
+    --send-fade:130ms; --send-close:260ms;
     --accent:#2f6fed;
   }
   *{box-sizing:border-box}
@@ -156,6 +158,8 @@
   .node.measuring .card-detail{height:auto;max-height:var(--node-room-height)}
   @media(prefers-reduced-motion:reduce){
     .world.gliding,.node.morph .card,.card-mini,.node.open .card-mini,.card-detail,.node.open .card-detail{transition:none}
+    .grow > textarea,.grow.closing{transition:none}
+    .drop{animation:none}
   }
   .mini-evi.revision-evi{color:var(--ink-2);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
   .node [data-key]:disabled{cursor:not-allowed;opacity:.55}
@@ -419,7 +423,13 @@
      封顶两边都要写:只封外面那层,输入框还是照长,长出去的部分被裁掉,光标就跑到看不见的地方。 */
   .grow > textarea,.grow::after{grid-area:1/1;box-sizing:border-box;min-height:32px;max-height:164px;
     padding:5px 0;border:0;margin:0;font:inherit;font-size:14.5px;line-height:22px;color:var(--ink)}
-  .grow > textarea{outline:none;background:transparent;resize:none;overflow-y:auto}
+  .grow > textarea{outline:none;background:transparent;resize:none;overflow-y:auto;
+    transition:opacity var(--send-fade) ease,transform var(--send-fade) var(--ease-out)}
+  /* 发出去的那一下不能是「凭空没了」:字先往上抬一点淡掉——往上,因为它是去上面那张卡的;
+     字走干净了框才收回一行,两件事排队发生,不叠在一起闪。
+     收的时候高度临时写死一下,只活到过渡结束;这一格平时的高度还是替身撑的。 */
+  .grow.sending > textarea{opacity:0;transform:translateY(-6px)}
+  .grow.closing{transition:height var(--send-close) var(--ease-out)}
   .bar textarea::placeholder{color:var(--ink-3)}
   /* 没字可发的时候按钮不该是一坨灰饼:只留一个箭头,有字了才实心。 */
   .bar button{width:32px;height:32px;flex:0 0 auto;display:grid;place-items:center;border:0;

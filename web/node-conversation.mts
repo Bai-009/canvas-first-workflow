@@ -1,6 +1,8 @@
 import type { Edit } from '../shared/workflow.mjs';
 import { errorMessage } from '../shared/errors.mjs';
-import { element } from './dom.mjs';
+import { element, motionMs } from './dom.mjs';
+
+const wait = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 export type EditView = Pick<Edit, 'status'> & Partial<Pick<Edit, 'id' | 'text' | 'summary' | 'error' | 'reasons' | 'changes' | 'review'>>;
 interface TargetNode { name: string; step: string }
 interface ConversationState<N> { node: N; edits: EditView[]; busy: boolean; blockedReason: string }
@@ -57,7 +59,7 @@ export function createNodeConversation<N extends TargetNode>({ node, onSend, onS
   const help = element(el, ".nc-help"), results = element(el, ".nc-results");
   let state: ConversationState<N> = { node, edits: [], busy: false, blockedReason: "" };
   let sending = false, stopping = false, localError = "", resultKey = "";
-  let sent: { text: string; draft: string; after: string | undefined } | null = null;
+  let sent: { text: string; after: string | undefined } | null = null;
   const refresh = () => {
     const latest = state.edits.at(-1);
     const working = isEditing(latest);
@@ -83,13 +85,55 @@ export function createNodeConversation<N extends TargetNode>({ node, onSend, onS
     input.style.height = "auto";
     input.style.height = `${Math.min(120, Math.max(44, input.scrollHeight))}px`;
   };
+  /* 发出去的那一下不能是「凭空没了」:字先往上抬一点淡掉,走干净了框再收回一行。
+     跟画布下方那个输入框是同一个动作,时长也读同一处样式。
+     收高度得临时把数写死,只活到这段过渡;发失败要作废这一次收拢,字原样留着。 */
+  const compose = element(el, ".nc-compose");
+  let clearing = 0;
+  const settleInput = () => { compose.classList.remove("sending", "closing"); fitInput(); };
+  async function clearInput(draft: string) {
+    const mine = ++clearing;
+    // 到发送这一刻再读:模块刚加载那会儿样式不一定已经生效。
+    const FADE = motionMs("--send-fade", 130), CLOSE = motionMs("--send-close", 260);
+    const before = input.offsetHeight;
+    compose.classList.add("sending");
+    await wait(FADE);
+    if (mine !== clearing) return;
+    // 字淡出的这一小会儿人又改了内容,那是他的新话,不许清。
+    if (input.value !== draft) return settleInput();
+    input.value = ""; onDraftChange(""); fitInput();
+    compose.classList.remove("sending");
+    const after = input.offsetHeight;
+    if (after !== before) {
+      input.style.height = `${before}px`;
+      compose.classList.add("closing");
+      /* 起点得先在浏览器那儿落地,不然两个高度同一拍写完,它只看见终点、不过渡。
+         读一下高度就逼它把上一行算完——不等下一帧:页面在后台时帧是不来的。 */
+      void input.offsetHeight;
+      input.style.height = `${after}px`;
+      await wait(CLOSE);
+    }
+    if (mine === clearing) settleInput();
+    onResize();
+  }
+  function restoreInput(draft: string) {
+    clearing++;
+    compose.classList.remove("sending", "closing");
+    if (input.value) return;
+    input.value = draft; onDraftChange(draft); fitInput(); onResize();
+  }
   const submit = async () => {
     if (send.disabled) return;
     const text = input.value.trim();
     const draft = input.value;
-    sending = true; localError = ""; sent = { text, draft, after: state.edits.at(-1)?.id }; refresh();
+    sending = true; localError = ""; sent = { text, after: state.edits.at(-1)?.id };
+    void clearInput(draft);   // 不等它:请求这一刻就出去,收拢是画面上的事
+    refresh();
     try { await onSend?.({ node: state.node, text }); }
-    catch (error) { localError = errorMessage(error) || "发送失败，请重试。"; sent = null; }
+    catch (error) {
+      localError = errorMessage(error) || "发送失败，请重试。"; sent = null;
+      restoreInput(draft);
+    }
     finally { sending = false; refresh(); onResize(); }
   };
   el.addEventListener("click", (event) => event.stopPropagation());
@@ -103,7 +147,11 @@ export function createNodeConversation<N extends TargetNode>({ node, onSend, onS
     if (event.target === input && event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); submit(); }
   });
   element<HTMLFormElement>(el, "form").addEventListener("submit", (event) => { event.preventDefault(); submit(); });
-  input.addEventListener("input", () => { localError = ""; onDraftChange(input.value); fitInput(); refresh(); onResize(); });
+  input.addEventListener("input", () => {
+    // 上一句还在收尾就按住高度,正在打字的框会长不起来——手一碰就把高度还回去。
+    compose.classList.remove("sending", "closing");
+    localError = ""; onDraftChange(input.value); fitInput(); refresh(); onResize();
+  });
   if (typeof ResizeObserver !== "undefined") new ResizeObserver(onResize).observe(input);
   stop.addEventListener("click", async () => {
     if (stopping) return;
@@ -118,10 +166,8 @@ export function createNodeConversation<N extends TargetNode>({ node, onSend, onS
     update(next: Partial<ConversationState<N>>) {
       state = { ...state, ...next };
       const latest = state.edits.at(-1);
-      if (sent && latest?.id !== sent.after && latest?.text === sent.text && ["applied", "unchanged"].includes(latest.status)) {
-        if (input.value === sent.draft) { input.value = ""; onDraftChange(""); }
-        sent = null;
-      }
+      // 送出去时已经清空了,这里只是把「这一交有回音了」记下来。
+      if (sent && latest?.id !== sent.after && latest?.text === sent.text && ["applied", "unchanged"].includes(latest.status)) sent = null;
       const key = JSON.stringify(state.edits);
       if (key !== resultKey) {
         const open = results.querySelector<HTMLDetailsElement>(".nc-history")?.open;

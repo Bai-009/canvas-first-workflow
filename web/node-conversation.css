@@ -8,6 +8,11 @@
 .nc-compose:focus-within{border-color:var(--nc-focus);background-color:var(--paper)}
 .nc-input{display:block;flex:1;min-width:0;width:100%;height:44px;min-height:44px;max-height:120px;resize:none;border:0;border-radius:16px;padding:12px 0 12px 15px;background:transparent;color:var(--ink);font:inherit;font-size:13px;line-height:20px;outline:none;scrollbar-width:thin}
 .nc-input::placeholder{color:var(--ink-2)}
+/* 发出去的那一下,跟画布下方那个输入框同一个动作:字往上抬一点淡掉,走干净了框再收回一行。
+   同一个动作在两处长成两个样子,读起来就成了两件事。 */
+.nc-input{transition:opacity var(--send-fade) ease,transform var(--send-fade) var(--ease-out)}
+.nc-compose.sending .nc-input{opacity:0;transform:translateY(-6px)}
+.nc-compose.closing .nc-input{transition:opacity var(--send-fade) ease,transform var(--send-fade) var(--ease-out),height var(--send-close) var(--ease-out)}
 .nc-input.is-focus{background:var(--paper);box-shadow:inset 0 0 0 1px var(--nc-focus)}
 .nc-foot{display:flex;align-items:center;flex:0 0 auto;padding:0 2px}
 .nc-help{margin:8px 2px 0;font-size:12px;line-height:18px;color:var(--ink-2)}

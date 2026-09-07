@@ -4,7 +4,7 @@ import type { Snapshot, TransportEvent } from '../shared/http.mjs';
 import { isRecord } from '../shared/json.mjs';
 import { errorMessage } from '../shared/errors.mjs';
 import { readCanvas, readEvent, readNodeTable, readSnapshot } from './readers.mjs';
-import { element } from './dom.mjs';
+import { element, motionMs } from './dom.mjs';
 import { createCanvasView } from "./canvas.mjs";
 import { createPlanCard } from "./plan-card.mjs";
 import { isEditing } from "./node-conversation.mjs";
@@ -132,17 +132,66 @@ function refresh() {
   view.revisions({ edits, busy: Boolean(busy), blockedReason: revisionBlocked() });
 }
 const grow = () => { $("grow").dataset.value = $("input").value; };
+const wait = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
+/* 发出去的那一下不能是「凭空没了」:字先往上抬一点淡掉,走干净了框再收回一行。
+   收高度得临时把数写死——只活到这段过渡,完了就交还给浏览器自己排。
+   中途发失败了就作废这一次收拢:字要原样留在框里,人写的东西不能丢。 */
+let clearing = 0;
+function settleComposer() {
+  $("grow").classList.remove("sending", "closing");
+  $("grow").style.height = "";
+}
+async function clearComposer(draft: string) {
+  const mine = ++clearing, box = $("grow");
+  // 到发送这一刻再读:模块刚加载那会儿样式不一定已经生效。
+  const FADE = motionMs("--send-fade", 130), CLOSE = motionMs("--send-close", 260);
+  const before = box.offsetHeight;
+  box.classList.add("sending");
+  await wait(FADE);
+  if (mine !== clearing) return;
+  // 字淡出的这一小会儿人又改了框里的内容,那就是他的新话,不许清。
+  if ($("input").value !== draft) return settleComposer();
+  $("input").value = ""; drafts.global = ""; saveDrafts(); grow();
+  box.classList.remove("sending");
+  const after = box.offsetHeight;
+  if (after !== before) {
+    box.style.height = `${before}px`;
+    box.classList.add("closing");
+    /* 起点得先在浏览器那儿落地,不然两个高度同一拍写完,它只看见终点、不过渡。
+       读一下高度就逼它把上一行算完——不用等下一帧:页面在后台时帧是不来的,
+       等帧就等于框一直卡在展开的高度上。 */
+    void box.offsetHeight;
+    box.style.height = `${after}px`;
+    await wait(CLOSE);
+  }
+  if (mine === clearing) settleComposer();
+}
+/* 没发出去:作废收拢,把话放回框里。等的时候人又打了新字就不动它。 */
+function restoreComposer(draft: string) {
+  clearing++;
+  settleComposer();
+  if ($("input").value) return;
+  $("input").value = draft; drafts.global = draft; saveDrafts(); grow();
+}
 
 async function send() {
   if (!canSend()) return;
   const draft = $("input").value, text = draft.trim();
-  busy = "plan"; globalError = ""; refresh();
+  busy = "plan"; globalError = "";
+  /* 话一上墙就把框空出来。后台要把整份方案想完才回话,等它回来再清,
+     那几十秒里人看着自己刚发的字还在框里,像根本没发出去。
+     收拢是画面上的事,不等它:请求这一刻就出去。 */
+  void clearComposer(draft);
+  refresh();
   if (card.isMini) await card.toCenter();
   started = true; canReset(); card.ask(text);
   try {
     await post("/api/say", { text });
-    if ($("input").value === draft) { $("input").value = ""; drafts.global = ""; saveDrafts(); grow(); }
-  } catch (error) { busy = null; globalError = errorMessage(error); status(errorMessage(error)); }
+  } catch (error) {
+    busy = null; globalError = errorMessage(error); status(errorMessage(error));
+    restoreComposer(draft);
+  }
   refresh();
 }
 
@@ -180,7 +229,9 @@ async function startRun() {
     view.fit();
   } catch (error) { busy = null; broke = previousBreak; globalError = errorMessage(error); status(errorMessage(error)); showBreak(); refresh(); }
 }
-$("input").addEventListener("input", () => { drafts.global = $("input").value; saveDrafts(); globalError = ""; grow(); refresh(); });
+/* 人一动手就把收拢中临时写死的高度还回去:正在打字的框必须能长,
+   不能因为上一句还在收尾就把它按在一行高上。 */
+$("input").addEventListener("input", () => { settleComposer(); drafts.global = $("input").value; saveDrafts(); globalError = ""; grow(); refresh(); });
 $("input").addEventListener("keydown", (e) => {
   if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
   e.preventDefault(); send();

@@ -20,7 +20,19 @@ class Element {
   value = "";
   disabled = false;
   textContent = "";
-  classList = { toggle() {}, add() {} };
+  /* 真元素的 classList 能加能减能问,替身也得能——只会 add 不会 remove 的替身,
+     会让「加了类又去掉」这种代码在测试里炸,而在浏览器里是好的。 */
+  classes = new Set<string>();
+  classList = {
+    add: (...names: string[]) => { for (const name of names) this.classes.add(name); },
+    remove: (...names: string[]) => { for (const name of names) this.classes.delete(name); },
+    contains: (name: string) => this.classes.has(name),
+    toggle: (name: string, force?: boolean) => {
+      const on = force ?? !this.classes.has(name);
+      if (on) this.classes.add(name); else this.classes.delete(name);
+      return on;
+    },
+  };
   querySelector(key: string): Element {
     let child = this.children.get(key);
     if (!child) { child = new Element(); this.children.set(key, child); }
@@ -42,6 +54,8 @@ after(() => {
   else Reflect.deleteProperty(globalThis, 'document');
 });
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+/* 发出去之后字要先淡出才清空(--send-fade,浏览器外用兜底的 130 毫秒),等过那一段再看框里。 */
+const afterFade = () => new Promise<void>((resolve) => setTimeout(resolve, 220));
 function mount(onSend: () => void | Promise<unknown>) {
   const element = new Element();
   Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: () => element } });
@@ -76,11 +90,18 @@ test("快照更新保持同一个输入元素；失败和停止不清掉请求�
   assert.equal(ui.send.disabled, false);
 });
 
-test("成功只清理原封未动的已发草稿，不清理请求期间的新文字", async () => {
+/* 清空的时机在「按下发送」这一头,不在「结果回来」那一头:
+   后台要几十秒才回话,等它回来再清,那几十秒里人看着自己发的字还在框里,像根本没发出去。
+   字先淡出再清空,所以按下的那一瞬框里还是原话;淡出那一下人要是改了字,那就是他的新话,不许清。 */
+test("按下发送就清空，不等结果；淡出那一下人改了字就不清", async () => {
   for (const changed of [false, true]) {
     const ui = mount(async () => {});
     ui.type("第一条"); ui.submit(); await tick();
+    assert.equal(ui.component.draft, "第一条", "刚按下时字还在淡出,没到清空那一步");
     if (changed) ui.type("正在写第二条");
+    await afterFade();
+    assert.equal(ui.component.draft, changed ? "正在写第二条" : "");
+    // 结果这时候才回来:框里已经是清好的样子,它不该再动一次。
     ui.component.update({ edits: [{ id: "e1", text: "第一条", status: "applied" }], busy: false });
     assert.equal(ui.component.draft, changed ? "正在写第二条" : "");
   }
